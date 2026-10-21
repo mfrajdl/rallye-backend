@@ -19,13 +19,16 @@ class AuthServiceTest {
     AccountMailSender mail;
     MutableClock clock;
     AuthService service;
+    cz.mh.rallye.rallye_backend.audit.application.AuditService audit;
     UUID account = UUID.randomUUID();
     UUID session = UUID.randomUUID();
     @BeforeEach void setup() {
         store = mock(AccountStore.class); passwords = mock(PasswordEncoder.class); mail = mock(AccountMailSender.class);
         when(passwords.encode(anyString())).thenReturn("argon-hash");
         clock = new MutableClock();
-        service = new AuthService(store, new SecretTokens(), passwords, mail, clock);
+        audit = mock(cz.mh.rallye.rallye_backend.audit.application.AuditService.class);
+        service = new AuthService(store, new SecretTokens(), passwords, mail, clock, audit,
+                mock(cz.mh.rallye.rallye_backend.identity.persistence.AdminStore.class));
     }
     AccountStore.Account active() { return new AccountStore.Account(account, "crew@example.test", "Name", "ACTIVE", "argon-hash"); }
     @Test void registerStoresHashAndSendsOnlyAfterCommit() {
@@ -77,12 +80,14 @@ class AuthServiceTest {
         var wrong = assertThrows(AuthFailure.class, () -> service.login("crew@example.test", "bad", false));
         assertEquals(missing.code(), wrong.code()); assertEquals(missing.status(), wrong.status());
         verify(store, never()).insertSession(any(), any(), anyBoolean(), any(), any());
+        verifyNoInteractions(audit);
     }
     @Test void unverifiedAccountCannotLoginEvenWithCorrectPassword() {
         var pending = new AccountStore.Account(account, "crew@example.test", "N", "PENDING_EMAIL", "argon-hash");
         when(store.byEmail(anyString())).thenReturn(pending); when(store.lockAccount(account)).thenReturn(pending);
         when(passwords.matches(any(), any())).thenReturn(true);
         assertThrows(AuthFailure.class, () -> service.login("crew@example.test", "password", false));
+        verifyNoInteractions(audit);
     }
     @Test void loginStoresOnlyTokenHashAndCorrectIdleTimeout() {
         when(store.byEmail(anyString())).thenReturn(active()); when(store.lockAccount(account)).thenReturn(active());
@@ -93,6 +98,7 @@ class AuthServiceTest {
                 eq(clock.instant()), eq(clock.instant().plus(Duration.ofDays(30))));
         assertEquals(Duration.ofHours(24), AuthService.idle(false));
         assertEquals("LoginSession[redacted]", login.toString());
+        verify(audit).record(account, cz.mh.rallye.rallye_backend.audit.application.AuditService.Event.LOGIN_SUCCEEDED, account);
     }
     @Test void expiredOrRevokedSessionIsNotAuthenticated() {
         when(store.session(any())).thenReturn(new AccountStore.Session(session, account, false, clock.instant()));
@@ -100,8 +106,10 @@ class AuthServiceTest {
         assertNull(service.authenticate("old"));
     }
     @Test void logoutRevokesOnlyCurrentSession() {
+        when(store.revoke(session,clock.instant())).thenReturn(true);
         service.logout(new AuthService.Principal(account, session, false));
         verify(store).revoke(session, clock.instant()); verify(store, never()).revokeAll(any(), any());
+        verify(audit).record(account, cz.mh.rallye.rallye_backend.audit.application.AuditService.Event.LOGOUT_SUCCEEDED, account);
     }
     @Test void resetConsumesOnceChangesHashAndRevokesAll() {
         UUID id = UUID.randomUUID();
@@ -111,6 +119,7 @@ class AuthServiceTest {
         service.resetPassword("secret", "new-password");
         verify(store).password(account, "argon-hash", clock.instant());
         verify(store).revokeAll(account, clock.instant());
+        verify(audit).record(account, cz.mh.rallye.rallye_backend.audit.application.AuditService.Event.PASSWORD_RESET_COMPLETED, account);
     }
     @Test void changeRequiresCurrentPasswordAndKeepsCurrentSession() {
         when(store.lockAccount(account)).thenReturn(active());
@@ -122,6 +131,7 @@ class AuthServiceTest {
         service.changePassword(principal, "correct", "new-password");
         verify(store).revokeOthers(account, session, clock.instant());
         verify(store, never()).revokeAll(any(), any());
+        verify(audit).record(account, cz.mh.rallye.rallye_backend.audit.application.AuditService.Event.PASSWORD_CHANGED, account);
     }
     @Test void revokedCurrentSessionCannotChangePassword() {
         when(store.lockAccount(account)).thenReturn(active());

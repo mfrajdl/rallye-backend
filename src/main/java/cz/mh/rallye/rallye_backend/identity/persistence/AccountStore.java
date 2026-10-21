@@ -108,8 +108,8 @@ public class AccountStore {
                 WHERE id=? AND revoked_at IS NULL AND expires_at>?
                 """, at(now), at(expiry), id, at(now)) == 1;
     }
-    public void revoke(UUID id, Instant now) {
-        jdbc.update("UPDATE user_session SET revoked_at=? WHERE id=? AND revoked_at IS NULL", at(now), id);
+    public boolean revoke(UUID id, Instant now) {
+        return jdbc.update("UPDATE user_session SET revoked_at=? WHERE id=? AND revoked_at IS NULL", at(now), id) == 1;
     }
     public void revokeOthers(UUID account, UUID keep, Instant now) {
         jdbc.update("UPDATE user_session SET revoked_at=? WHERE account_id=? AND id<>? AND revoked_at IS NULL",

@@ -18,7 +18,9 @@ public class ApiErrors {
         if (failure.status() == 429) builder.header("Retry-After", "900");
         return builder.body(problem(failure.status(), failure.code()));
     }
-    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class,
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingRequestHeaderException.class})
     ResponseEntity<ProblemDetail> invalid(Exception ignored) {
         return ResponseEntity.badRequest().body(problem(400, "INVALID_REQUEST"));
     }

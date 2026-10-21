@@ -27,6 +27,33 @@ Postup pro existující kontejner `rallye-postgres-1` je v [postgresql-test-setu
 
 ## Běžné testy bez databáze
 
+Etapa 3b.1 přidává AdminServiceTest, AdminHttpTest, BootstrapScriptTest a auditní
+kontroly v AuthServiceTest. Podrobnosti API a ručního ověření jsou v
+[administration-3b1.md](administration-3b1.md). Dříve potvrzené výsledky 2A nahoře
+nejsou potvrzením celého integračního běhu s V2. Uživatelův běh měl 21/23
+úspěšných případů; dva rollback testy selhaly na očekávání nepřeložené výjimky.
+Následné dostupné Failsafe XML reporty uvádějí 24/24 úspěšných IT bez chyb.
+Jde o nalezené výsledky před závěrečnými opravami, nikoli nový DB běh Codexu.
+
+Lokální `mvnw.cmd verify` s JDK 21 po implementaci 3b.1: **BUILD SUCCESS,
+90 testů, 0 failures, 0 errors, 0 skipped**, sestavený JAR při závěrečné kontrole 3b.1. AdministrationIT
+se zkompiloval, ale Codex jej podle dohody nespouštěl. Postman kolekce má staticky
+zkontrolovaný JSON, 33 požadavků vůči controllerům a syntaxi 55 skriptů;
+uživatel potvrdil manuální ověření 3b.1: přihlášení ADMIN 200, čtení auditu 200,
+grant/revoke 204, zákaz vlastní role 403 SELF_ROLE_CHANGE_FORBIDDEN, replay 204,
+konflikt operace se stejným klíčem 409 IDEMPOTENCY_CONFLICT a audit bootstrapu,
+přihlášení a změn rolí.
+
+AuditTransactionTest bez DB ověřuje skutečný Spring překlad IllegalStateException
+z repository na InvalidDataAccessApiUsageException a vyvolání transakčního
+rollbacku. AdministrationIT ověřuje identitu injektované příčiny, chybu po skutečném
+INSERTu auditu a nezměněný stav DB čtený po selhání nezávislou transakcí. Nový
+test selhání po zápisu idempotence musí vrátit zpět roli, audit i příkaz. Opravená
+sada při závěrečné kontrole obsahuje 26 IT, spouští ji pouze uživatel příkazem
+`.\mvnw.cmd -Pit verify`. Dva nové případy ověřují nekonzistentní bootstrap příznak
+a chybějící řídicí řádek. Uživatel následně potvrdil úspěšný běh celé rozšířené sady pomocí `.\mvnw.cmd -Pit verify` nad rallye_test: BUILD SUCCESS. Etapa 3b.1 je ověřena; nejde o vlastní PostgreSQL běh Codexu.
+Původní reporty v target/failsafe-reports nebyly lokálním verify přepsány.
+
 JDK 21 a Maven Wrapper stačí:
 
 ```powershell
@@ -47,6 +74,14 @@ Integrační testy v tomto projektu spouští uživatel ručně ve svém PowerSh
 ```
 
 Failsafe je zapojen pouze v Maven profilu `it` a spouští `*IT` ve fázích integration-test a verify. Samotné `-Pit test` integrační testy nespustí. IT jsou zatím ve stejném testovacím source rootu; jmenná konvence a explicitní Failsafe profil oddělují běh bez dalších frameworků. Také běh z IDE musí zachovat initializer a profil `it`; neodstraňovat ochranu kvůli pohodlí. Použít `verify`, ne samotné `integration-test`, aby Maven správně vyhodnotil výsledek.
+
+AdministrationIT také používá TestDatabaseInitializer a výhradně rallye_test.
+Flyway aplikuje V1/V2 do unikátního vlastního schématu it_admin_<UUID>; jen v něm
+test provádí skutečný SQL bootstrap, souběhy a negativní DB operace. Na konci
+ověří název, DB a roli a odstraní pouze toto schéma s vlastními fixture. Neprovádí
+Flyway clean, nemaže public ani společný bootstrap/účty. Testovací role potřebuje
+CREATE ve vlastní DB. Při pádu procesu může schéma zůstat k ručnímu posouzení
+správcem; automaticky se nehledají ani nemažou schémata z dřívějších běhů.
 
 Po schválení správce připraví databázi a roli `rallye_test` ve stávajícím PostgreSQL 17. Role nemá SUPERUSER, CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS ani členství v aplikačních rolích. Má migrační oprávnění pouze uvnitř testovací DB. Žádné explicitní granty do `rallye`/`rallye_dev` se nepřidávají. PUBLIC CONNECT a TEMPORARY se akceptují: připojení k aplikační DB může uspět, čtení či změny jejích tabulek nikoli. Read-only skript `25-verify-application-access.sql` se spustí v obou aplikačních DB; kontroluje tabulkové i sloupcové granty, views, sekvence, CREATE ve schématech a dostupné SECURITY DEFINER rutiny. Při nálezu se zastaví bez opravy ACL. Data a konfigurace stávajících DB zůstávají zachované. Žádný cloudový krok zatím nebyl proveden.
 

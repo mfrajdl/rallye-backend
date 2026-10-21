@@ -7,6 +7,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.UUID;
 import cz.mh.rallye.rallye_backend.identity.persistence.AccountStore;
+import cz.mh.rallye.rallye_backend.identity.persistence.AdminStore;
+import cz.mh.rallye.rallye_backend.audit.application.AuditService;
+import cz.mh.rallye.rallye_backend.audit.application.AuditService.Event;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,11 +29,14 @@ public class AuthService {
     private final AccountMailSender mail;
     private final Clock clock;
     private final String dummyHash;
+    private final AuditService audit;
+    private final AdminStore roles;
 
     public AuthService(AccountStore store, SecretTokens tokens, PasswordEncoder passwords,
-                       AccountMailSender mail, Clock clock) {
+                       AccountMailSender mail, Clock clock, AuditService audit, AdminStore roles) {
         this.store = store; this.tokens = tokens; this.passwords = passwords; this.mail = mail; this.clock = clock;
         this.dummyHash = passwords.encode(tokens.create());
+        this.audit = audit; this.roles = roles;
     }
     public static String normalizeEmail(String email) { return email.strip().toLowerCase(Locale.ROOT); }
     private Instant now() { return clock.instant().truncatedTo(ChronoUnit.MILLIS); }
@@ -71,14 +77,18 @@ public class AuthService {
         var account = store.byEmail(normalizeEmail(email));
         if (account == null) {
             passwords.matches(password, dummyHash);
+            failedLogin();
             throw AuthFailure.credentials();
         }
         account = store.lockAccount(account.id());
         boolean valid = passwords.matches(password, account.passwordHash() == null ? dummyHash : account.passwordHash());
-        if (!valid || account.passwordHash() == null || !"ACTIVE".equals(account.status())) throw AuthFailure.credentials();
+        if (!valid || account.passwordHash() == null || !"ACTIVE".equals(account.status())) {
+            failedLogin(); throw AuthFailure.credentials();
+        }
         String secret = tokens.create();
         Instant now = now();
         UUID session = store.insertSession(account.id(), tokens.hash(secret), remember, now, now.plus(idle(remember)));
+        audit.record(account.id(), Event.LOGIN_SUCCEEDED, account.id());
         return new LoginSession(secret, new Principal(account.id(), session, remember));
     }
     @Transactional
@@ -94,7 +104,9 @@ public class AuthService {
     @Transactional
     public void logout(Principal principal) {
         store.lockAccount(principal.accountId());
-        store.revoke(principal.sessionId(), now());
+        if (store.revoke(principal.sessionId(), now())) {
+            audit.record(principal.accountId(), Event.LOGOUT_SUCCEEDED, principal.accountId());
+        }
     }
     @Transactional
     public void requestReset(String email) {
@@ -116,6 +128,7 @@ public class AuthService {
                 || !store.consume(action.id(), "PASSWORD_RESET", now)) throw AuthFailure.token();
         store.password(account.id(), passwords.encode(password), now);
         store.revokeAll(account.id(), now);
+        audit.record(account.id(), Event.PASSWORD_RESET_COMPLETED, account.id());
     }
     @Transactional
     public void changePassword(Principal principal, String currentPassword, String newPassword) {
@@ -131,6 +144,7 @@ public class AuthService {
         }
         store.password(account.id(), passwords.encode(newPassword), now);
         store.revokeOthers(account.id(), principal.sessionId(), now);
+        audit.record(account.id(), Event.PASSWORD_CHANGED, account.id());
     }
     @Transactional(readOnly = true)
     public UserView me(Principal principal) {
@@ -152,5 +166,10 @@ public class AuthService {
                 }
             }
         });
+    }
+    @Transactional(readOnly = true)
+    public boolean isAdministrator(Principal principal) { return roles.administrator(principal.accountId()); }
+    private static void failedLogin() {
+        org.slf4j.LoggerFactory.getLogger(AuthService.class).info("Local login rejected");
     }
 }

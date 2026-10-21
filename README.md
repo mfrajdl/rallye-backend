@@ -1,6 +1,6 @@
 # Rallye Backend
 
-Backend soukromé aplikace pro vícestupňové automobilové Rallye soutěže. Jedna Spring Boot aplikace, modulární monolit. Závazná funkční specifikace je [verze 0.5.0](docs/Zavody_specifikace_v0.5.0.md). Lokální autentizace je popsaná v [etapě 2A](docs/authentication-2a.md).
+Backend soukromé aplikace pro vícestupňové automobilové Rallye soutěže. Jedna Spring Boot aplikace, modulární monolit. Závazná funkční specifikace je [verze 0.6.0](docs/Zavody_specifikace_v0.6.0.md). Lokální autentizace je popsaná v [etapě 2A](docs/authentication-2a.md).
 
 ## Požadavky
 
@@ -79,8 +79,9 @@ Přeskočení testů nepotvrzuje funkčnost aplikace ani připojení. Na Linuxu 
 ## Dokumentace
 
 - [Účty a lokální autentizace – etapa 2A](docs/authentication-2a.md)
+- [Administrátorská oprávnění, audit a ruční SQL bootstrap – 3b.1](docs/administration-3b1.md)
 
-- [Specifikace 0.5.0](docs/Zavody_specifikace_v0.5.0.md)
+- [Specifikace 0.6.0](docs/Zavody_specifikace_v0.6.0.md)
 - [Testovací prostředí](docs/testing.md)
 - [Příprava testovací PostgreSQL na OCI](docs/postgresql-test-setup.md)
 - [Pravidla pro Codex](AGENTS.md)

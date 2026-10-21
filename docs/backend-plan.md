@@ -1,6 +1,6 @@
-# Backend: architektura a plán po etapě 2
+# Backend: architektura a plán po etapě 2A a rozhodnutích 3b
 
-Aktuální funkční základ je [specifikace 0.5.0](Zavody_specifikace_v0.5.0.md). Vydání 0.4.0 a starší i dosavadní pracovní kopie Rallye_specifikace.md jsou ponechány beze změny. Pro nové požadavky je rozhodná verze 0.5.0; AGENTS.md a README.md již odkazují na tuto závaznou verzi. Potvrzené požadavky specifikace mají přednost před technickými doporučeními níže. Návrh neznamená implementaci ani schválení cloudových změn.
+Aktuální funkční základ je [specifikace 0.6.0](Zavody_specifikace_v0.6.0.md), která doplňuje schválená pravidla etapy 3b. Vydání 0.5.0 a starší i rozpracovaná kopie Rallye_specifikace.md zůstávají beze změny. Potvrzené požadavky mají přednost před technickými návrhy. Etapa 2A je dokončena; etapa 3b.1 je dokončena a ověřena, další kroky 3b nejsou implementované. Dokumentace sama nedává oprávnění k databázovým operacím či nasazení.
 
 ## Stav projektu
 
@@ -16,6 +16,22 @@ Existující konfigurovatelný SMTP adaptér je připravený; lokální profil z
 vývojovou pomůckou. Tento bod nebrání uzavření lokální autentizace.
 
 Java 21, Spring Boot 4.1.1, Maven Wrapper 3.10.0, Spring MVC, Validation, JPA, Flyway a PostgreSQL driver. Produkční kód nyní obsahuje vedle startovací aplikace a veřejného GET /api/hello také modul identity etapy 2A. Produkční konfigurace zůstává zachována: PostgreSQL přes `127.0.0.1:5433/rallye_dev`, heslo z prostředí, Hibernate `validate`, Open Session in View vypnuté, Flyway zapnuté. Implementované jsou uživatelské účty, LOCAL identita, e-mailové tokeny, databázové relace a migrace V1__user_accounts.sql; Google/Apple OAuth, posádky, závody, změna e-mailu a zrušení účtu zatím nejsou implementované.
+
+Etapa 3b.1 je dokončena a ověřena: V2 přidává ADMIN, společný
+zámek/bootstrap a DB ochrany posledního administrátora, auditní události a evidenci
+idempotentních změn rolí. API spravuje role jiných účtů a čte filtrovaný audit.
+Bezpečnostní operace 2A už zapisují transakční audit. `mvnw.cmd verify` prošel:
+90 testů při závěrečné kontrole 3b.1, 0 failures/errors/skipped, JAR sestaven.
+Uživatelův PostgreSQL běh měl 21/23 úspěšných testů; dva skončily na očekávání
+IllegalStateException místo Springem přeložené InvalidDataAccessApiUsageException.
+Testy jsou posílené o kontrolu původní příčiny a nezměněných dat po každém selhání,
+včetně nového případu chyby po zápisu idempotence. Dostupné Failsafe reporty následného
+běhu obsahují 24/24 úspěšných IT; nejde o vlastní DB běh Codexu. Uživatel potvrdil
+Postman: přihlášení, audit, grant/revoke, zákaz vlastní role, replay a konflikt klíče
+i audit bootstrapu, přihlášení a změn rolí. Závěrečná kontrola doplnila odmítnutí
+chybějícího admin_control a nekonzistentního bootstrap příznaku. Rozšířených 26 IT
+uživatel následně ověřil příkazem `.\mvnw.cmd -Pit verify`: BUILD SUCCESS. Jde o uživatelem potvrzený běh nad rallye_test, nikoli DB běh Codexu. Codex SQL bootstrap nespouštěl. Postup a omezení
+jsou v [administration-3b1.md](administration-3b1.md).
 
 Etapa 2 odděluje testy bez DB od explicitních `*IT` přes Maven Failsafe v profilu `it`. Připojení IT kontroluje testovací initializer před vytvořením Spring beanů. Etapa 2A přidává Spring Security, SMTP a Bouncy Castle pro Argon2id. Failsafe používá verzi spravovanou Spring Boot parentem. Podrobnosti a omezení jsou v [testing.md](testing.md).
 
@@ -43,7 +59,7 @@ V každé oblasti podle potřeby `api` (controller a request/response DTO), `app
 
 ## Autentizace a relace – technické doporučení
 
-Etapa 2A používá Spring Security a neprůhledné databázové relace s hashovaným tokenem; OAuth2 Client/OIDC je návrh až pro budoucí externí přihlášení; nebudovat vlastní autorizační server ani infrastrukturu JWT s obnovovacími tokeny. Jeden interní `app_user` může mít místní hash hesla a několik ověřených externích identit. Členové účasti nejsou identity. Lokální heslo se hashuje Argon2id přes Spring Security PasswordEncoder; povolená délka je schválených 8–128 Unicode znaků bez kategorií. Registrace uživatelského účtu e-mailem vyžaduje ověření adresy jednorázovým aktivačním odkazem zaslaným e-mailem; obnova hesla používá krátkodobý jednorázový náhodný token uložený jako hash. Obnova hesla má potvrzenou platnost 30 minut, jednorázové použití a jednotnou odpověď bez odhalení existence účtu. Login také nerozlišuje chybný e-mail a heslo. Změna e-mailu vyžaduje nové ověření uživatele i nové adresy. Potvrzovací odkaz má schválenou platnost 24 hodin. Výběr poskytovatele a ověření doručování jsou odloženy před nasazení; lokální profil používá souborovou schránku bez SMTP.
+Etapa 2A používá Spring Security a neprůhledné databázové relace s hashovaným tokenem; OAuth2 Client/OIDC je návrh až pro budoucí externí přihlášení; nebudovat vlastní autorizační server ani infrastrukturu JWT s obnovovacími tokeny. Jeden interní účet v existující tabulce `user_account` může mít místní hash hesla a několik ověřených externích identit. Členové účasti nejsou identity. Lokální heslo se hashuje Argon2id přes Spring Security PasswordEncoder; povolená délka je schválených 8–128 Unicode znaků bez kategorií. Registrace uživatelského účtu e-mailem vyžaduje ověření adresy jednorázovým aktivačním odkazem zaslaným e-mailem; obnova hesla používá krátkodobý jednorázový náhodný token uložený jako hash. Obnova hesla má potvrzenou platnost 30 minut, jednorázové použití a jednotnou odpověď bez odhalení existence účtu. Login také nerozlišuje chybný e-mail a heslo. Změna e-mailu vyžaduje nové ověření uživatele i nové adresy. Potvrzovací odkaz má schválenou platnost 24 hodin. Výběr poskytovatele a ověření doručování jsou odloženy před nasazení; lokální profil používá souborovou schránku bez SMTP.
 
 Web provozovat pokud možno na stejném originu jako API. Relace přes `Secure`, `HttpOnly`, přiměřený `SameSite` cookie; stavové požadavky chránit CSRF tokenem v hlavičce. Při externích callbackách zvlášť ověřit chování Apple `form_post` a cookie SameSite; neuvolňovat globálně CSRF. Přihlašování i odhlašování mění relaci bezpečně; regenerovat identifikátor po přihlášení. Neumisťovat session ID do URL nebo browser localStorage.
 
@@ -59,7 +75,11 @@ Propojení vyžaduje aktivní účet, čerstvé ověření jeho identity a samos
 
 ## Autorizace
 
-Dvě schopnosti: kapitán jedná za své posádky a jejich účasti; administrátor spravuje šablony, konání, kódy a operativní zásahy. Server načítá vlastnictví podle přihlášeného interního ID, nevěří `captain_user_id` ani rolím v klientském payloadu. Na každém zdroji i historickém kopírování ověřuje přístup; ID samo přístup nedává. Administrativní oprávnění se nepřiděluje veřejnou registrací nebo e-mailem poskytovatele. Bootstrap prvního administrátora provést řízeným samostatným postupem, nikoli veřejným endpointem. Kapitán může mít také administrativní oprávnění, pokud to bude schváleno; nepředpokládat to automaticky.
+Administrátor je jediná administrativní role a má plná oprávnění ke správě posádek včetně cizích a bez kapitána: údaje, soukromé fotografie, okamžitá změna kapitána bez potvrzení. Ani administrátor nesmí smazat posádku s historickou účastí nebo během čekajícího převodu; okamžitá změna kapitána čekající převod atomicky zruší. Běžný kapitán spravuje vlastní posádky podle aktuálního interního ID, nikoli podle klientského captain_user_id či cachovaného vlastnictví. Změna vlastníka ani administrativní odebrání kapitána neovlivní aktivní závodní zařízení. Běžný uživatel zakládá posádku se sebou jako kapitánem a kapitána přímo odebrat nemůže. Administrátor zakládá posádku pro libovolného aktivního uživatele s ověřeným e-mailem nebo bez kapitána a existující posádce může kapitána odebrat; čekající převod se při změně/odebrání kapitána zruší.
+
+Administrátor spravuje role ADMIN jiných aktivních uživatelů. Navržená tabulka user_account_role a načítání oprávnění při požadavku navazují na dosavadní ROLE_USER; kapitánství není globální role. Po prvním bootstrapu musí zůstat alespoň jeden aktivní administrátor. Odebrání role, rušení či deaktivace účtu musejí tento invariant kontrolovat atomicky i při souběhu. Vlastní správu role nelze dovodit z oprávnění spravovat jiné uživatele. Administrátor může rušit účty podle stejných pravidel jako uživatel; neobchází ochranu posledního administrátora ani historie.
+
+První administrátor vznikne jednorázovým SQL bootstrapem konkrétního existujícího aktivního účtu, bez veřejného endpointu a bez automatického povyšování při startu či registraci. V 3b.1 je připraven transakční skript ops/admin/bootstrap-first-admin.sql: sdílený zámek, aktivní/ověřený účet, trvalý příznak bootstrapu a audit provozního aktéra. Skript Codex nespouští; ruční postup je v administration-3b1.md.
 
 ## Rozlišení registrace účtu, přihlášky a závodních kódů
 
@@ -72,20 +92,20 @@ Dvě schopnosti: kapitán jedná za své posádky a jejich účasti; administrá
 
 Odstranění aktivačního kódu se týká pouze registrace posádky do závodu. Ověření e-mailu při registraci uživatelského účtu zůstává povinné. Aktivační odkaz účtu, odkaz na závod a startovací/náhradní kód mají různé účely a nesmějí se zaměňovat.
 
-## Dopady potvrzených pravidel 0.5.0 na data a přístup
+## Dopady potvrzených pravidel 0.6.0 na data a přístup
 
 | Oblast | Návrh a požadované záruky |
 | --- | --- |
-| Účet | Neměnné interní ID, přihlašovací e-mail, ověření adresy, tokeny jen jako hash; reset 30 minut. Zrušení odstraní/anonymizuje e-mail, zobrazované jméno a přihlašovací identity samotného účtu. Historické posádky, názvy, výsledky a interní seznamy členů přihlášek zůstanou; veřejné projekce neobsahují jména členů. |
-| Posádka | Více posádek na účet, aktuální captain_user_id nullable po zrušení účtu. Bez účasti lze smazat, s historií zachovat; bez aktuálního kapitána nelze podat novou přihlášku. Žádný archived příznak/workflow. |
-| Převod | crew_transfer: původní/cílové interní ID, hash tokenu a expirace 7 dní, stav; částečný unikátní index pro aktivní žádost. Přijetí jen správným přihlášeným účtem, atomická změna vlastníka a audit. |
-| Účast | crew_name_at_registration jako historický snímek, members_text a children_under_15; počet členů je počet neprázdných řádků, počet 15+ jejich rozdíl. individual_started_at nastavit jednou při úspěšném původním startovacím kódu a nikdy nepřepsat náhradním. Žádná tabulka participant_member ani příznak dítěte u jednotlivých jmen. Kopie z historie není živá vazba. |
+| Účet | Existující user_account z V1. Historická účast patří uživateli, který byl kapitánem při skutečném zahájení závodu, nikoli při přihlášce; pozdější převod tuto vazbu nemění. Bez historie účet trvale smazat, s historií anonymizovat. Při závodění posádky zrušení odmítnout do skončení účasti. Pouhou přihlášku zachovat, všechny čekající převody rušeného uživatele v obou rolích zrušit a jeho posádky ponechat bez kapitána. Odebrat přihlašovací prostředky a relace; vše transakčně a s auditem. Stejná pravidla pro ADMIN. |
+| Posádka | Více posádek na účet; nullable captain_user_id, posádky i bez kapitána. Povinný název do 100 znaků, nepovinná RZ do 32, popis do 2 000 a fotografie. Název ani RZ nejsou unikátní. Bez kapitána nelze podat novou přihlášku. Historickou posádku nelze smazat; čekající převod blokuje smazání, nikoli editaci. Žádná archivace posádek. |
+| Převod | crew_transfer: původní a cílové ID účtu, hash tokenu, 7 dní, stav, časy a rozhodnutí. Částečný unikátní index pro jednu aktivní žádost. Cíl se změnou e-mailu nemění. Musí existovat, být aktivní a mít ověřený e-mail; převod na sebe sama je zakázán, a to i u administrátorské varianty. Přijímá/odmítá přihlášený cílový účet; původní kapitán může čekající převod zrušit. Administrátor mění kapitána bez potvrzení a čekající žádost ruší atomicky s auditem. |
+| Účast | Trvalý neměnný snímek interního ID kapitána při skutečném zahájení závodu a času jeho pořízení (návrh samostatné vazby nebo polí účasti), nezávislý na pozdějším vlastnictví. crew_name_at_registration jako historický snímek, members_text a children_under_15; počet členů je počet neprázdných řádků, počet 15+ jejich rozdíl. individual_started_at nastavit jednou při úspěšném původním startovacím kódu a nikdy nepřepsat náhradním. Žádná tabulka participant_member ani příznak dítěte u jednotlivých jmen. Kopie z historie není živá vazba. |
 | Limity | max_crew_members v konfiguraci závodu, výchozí 5; návrh kopie šablony do konání. Nejméně jeden člen, children_under_15 mezi 0 a počtem členů. Složení uzamknout při oficiálním startu, u pozdní účasti při zařazení. |
 | Zařízení | participation_code typu START/REPLACEMENT a race_device_authorization oddělené od user_session. Více account relací neznamená více platných oprávnění řídit účast. Token předání mobilní login relace z technického návrhu není startovací/náhradní kód závodu. |
 | Body a remízy | Samostatná score_adjustment s podepsanými body a vazbou na náhradní kód; účinná právě jednou při úspěšném použití náhradního kódu atomicky s převodem závodního oprávnění. Nepoužitý/zneplatněný nepoužitý kód má nulový dopad. tie_decision uchová vzájemné pořadí dvou i více posádek a vazbu na příslušnou úplnou remízu; audit a nepovinný interní důvod. Při přepočtu použít, jen pokud remíza trvá; po jejím zániku rozhodnutí pořadí neovlivňuje. |
 | Publikace | result_publication/result_entry pro verze definitivních výsledků, veřejná projekce bez jmen členů. Oprava vytváří novou publikaci při zachování historie. |
 
-Při správě posádky a jejích účastí ověřovat aktuální vlastnictví ze stavu DB, nikoli dlouhodobě
+Při běžné správě posádky a jejích účastí ověřovat aktuální vlastnictví ze stavu DB; administrátorskou správu povolit podle aktuální role a schváleného rozsahu. Oprávnění neodvozovat dlouhodobě
 z role nebo crew ID uložených v relaci. Nový kapitán dostává ihned správcovská práva k posádce a jejím účastem, původní je ztrácí i při stále přihlášeném účtu. Aktivní závodní zařízení se převodem nemění a pokračuje; k jeho výměně je nutný náhradní startovací kód administrátora. Autorizaci správy posádky oddělit od závodních příkazů autorizovaných aktivním zařízením, aby změna vlastníka nezneplatnila pokračování dosavadního zařízení. Souběh přijetí/odmítnutí/zrušení/expirace
 převodu musí mít jediný transakční výsledek. Odeslání e-mailu navrhnout po commitu
 s bezpečným opakováním, bez tokenů v logu; konkrétní infrastruktura není předepsaná.
@@ -108,6 +128,8 @@ aby jména členů a interní důvody neunikly. Soukromé endpointy zůstávají
 - Publikace pouze ručně, oprava novou verzí; anonymní čtení výsledků a archivu bez jmen členů a interních důvodů; přihlášky přes odkaz bez e-mail allowlistu.
 
 ## Idempotence, transakce a čas
+
+Pro vytváření záznamů a změny vlastnictví etapy 3b používat Idempotency-Key. Schválená retence je 24 hodin; stejný klíč a stejné parametry vrátí původní výsledek bez další operace/auditu, stejný klíč s odlišnými parametry vrátí HTTP 409. Po 24 hodinách lze evidenci klíče odstranit. Závodní pokusy mají vlastní nezkrácené záruky včetně replay po end_at; auditní retence je také oddělená. Přesné endpointy a technický úklid evidence dopracovat v návrhu.
 
 Navržená tabulka idempotence: interní účet, typ operace, zdroj a klíč s unikátním omezením; hash kanonického významového payloadu včetně cílového zdroje a uložený HTTP status/bezpečné response DTO. Identita klíče musí zabránit opakovanému použití při přechodu na další stanoviště. Po autorizaci nejprve hledat dřívější výsledek, teprve pak pro nový požadavek rozhodovat o uzávěrce a stavu. Shodný klíč/payload vrací původní výsledek i po `end_at`, rozdílný obsah je konflikt 409. Výsledek, změna stavu, penalizace i audit se uloží v jedné transakci. Neočekávané technické selhání transakci rollbackuje; nezůstane trvalý rozpracovaný klíč bez výsledku. Při závodu o unikátní klíč nepokračovat v již neplatné transakci: po rollbacku načíst potvrzený výsledek v nové transakci.
 
@@ -135,22 +157,45 @@ Přesné obchodní error codes a status uzávěrky potvrdit spolu s API kontrakt
 
 ## Audit
 
-Navržena append-only tabulka: ID události, UTC čas, interní aktér nebo systém, typ operace, typ/ID zdroje, correlation/request ID, důvod a omezený strukturovaný přehled změn. Transakčně s měněným stavem. Zahrnout start/konec, start a použití/náhradu kódu, výměnu závodního zařízení, podepsanou bodovou úpravu, převody kapitána, publikace/opravné verze a ruční remízy, pozdní výjimku, uzamčení členů, změny textu, zrušení, neutralizaci/nahrazení penalizací, propojení identit a bezpečnostní události. Nezaměňovat nezměnitelnou historii pokusů s účinným skóre. Vyloučit hesla, tokeny, platné tajné kódy a nadbytečné osobní údaje. Čtení auditu omezené administrací, retence a provozní role k rozhodnutí. Protokol serveru sám nenahrazuje transakční audit.
+Navržená tabulka audit_event: ID události, UTC čas, interní aktér nebo systém/provozní správce, typ operace, typ/ID zdroje, request ID a omezená strukturovaná metadata. Audit obchodních změn ukládat ve stejné transakci. Běžné operace události pouze přidávají; potvrzený administrativní úklid je výslovná výjimka, nikoli obecné API pro editaci historie.
+
+V etapě 3b auditovat změny posádek, převody, administrátorské zásahy včetně bootstrapu a správy rolí, úspěšná přihlášení, odhlášení, změny a resety hesel a rušení účtů. Neúspěšná přihlášení zatím pouze do provozních logů. V původní 2A transakční audit nebyl; 3b.1 jej již přidává do úspěšných bezpečnostních operací při zachování jejich funkčních pravidel a generických odpovědí. Audit posádek, převodů a rušení účtů vznikne současně s jejich operacemi v dalších krocích. Do žádného logu ani auditu nepatří hesla, tokeny nebo nadbytečné osobní údaje.
+
+Výjimkou z auditování administrativních operací je samostatný read-only CSV export:
+podle schváleného pravidla nemění DB ani vložením události exportu. Archivace a
+mazání jsou jiné operace a jejich úklid se audituje povinně.
+
+Nadále auditovat budoucí start/konec, kódy a závodní zařízení, bodové úpravy, publikace a remízy, pozdní výjimky, uzamčení členů, konfiguraci, zrušení stanovišť a propojení identit podle specifikace. Historie pokusů a výsledků není auditní tabulkou určenou k administrativnímu úklidu.
+
+Standardní uchovávání auditu je bez časového omezení a bez automatického úklidu. Archivace nebo mazání vyžaduje minimální stáří přesně 90 dní (ne kalendářní měsíce), potvrzení administrátorem a audit úklidu. Technický návrh: při provedení porovnat UTC čas události s hranicí now minus 90 dní, s povolením záznamů starých alespoň 90 dní.
+
+Samostatný CSV export je kdykoliv bez omezení stáří a bez jakýchkoliv změn DB, tedy i bez přidání auditního záznamu exportu. CSV: UTF-8 s BOM, středník jako oddělovač, korektní escapování hodnot. Návrh: chránit export před interpretací textových buněk jako vzorců v Excelu a minimalizovat osobní údaje.
+
+Návaznost na skutečnou implementaci 2A: AuthService.authenticate nyní při každém
+autentizovaném požadavku prodlužuje relaci zápisem do user_session. Pro doslovné
+splnění exportu bez změn DB bude potřeba navrhnout ověření platné relace a aktuální
+role bez tohoto zápisu právě pro samostatný export; nesmí se obejít expirace,
+odvolání relace, stav účtu ani autorizace ADMIN. Tato read-only varianta dosud
+není implementovaná a neblokuje auditní základ či bootstrap 3b.1.
+
+Archivace = úspěšný export starších záznamů a následné odstranění po potvrzení; bez dokončeného exportu se archivace nemaže. Samostatné mazání bez exportu je povolené. Každé mazání je dvoukrokové: ověřit podmínky a zobrazit počet dotčených záznamů, pak výslovně potvrdit. Při provedení znovu ověřit oprávnění, výběr a časovou hranici; výmaz a nový audit úklidu transakčně spojit. Nový audit úklidu nesmí odstranit tentýž úklid. Přesný transport potvrzení a doručení archivu jsou technickým návrhem, nikoli nevyřešená retenční pravidla.
+
+Fyzické smazání účtu nesmí kaskádově odstranit audit ani být znemožněno jeho FK. Návrh: oddělit pseudonymní identifikaci auditního aktéra od životního cyklu user_account a neuchovávat v auditu jeho e-mail/jméno. Totéž pro historické převody a evidenci idempotence: vyřešit odkazování a minimalizaci bez uchovávání smazaného přihlašovacího účtu. Změny schématu a anonymizace se teprve navrhnou a otestují; V1 se nepřepisuje.
 
 ## Fotografie a HTML
 
 Pro první jednu instanci navržen privátní adresář na perzistentním Docker volume mimo webroot; v DB pouze náhodný neprůhledný identifikátor a bezpečná metadata. Žádná veřejná cesta podle názvu uploadu; stahování přes autorizovaný endpoint podle vlastnictví/administrativních oprávnění. Později lze přejít na privátní objektové úložiště bez změny veřejných ID. Fotografie zálohovat spolu s konzistentní DB evidencí, odděleně od image aplikace.
 
-Povolit pouze potřebné rastrové formáty (navržen JPEG/PNG), ověřit skutečné dekódování, limit bajtů i rozměrů, znovu zakódovat a odstranit EXIF/GPS. Nepovolovat SVG/HTML jako fotografii. Použít bezpečné dočasné soubory, atomický přesun a úklid osiřelých objektů po selhání DB transakce; klientovi nevracet cesty. Přesné limity a retence čekají na rozhodnutí. HTML instrukce sanitizovat na serveru podle malé allowlist s bezpečnými URL; správné kódy ani odpovědi nesmí být v klientském DTO, HTML ani logu.
+Schválené fotografie vozidla jsou JPEG/PNG do 5 MiB (5 242 880 bajtů), maximálně 4096 × 4096 px, v soukromém souborovém úložišti. Technický návrh: ověřit skutečné dekódování, limit bajtů i každého rozměru, znovu zakódovat a odstranit EXIF/GPS. Nepovolovat SVG/HTML jako fotografii. Použít bezpečné dočasné soubory, atomický přesun a úklid osiřelých objektů po selhání DB transakce; klientovi nevracet cesty. Retence nahrazených/osiřelých souborů a konkrétní technický postup úklidu čekají na návrh; vstupní limity fotografií jsou již schválené. HTML instrukce sanitizovat na serveru podle malé allowlist s bezpečnými URL; správné kódy ani odpovědi nesmí být v klientském DTO, HTML ani logu.
 
 ## Rizika a zbývající rozhodnutí
 
-- Blokující pro databázové IT: v této běhové relaci nejsou dostupné proměnné RALLYE_TEST_DB_* ani testovací tunel 5434; existující rallye_test se nevytváří ani nemění administrativním postupem. Výchozí unit testy to neblokuje. Cloudové změny nejsou provedeny.
-- Blokující před první migrací: pouze pro čtení ověřit existující schéma a Flyway historii vývojové DB se souhlasem k přístupu; žádný automatický baseline/repair/clean.
-- Etapa 3: schválit technický návrh relací a registrace/obnovy, e-mailové doručování, Google/Apple registrace aplikací a callbacky, bootstrap administrátora. Více posádek na účet, převody s odkazem na 7 dní, reset na 30 minut a pravidla odvolání relací jsou již potvrzené. Poskytovatelské klíče mimo repozitář.
+- Databázové IT jsou uživatelem úspěšně ověřené nad rallye_test; další běhy provádí uživatel podle testing.md. Nedostupnost tunelu/údajů v prostředí Codexu není důvod měnit infrastrukturu ani oslabovat ochrany.
+- Před novými migracemi ověřit návaznost na aplikovanou V1 a existující Flyway historii v povoleném prostředí. Žádný automatický baseline/repair/clean; V1 se nepřepisuje.
+- Pravidla 3b ve specifikaci 0.6.0 jsou doplněna: historická vazba kapitána, rušení účtů/převodů, zakládání bez kapitána administrátorem, aktivní ověřený cíl a zákaz převodu na sebe sama. 3b.1 (auditní základ, ADMIN a SQL bootstrap) nemá blokující obchodní rozpor. Před závodní návazností určit přesný okamžik historického snímku vůči oficiálnímu/individuálnímu startu a pozdním účastem. Funkční pravidla 2A se nemění; SMTP/e-mailové API zbývá před nasazením.
 - Před etapou účastí/průběhu: rozhodnout nejednoznačnosti oddílu 14 specifikace, atomickou uzávěrku a příjem příkazů. Nově potvrzená pravidla se znovu neotevírají.
 - Před statistikami: přesné vyjádření mediánu při sudém počtu vzorků, pokud vyjde půl milisekundy; neupravovat kvůli tomu zaznamenané doby.
-- Stanovit retenci auditu/idempotence/souborů, limity uploadů, relací a hádání kódů, ochranu a obnovu záloh.
+- Audit: bez časového omezení a bez automatického úklidu. Archivace/mazání od stáří 90 dní, s potvrzením a auditem; CSV export kdykoliv bez změn DB, UTF-8 s BOM a středníkem. Idempotence 3b: schválených 24 hodin, shodný výsledek, jiný payload HTTP 409, po retenci možnost odstranění evidence. Technický způsob úklidu souborů a evidence, konkrétní limity pokusů o převod a zálohy dopracovat.
 - Maven v minulém prostředí vybíral Javu 17 a PATH Javu 11: explicitně ověřovat JDK 21. Metadata některých zdrojů Flyway hlásí HTTP 401; nevkládat přístupové údaje do projektu.
 - Budoucí ARM64 ověřit při kontejnerizaci; lokální Windows testy nevyžadují Docker, WSL ani systémové instalace.
 
@@ -160,7 +205,7 @@ Povolit pouze potřebné rastrové formáty (navržen JPEG/PNG), ověřit skute�
 | --- | --- |
 | 2A – lokální autentizace (dokončena) | Účty, LOCAL identita, ověření e-mailu, obnova a změna hesla, databázové relace, cookies/Bearer a CSRF. Automatické i manuální ověření úspěšné; skutečné doručování zbývá před nasazením. |
 | 3a – infrastruktura testů (testovací připojení ověřeno) | Vyhrazená DB/role rallye_test je dostupná a uživatel potvrdil úspěšné IT včetně lokální schránky. Postup a read-only kontroly oprávnění zůstávají v ops/postgresql-test a postgresql-test-setup.md; úspěch IT sám nedokládá provedení všech administrátorských kontrol. Žádné další cloudové změny nespouštět automaticky. |
-| 3b – vlastnictví a posádky (následující implementační etapa) | Navázat na dokončené účty a lokální autentizaci 2A, neopakovat jejich migraci. Admin bootstrap, více posádek bez trvalých členů, převody (lze vyčlenit do 3d), bezpečná DTO a audit. Před implementací uzavřít relevantní zbývající rozhodnutí. Testy cizích zdrojů, oprávnění, duplicit, souběhu a transakčního rollbacku na izolované DB. |
+| 3b – vlastnictví, posádky, administrace a audit (část 3b.1 dokončena a ověřena) | ADMIN, SQL bootstrap, audit rolí a 2A jsou v kódu. Další kroky: posádky/fotografie, běžné a administrátorské převody, rušení účtů podle historie, auditní export a ruční úklid. Rozdělení a kritéria níže; ostatní části se nevydávají za hotové. |
 | 3c – externí přihlášení | Google a Apple, minimální údaje, bezpečné propojení/konflikty identit a mobilní předání relace. Automatické testy validace tokenů/state/nonce a souběhu propojení; manuální smoke s oběma poskytovateli až po dodání konfigurace. |
 | 4 – šablony | GPS/CODE, časová pravidla, pořadí a statistické verze. Testy DTO validace, ms hranic bodování a rozsahu; žádné kvízy. |
 | 5 – konání a účasti | Kopie šablony, přihláška přes odkaz, historický název, text členů a počet dětí, maximum (výchozí 5), kopie i z nedokončené účasti a uzamčení. Testy počítání řádků, limitů, unikátnosti a souběhu oficiálního startu s úpravami. |
@@ -170,6 +215,34 @@ Povolit pouze potřebné rastrové formáty (navržen JPEG/PNG), ověřit skute�
 | 9 – provoz | ARM64 image, konfigurace, health checks, zálohování a obnova. Žádné cloudové nasazení bez výslovného zadání. |
 
 Etapa 3 je úmyslně rozdělena na malé části; nedoplňovat ještě všechny závodní moduly. Audit, oprávnění a idempotenci přidávat současně s operacemi, které je vyžadují. Každou část ukončit odpovídajícími automatickými testy a dokumentací. Commit ani push není automatickým krokem.
+
+## Implementační kroky 3b a kritéria dokončení (návrh)
+
+Nové regresní scénáře: pouhá přihláška dovolí zrušení účtu a zůstane zachovaná;
+běžící účast zrušení odmítne bez částečných změn; dokončená historická účast vede
+k anonymizaci i po převodu posádky. Ověřit zrušení čekajících převodů na obou
+stranách, založení/odebrání kapitána podle role, neověřený/neaktivní cíl a převod
+na sebe sama. Pro úklid otestovat hranici 90 dní, počet ve fázi náhledu a opětovné
+ověření při potvrzení. U CSV ověřit BOM, středník a nulové DB zápisy včetně
+autentizace; u idempotence shodný výsledek, HTTP 409 a retenční hranici 24 hodin.
+
+Historická vazba je již schválená: kapitán při skutečném zahájení závodu; pouhá
+přihláška ji nevytváří a převod ji nepřepisuje. Model ji musí trvale zachovat.
+Přesný synchronizační bod snímku vůči startům dopracovat při etapě účastí/průběhu.
+Posádky zrušeného účtu se automaticky nemažou, ani když ještě nemají historii.
+Zrušení posledního aktivního ADMIN se odmítne, dokud existuje jen tento administrátor.
+
+| Krok | Rozsah a dokončení |
+| --- | --- |
+| 3b.0 | Schválená pravidla jsou v 0.6.0; dopracovat technický kontrakt API, vazby a testy. Žádný dosud zjištěný obchodní rozpor neblokuje zahájení 3b.1. Okraje závodního startu řešit před implementací jeho návazností. |
+| 3b.1 – dokončeno a ověřeno | Flyway V2, auditní základ a čtení s filtry, aktuální ADMIN, správa rolí jiných aktivních ověřených uživatelů, SQL bootstrap a DB ochrany posledního administrátora. Audit bezpečnostních operací 2A je podle aktuálního zadání již zahrnut. Grant/revoke i audit a idempotentní výsledek jsou atomické. Unit testy 90/90, integrační sada 26/26 a manuální Postman ověření dokončeny; integrační BUILD SUCCESS potvrdil uživatel. |
+| 3b.2 | CRUD posádek, limity a soukromé fotografie, aktuální vlastnictví/ADMIN, Idempotency-Key. Ověřit duplicity názvu/RZ, posádku bez kapitána, konflikty a autorizovaný souborový přístup. |
+| 3b.3 | Běžný převod na ID cíle do 7 dní, zrušení původním kapitánem, editace ano/smazání ne; administrativní změna bez potvrzení atomicky ruší čekající žádost. Ověřit souběhy, audit, replay a zachování závodního oprávnění v budoucí návaznosti. |
+| 3b.4 | Rušení účtu uživatelem i ADMIN: bez historické účasti smazat, jinak anonymizovat; během závodění odmítnout, pouhou přihlášku zachovat. Všechny čekající převody daného uživatele zrušit, posádky zachovat bez kapitána. Ověřit transakční rollback, FK, neměnnou historickou vazbu i po převodu a zákaz zrušení posledního ADMIN. |
+| 3b.5 | Audit úspěšného přihlášení, odhlášení a změny/resetu hesla je již implementován v 3b.1; znovu jej nepřidávat. Zbývá CSV export kdykoliv bez DB změn, UTF-8 s BOM a středníkem. Archivace/mazání od stáří 90 dní, dvoukrokové potvrzení a opětovná kontrola hranice při provedení; audit úklidu a rollback. Žádná automatika. |
+| 3b.6 | Regresní testy 2A, jednotkové/HTTP testy, chráněné PostgreSQL IT a Postman scénáře více vlastníků a administrátorů. Codex spouští testy bez DB, uživatel integrační běh a potvrzuje výsledek. Aktualizovat dokumentaci podle skutečné implementace. |
+
+Převodní zprávy potřebují samostatný účel a odkaz v SMTP i lokálním adaptéru; nynější větev pro jiný účel než aktivaci vytváří resetovací zprávu. Bez rozšíření ji pro převod nepoužívat. Zakládání, změna vlastníka, zrušení čekajícího převodu, audit a idempotentní výsledek musejí být konzistentní v jedné transakci. Administrátorské zásahy také neobcházejí zákaz mazání historické posádky. Fyzické rušení účtů neznamená mazání historie posádek ani auditu.
 
 ## Zdroje technického návrhu
 
@@ -198,7 +271,7 @@ Změněn pouze tento plán a vytvořeno vydání 0.5.0. Starší vydání a prac
 
 Všech šest rozhodnutí je zapracováno do datového modelu, autentizace, transakcí a akceptačních scénářů. Anonymizační postup se týká osobních údajů samotného účtu; historický members_text se nesmí automaticky čistit spolu se jménem účtu. Veřejné DTO ani archiv členy nevystavují. Závodní zařízení je nezávislá autorita pro pokračování účasti a převod kapitána mění pouze správu; závodní operace se nesmějí omylem odmítnout jen kvůli změně captain_user_id. Individuální start je údaj účasti pro výpočet skutečné doby absolvování, ne nový společný limit. Ruční remíza nese vzájemné pořadí dvou i více účastí; audit se zachová i poté, co rozhodnutí po zániku remízy přestane ovlivňovat výsledky.
 
-Pro první implementační části není otevřená žádná z těchto šesti obchodních otázek. Nadále je potřeba připravit testovací DB a technickou konfiguraci přihlášení/doručování e-mailů. Před implementací příslušných okrajových operací zůstávají otázky aktuální kapitoly 14 specifikace: potvrzovací lhůty e-mailu, nevyřízené žádosti při zrušení účtu, autorizace zrušení převodu, kopírování počtu dětí a textové limity, aktivace prvního stanoviště a hranice uzávěrky, pozdní výjimka, rozsah veřejných historických verzí a rušení závěrečných stanovišť. Kvízy jsou odložené. Nejde o blokaci celého backendu; závislé operace vyžadují rozhodnutí před implementací.
+Pro první implementační části není otevřená žádná z těchto šesti obchodních otázek. Testovací DB i lokální přihlášení již byly ověřeny v 2A; skutečné doručování zbývá před nasazením. Před implementací příslušných okrajových operací zůstávají otázky aktuální kapitoly 14 specifikace: lhůty jiných budoucích potvrzení e-mailu než registrace 2A, kopírování počtu dětí a textové limity, aktivace prvního stanoviště a hranice uzávěrky, pozdní výjimka, rozsah veřejných historických verzí a rušení závěrečných stanovišť. Kvízy jsou odložené. Nejde o blokaci celého backendu; závislé operace vyžadují rozhodnutí před implementací.
 ## Implementace etapy 2A
 
 Přidány user_account, user_identity (LOCAL a připravené GOOGLE/APPLE), user_action_token a user_session ve Flyway V1. Přístup k datům je uvnitř identity.persistence přes JDBC; API má samostatná DTO. Tokeny a relace ukládají pouze SHA-256 digest náhodných tajemství, hesla Argon2id. Účet je do jednorázového ověření e-mailu nepoužitelný. Aktivace má 24 hodin, reset 30 minut. Jednotné pořadí zámků účtu chrání proti souběhu přihlášení, resetu, změny hesla a odvolání relací. Jednorázové tokeny spotřebuje podmíněný UPDATE v téže transakci jako změna účtu/hesla.

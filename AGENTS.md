@@ -7,8 +7,9 @@ Tato pravidla jsou závazná pro další práci Codexu v tomto repozitáři.
 - Respektuj existující funkční konfiguraci a skutečnou strukturu projektu. Základ je Java 21, Spring Boot 4.1.1, Maven Wrapper, PostgreSQL 17, JPA, Flyway, Spring MVC a Jakarta Validation.
 - Kořenový Java package je `cz.mh.rallye.rallye_backend`. Neměň jej bez zadání.
 - Architektura je modulární monolit v jedné Spring Boot aplikaci. Čleň podle funkčních oblastí; návrh je v `docs/backend-plan.md`. Nevytvářej prázdné moduly ani zbytečné frameworky a abstrakce.
-- Závazná funkční specifikace je `docs/Zavody_specifikace_v0.5.0.md` (verze 0.5.0), vydání jsou v `docs/Zavody_specifikace_vX.Y.Z.md`. Rozlišuj potvrzená pravidla od pracovních návrhů a respektuj závaznou terminologii stanovišť a konání. Nevymýšlej chybějící obchodní pravidla. Nejasnosti zapisuj jako otázky k rozhodnutí a neimplementuj závislé chování před jejich vyřešením.
+- Závazná funkční specifikace je `docs/Zavody_specifikace_v0.6.0.md` (verze 0.6.0), vydání jsou v `docs/Zavody_specifikace_vX.Y.Z.md`. Rozlišuj potvrzená pravidla od pracovních návrhů a respektuj závaznou terminologii stanovišť a konání. Nevymýšlej chybějící obchodní pravidla. Nejasnosti zapisuj jako otázky k rozhodnutí a neimplementuj závislé chování před jejich vyřešením.
 - Schválená etapa 2A zahrnuje uživatelské účty, lokální autentizaci, tokeny, databázové relace, Flyway migrace a testy. Bez dalšího zadání neimplementuj posádky, závody, Google/Apple OAuth ani změnu e-mailu. `/api/hello` může zůstat. Účet patří kapitánovi; trvalá posádka nemá seznam členů, členové patří pouze konkrétní účasti.
+- Schválená implementace 3b.1 přidává ADMIN, správu rolí jiných aktivních účtů, jednorázový SQL bootstrap, audit změn rolí a úspěšných bezpečnostních operací 2A a administrativní čtení auditu. CSV/archivace/mazání auditu zůstávají v 3b.5. Změny rolí, bootstrap a budoucí rušení/deaktivace účtů musejí sdílet invariant posledního aktivního ADMIN a konzistentní pořadí zámků podle docs/administration-3b1.md. Bootstrap nespouštěj bez výslovného zadání cílového prostředí.
 
 ## Implementace
 

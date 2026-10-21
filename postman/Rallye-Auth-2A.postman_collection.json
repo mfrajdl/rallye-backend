@@ -2,7 +2,7 @@
   "info": {
     "name": "Rallye Auth 2A — web cookies + CSRF",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Manual local development tests matching AuthController. See docs/authentication-2a.md. Enable cookie jar; allowlist localhost for scripts. Collection variables have no real secrets. Fill password/newPassword/resetNewPassword locally. Activation/reset tokens must be copied from local mailbox; never commit/export populated secrets. Run requests individually in numbered order, pausing to fill tokens. No Authorization or mobile headers: web cookie flow. password is updated after successful password change/reset. Error folder is optional and state-dependent."
+    "description": "Manual local development tests matching AuthController. See docs/authentication-2a.md. Enable cookie jar; allowlist localhost for scripts. Collection variables have no real secrets. Fill password/newPassword/resetNewPassword locally. Activation/reset tokens must be copied from local mailbox; never commit/export populated secrets. Run requests individually in numbered order, pausing to fill tokens. No Authorization or mobile headers: web cookie flow. password is updated after successful password change/reset. Error folder is optional and state-dependent. Administration 3b.1 is in folder 05; manual SQL bootstrap is required first. See docs/administration-3b1.md. No actual credentials are included."
   },
   "auth": {
     "type": "noauth"
@@ -50,6 +50,36 @@
     },
     {
       "key": "csrfToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminTargetId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminAccountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminGrantKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminRevokeKey",
       "value": "",
       "type": "string"
     }
@@ -1108,6 +1138,389 @@
             }
           ],
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 — Administration 3b.1 (manual SQL bootstrap first)",
+      "description": "Run individually after 2A and bootstrap. Cookie jar + CSRF stay enabled. Never runs SQL. Export/cleanup belongs to 3b.5.",
+      "item": [
+        {
+          "name": "18 Login administrator",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Fill adminEmail/adminPassword after manual SQL bootstrap. Uses web cookie, never Bearer.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"rememberMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const email = pm.collectionVariables.get('adminEmail');",
+                  "const password = pm.collectionVariables.get('adminPassword');",
+                  "if (!email || !password) { pm.execution.skipRequest(); throw new Error('Fill adminEmail and adminPassword locally.'); }",
+                  "pm.request.body.update(JSON.stringify({email, password, rememberMe: false}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) pm.collectionVariables.set('adminAccountId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19 Read audit",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/admin/audit-events?page=0&size=20",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "description": "Bounded paginated audit. Filters: actorId,targetId,eventType,from inclusive,until exclusive."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20 Grant ADMIN (repeat Send to verify replay)",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/admin/users/{{adminTargetId}}/roles/ADMIN",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{adminGrantKey}}"
+              }
+            ],
+            "description": "Target must be another active verified user. Same key is retained for replay; clear it for a new command."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminTargetId')) { pm.execution.skipRequest(); throw new Error('Fill adminTargetId with another verified account UUID.'); }",
+                  "if (!pm.collectionVariables.get('adminGrantKey')) pm.collectionVariables.set('adminGrantKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21 Filter grant audit",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/admin/audit-events?eventType=ADMIN_GRANTED&targetId={{adminTargetId}}&page=0&size=20",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "description": "One ADMIN_GRANTED business event after repeated identical grant."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22 Revoke ADMIN",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/admin/users/{{adminTargetId}}/roles/ADMIN",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{adminRevokeKey}}"
+              }
+            ],
+            "description": "Target must be another active verified user. Same key is retained for replay; clear it for a new command."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminTargetId')) { pm.execution.skipRequest(); throw new Error('Fill adminTargetId with another verified account UUID.'); }",
+                  "if (!pm.collectionVariables.get('adminRevokeKey')) pm.collectionVariables.set('adminRevokeKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23 Logout administrator",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/auth/logout",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "description": "Role remains; only this web session is revoked."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Optional errors — login administrator again first",
+          "item": [
+            {
+              "name": "400 Missing Idempotency-Key",
+              "request": {
+                "method": "PUT",
+                "url": "{{baseUrl}}/api/v1/admin/users/{{adminTargetId}}/roles/ADMIN",
+                "auth": {
+                  "type": "noauth"
+                },
+                "header": [],
+                "description": "Target must be another active verified user. Same key is retained for replay; clear it for a new command."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('adminTargetId')) { pm.execution.skipRequest(); throw new Error('Fill adminTargetId with another verified account UUID.'); }"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                      "pm.test('Error INVALID_REQUEST', () => pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "24 Own role change returns 403",
+              "request": {
+                "method": "DELETE",
+                "url": "{{baseUrl}}/api/v1/admin/users/{{adminAccountId}}/roles/ADMIN",
+                "auth": {
+                  "type": "noauth"
+                },
+                "header": [
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}"
+                  }
+                ],
+                "description": "Requires currently logged-in ADMIN. This is an ownership restriction, not a CSRF bypass test."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('adminAccountId')) { pm.execution.skipRequest(); throw new Error('Login administrator first.'); }"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                      "pm.test('Error SELF_ROLE_CHANGE_FORBIDDEN', () => pm.expect(pm.response.json().code).to.eql('SELF_ROLE_CHANGE_FORBIDDEN'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "409 Same grant key with different operation",
+              "request": {
+                "method": "DELETE",
+                "url": "{{baseUrl}}/api/v1/admin/users/{{adminTargetId}}/roles/ADMIN",
+                "auth": {
+                  "type": "noauth"
+                },
+                "header": [
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{adminGrantKey}}"
+                  }
+                ],
+                "description": "Target must be another active verified user. Same key is retained for replay; clear it for a new command."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (!pm.collectionVariables.get('adminTargetId')) { pm.execution.skipRequest(); throw new Error('Fill adminTargetId with another verified account UUID.'); }",
+                      "if (!pm.collectionVariables.get('adminGrantKey')) pm.collectionVariables.set('adminGrantKey', pm.variables.replaceIn('{{$guid}}'));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                      "pm.test('Error IDEMPOTENCY_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('IDEMPOTENCY_CONFLICT'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "401 Audit after logout",
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/admin/audit-events",
+                "auth": {
+                  "type": "noauth"
+                },
+                "header": [],
+                "description": "Run after logout."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                      "pm.test('Error UNAUTHENTICATED', () => pm.expect(pm.response.json().code).to.eql('UNAUTHENTICATED'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "403 Audit for ordinary user",
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/admin/audit-events",
+                "auth": {
+                  "type": "noauth"
+                },
+                "header": [],
+                "description": "Login ordinary user in 2A first; response requires no CSRF because GET."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                      "pm.test('Error ACCESS_DENIED', () => pm.expect(pm.response.json().code).to.eql('ACCESS_DENIED'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     }

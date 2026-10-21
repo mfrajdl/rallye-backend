@@ -1,7 +1,6 @@
 package cz.mh.rallye.rallye_backend.identity.api;
 
 import java.io.IOException;
-import java.util.List;
 import cz.mh.rallye.rallye_backend.identity.application.AuthFailure;
 import cz.mh.rallye.rallye_backend.identity.application.AuthService;
 import jakarta.servlet.FilterChain;
@@ -37,8 +36,11 @@ public class AuthSessionFilter extends OncePerRequestFilter {
                     cookies.clear(response);
                 } else {
                     var context = SecurityContextHolder.createEmptyContext();
+                    var authorities = new java.util.ArrayList<SimpleGrantedAuthority>();
+                    authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+                    if (service.isAdministrator(principal)) authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
                     context.setAuthentication(new UsernamePasswordAuthenticationToken(principal, null,
-                            List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+                            authorities));
                     SecurityContextHolder.setContext(context);
                     if (cookie != null && principal.rememberMe()) cookies.set(response, secret, true);
                 }

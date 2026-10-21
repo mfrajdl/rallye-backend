@@ -44,6 +44,7 @@ public class AuthConfiguration {
                                 "/api/v1/auth/email-verifications", "/api/v1/auth/email-verification-requests",
                                 "/api/v1/auth/login", "/api/v1/auth/password-reset-requests",
                                 "/api/v1/auth/password-resets").permitAll()
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((request, response, error) -> ApiErrors.write(response, 401, "UNAUTHENTICATED"))
