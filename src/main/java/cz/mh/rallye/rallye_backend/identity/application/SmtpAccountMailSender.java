@@ -12,6 +12,9 @@ public class SmtpAccountMailSender implements AccountMailSender {
     private final JavaMailSender sender;
     private final String from;
     private final String baseUrl;
+    private String transferPage;
+    @Value("${rallye.crews.transfer-client-page:${rallye.auth.public-base-url:http://localhost:3000}/crew-transfer}")
+    public void transferPage(String value) {this.transferPage=validateBaseUrl(value);}
     private final java.util.concurrent.Executor executor;
     public SmtpAccountMailSender(JavaMailSender sender,
             @org.springframework.beans.factory.annotation.Qualifier("accountMailExecutor") java.util.concurrent.Executor executor,
@@ -19,6 +22,7 @@ public class SmtpAccountMailSender implements AccountMailSender {
             @Value("${rallye.auth.public-base-url:http://localhost:3000}") String baseUrl) {
         this.sender = sender; this.from = from; this.executor = executor;
         this.baseUrl = validateBaseUrl(baseUrl);
+        this.transferPage=this.baseUrl+"/crew-transfer";
     }
     static String validateBaseUrl(String baseUrl) {
         URI uri = URI.create(baseUrl);
@@ -32,6 +36,17 @@ public class SmtpAccountMailSender implements AccountMailSender {
     @Override public void send(String email, String purpose, String token) {
         // SMTP latency must not distinguish existing accounts from unknown reset requests.
         executor.execute(() -> deliver(email, purpose, token));
+    }
+    @Override public void sendTransfer(String email,String crewName,java.util.UUID id,String token,java.time.Instant expires) {
+        String body=CrewTransferMessage.text(transferPage,crewName,id,token,expires);
+        executor.execute(()->{
+            SimpleMailMessage message=new SimpleMailMessage();message.setFrom(from);message.setTo(email);
+            message.setSubject("Rallye: převod kapitána posádky");message.setText(body);
+            try {sender.send(message);}
+            catch(RuntimeException failure) {
+                org.slf4j.LoggerFactory.getLogger(SmtpAccountMailSender.class).warn("Crew transfer email delivery failed; resend can be requested.");
+            }
+        });
     }
     private void deliver(String email, String purpose, String token) {
         boolean verify = "EMAIL_VERIFICATION".equals(purpose);

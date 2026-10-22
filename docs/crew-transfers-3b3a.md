@@ -114,3 +114,9 @@ Dostupný Failsafe report obsahuje 48 testů, 0 errors, 0 failures a 0 skipped,
 včetně 9 nových případů CrewTransfersIT. Jde o uživatelem potvrzený běh,
 nikoli vlastní spuštění PostgreSQL testů Codexem. Část 3b.3a je dokončená
 a ověřená; celá 3b.3 zůstává rozpracovaná.
+
+## Navazující implementace
+
+Část 3b.3b již přidává REST založení a resend, doručování a idempotenci.
+Tento dokument popisuje původní hranici 3b.3a. Aktuální kontrakt a zbývající
+rozsah 3b.3c uvádí [crew-transfers-3b3b.md](crew-transfers-3b3b.md).

@@ -12,6 +12,27 @@ import static org.junit.jupiter.api.Assertions.*;
 class LocalFileAccountMailTest {
     @TempDir Path directory;
 
+    @Test void transferMailUsesSameDedicatedClientLinkInFileAndSmtp() throws Exception {
+        var local=new LocalFileAccountMailSender(directory.toString(),"http://localhost:3000","127.0.0.1");
+        local.transferPage("https://client.example.test/captain");
+        var transport=org.mockito.Mockito.mock(org.springframework.mail.javamail.JavaMailSender.class);
+        var smtp=new SmtpAccountMailSender(transport,Runnable::run,"rallye@example.test","http://localhost:3000");
+        smtp.transferPage("https://client.example.test/captain");
+        var id=java.util.UUID.randomUUID();var expires=java.time.Instant.parse("2026-10-29T12:00:00Z");
+        local.sendTransfer("target@example.test","Our crew",id,"test-secret",expires);
+        smtp.sendTransfer("target@example.test","Our crew",id,"test-secret",expires);
+        var message=org.mockito.ArgumentCaptor.forClass(org.springframework.mail.SimpleMailMessage.class);
+        org.mockito.Mockito.verify(transport).send(message.capture());
+        String text;
+        try(var paths=Files.list(directory)) {text=Files.readString(paths.findFirst().orElseThrow());}
+        assertTrue(text.contains("Purpose: CREW_TRANSFER"));assertTrue(text.contains(message.getValue().getText()));
+        assertTrue(text.contains("Our crew"));assertTrue(text.contains("7 dní"));assertTrue(text.contains(expires.toString()));
+        assertTrue(text.contains("https://client.example.test/captain#transferId="+id+"&token=test-secret"));
+        assertFalse(text.contains("/reset-password"));
+        assertThrows(IllegalArgumentException.class,()->local.transferPage("http://public.example.test/captain"));
+        assertThrows(IllegalArgumentException.class,()->smtp.transferPage("https://client.example.test/page?token=x"));
+    }
+
     @Test void mailboxContainsActivationAndResetLinksWithoutExternalDelivery() throws Exception {
         var sender = new LocalFileAccountMailSender(directory.toString(), "http://localhost:3000/", "127.0.0.1");
         sender.send("local@example.test", "EMAIL_VERIFICATION", "activation-secret");

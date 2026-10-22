@@ -40,4 +40,8 @@ public class CrewTransferStore {
                 WHERE id=? AND status='PENDING' RETURNING *
                 """,this::map,status.name(),Timestamp.from(now),actor,reason,id);
     }
+    public CrewTransfer rotate(UUID id,String hash) {
+        return jdbc.queryForObject("UPDATE crew_transfer SET token_hash=? WHERE id=? AND status='PENDING' RETURNING *",
+                this::map,hash,id);
+    }
 }

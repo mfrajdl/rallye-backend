@@ -152,6 +152,51 @@
       "key": "crewCaptainChangeKey",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "crewTransferTargetEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferVersion",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferResendKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferExpiresAt",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferCreatedKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferCreatedVersion",
+      "value": "",
+      "type": "string"
     }
   ],
   "event": [
@@ -2729,6 +2774,225 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "10 — Crew transfers 3b.3b",
+      "description": "Run individually as current captain, after creating two verified active accounts. Inherited CSRF and cookie jar apply. Keys are generated once and retained for replay. Do not delete the crew or change captain using ADMIN while a request is pending: guards are scheduled for 3b.3c. Client acceptance page is not yet implemented. Never export populated tokens.",
+      "item": [
+        {
+          "name": "3b3b Create captain transfer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/transfers",
+            "description": "Set target email and current crew version. 201 and one email; preserve key and version for replay. Clear key only for a new independent operation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetEmail\": \"{{crewTransferTargetEmail}}\",\n  \"version\": {{crewTransferVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewId')||'')) {pm.execution.skipRequest();throw new Error('Set crewId and log in as its current captain.');}",
+                  "if(!pm.collectionVariables.get('crewTransferTargetEmail') || !/^[0-9]+$/.test(pm.collectionVariables.get('crewTransferVersion')||'')) {pm.execution.skipRequest();throw new Error('Set crewTransferTargetEmail and crewTransferVersion from GET crew detail.');}",
+                  "if(!pm.collectionVariables.get('crewTransferKey')) pm.collectionVariables.set('crewTransferKey',pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201',()=>pm.response.to.have.status(201));",
+                  "pm.test('No token or hash in response',()=>{const b=pm.response.text();pm.expect(b).not.to.match(/token|token_hash|tokenHash/i);});",
+                  "if(pm.response.code===201){const r=pm.response.json();pm.collectionVariables.set('crewTransferId',r.id);pm.collectionVariables.set('crewTransferExpiresAt',r.expiresAt);pm.test('Location identifies request',()=>pm.expect(pm.response.headers.get('Location')).to.eql('/api/v1/crews/'+pm.collectionVariables.get('crewId')+'/transfers/'+r.id));}",
+                  "if(pm.response.code===201){const sent=JSON.parse(pm.variables.replaceIn(pm.request.body.raw));pm.collectionVariables.set('crewTransferCreatedKey',pm.variables.replaceIn(pm.request.headers.get('Idempotency-Key')));pm.collectionVariables.set('crewTransferCreatedVersion',String(sent.version));}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3b Replay captain transfer creation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/transfers",
+            "description": "Repeat original inputs/key. 201 and original safe result, no extra email. Do not refresh version for this replay.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetEmail\": \"{{crewTransferTargetEmail}}\",\n  \"version\": {{crewTransferVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewId')||'')) {pm.execution.skipRequest();throw new Error('Set crewId and log in as its current captain.');}",
+                  "if(!pm.collectionVariables.get('crewTransferTargetEmail') || !/^[0-9]+$/.test(pm.collectionVariables.get('crewTransferVersion')||'')) {pm.execution.skipRequest();throw new Error('Set crewTransferTargetEmail and crewTransferVersion from GET crew detail.');}",
+                  "if(!pm.collectionVariables.get('crewTransferKey')) pm.collectionVariables.set('crewTransferKey',pm.variables.replaceIn('{{$guid}}'));",
+                  "if(!pm.collectionVariables.get('crewTransferId')) {pm.execution.skipRequest();throw new Error('Create the request first.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201',()=>pm.response.to.have.status(201));",
+                  "pm.test('No token or hash in response',()=>{const b=pm.response.text();pm.expect(b).not.to.match(/token|token_hash|tokenHash/i);});",
+                  "if(pm.response.code===201){const r=pm.response.json();pm.test('Original request ID',()=>pm.expect(r.id).to.eql(pm.collectionVariables.get('crewTransferId')));pm.test('Original expiry',()=>pm.expect(r.expiresAt).to.eql(pm.collectionVariables.get('crewTransferExpiresAt')));}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3b Conflict captain transfer idempotency",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferCreatedKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/transfers",
+            "description": "Requires a prior successful Create in this collection. Uses the captured actual creation key and an incremented captured original version. No UUID is generated here. Expected 409 IDEMPOTENCY_CONFLICT. Collection version stays unchanged.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetEmail\": \"{{crewTransferTargetEmail}}\",\n  \"version\": {{crewTransferVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const key=String(pm.collectionVariables.get('crewTransferCreatedKey')||'');",
+                  "const original=String(pm.collectionVariables.get('crewTransferCreatedVersion')||'');",
+                  "if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)||!pm.collectionVariables.get('crewTransferId')||!/^\\d+$/.test(original)||!Number.isSafeInteger(Number(original)+1)){pm.execution.skipRequest();throw new Error('Run Create successfully first; the conflict test must reuse its captured key.');}",
+                  "pm.request.headers.upsert({key:'Idempotency-Key',value:key});",
+                  "pm.variables.set('crewTransferVersion',String(Number(original)+1));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409',()=>pm.response.to.have.status(409));",
+                  "pm.test('Idempotency conflict',()=>pm.expect(pm.response.json().code).to.eql('IDEMPOTENCY_CONFLICT'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3b Resend captain transfer email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferResendKey}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/transfers/{{crewTransferId}}/resend",
+            "description": "200; new token invalidates the old one and preserves original expiry. Repeating this key sends no extra message. For another resend clear crewTransferResendKey. Copy the latest local-mail fragment token into crewTransferToken only for future 3b.3c testing."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewId')||'')) {pm.execution.skipRequest();throw new Error('Set crewId and log in as its current captain.');}",
+                  "if(!uuid.test(pm.collectionVariables.get('crewTransferId')||'')) {pm.execution.skipRequest();throw new Error('Create a transfer first.');}",
+                  "if(!pm.collectionVariables.get('crewTransferResendKey')) pm.collectionVariables.set('crewTransferResendKey',pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "pm.test('No token or hash in response',()=>{const b=pm.response.text();pm.expect(b).not.to.match(/token|token_hash|tokenHash/i);});",
+                  "if(pm.response.code===200) pm.test('Expiry unchanged',()=>pm.expect(pm.response.json().expiresAt).to.eql(pm.collectionVariables.get('crewTransferExpiresAt')));"
+                ]
+              }
+            }
+          ],
+          "response": []
         }
       ]
     }

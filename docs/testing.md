@@ -223,3 +223,23 @@ s výsledkem BUILD SUCCESS; dostupný Failsafe report uvádí 48 testů, 0 error
 0 failures a 0 skipped. Jde o uživatelem potvrzený běh proti rallye_test,
 nikoli PostgreSQL běh Codexu.
 Rozsah a návaznosti: [crew-transfers-3b3a.md](crew-transfers-3b3a.md).
+
+## Testy založení převodu a e-mailu 3b.3b
+
+Codex provedl `.\mvnw.cmd verify` s JDK 21: BUILD SUCCESS, 159 testů,
+0 failures, 0 errors, 0 skipped. Nové unit/HTTP případy pokrývají založení,
+resend, replay, konflikty, autorizaci, CSRF, rate limiting, sestavení zpráv
+a odesílání až po commitu. PostgreSQL testy se zkompilovaly.
+
+CrewTransfersIT nyní obsahuje 17 případů (9 původních + 8 nových). Nové případy
+ověřují skutečný rollback žádosti, rotace a evidence idempotence bez odeslání
+zprávy, hashování, opakování, souběh a neplatnost původního tokenu po rotaci.
+Uživatel potvrdil `.\mvnw.cmd -Pit verify` proti rallye_test: BUILD SUCCESS.
+Dostupný Failsafe report uvádí 56 testů, 0 errors, 0 failures a 0 skipped,
+včetně všech 17 případů CrewTransfersIT. Jde o uživatelem potvrzený běh, nikoli běh Codexu.
+Postman postup: [crew-transfers-3b3b.md](crew-transfers-3b3b.md).
+
+Regrese pořadí kontrol: unit test potvrzuje přednost IDEMPOTENCY_CONFLICT
+před doménovou kontrolou verze; verify prošlo se 159 testy. Nový PostgreSQL
+případ ověřuje stejný scénář po skutečné editaci posádky a prošel v uživatelem potvrzeném běhu.
+Postman konflikt používá zachycený klíč úspěšného Create, nikdy negeneruje nový.

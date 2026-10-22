@@ -41,6 +41,7 @@ class CrewTransfersIT {
         properties.add("spring.datasource.hikari.connection-init-sql",()->"SET search_path TO "+SCHEMA);
     }
     @Autowired CrewTransferLifecycle lifecycle;
+    @Autowired CrewTransferService service;
     @Autowired CrewService crews;
     @Autowired AuthService auth;
     @Autowired IdentityIT.TestMail mail;
@@ -48,6 +49,7 @@ class CrewTransfersIT {
     @Autowired MutableClock clock;
     @Autowired PlatformTransactionManager manager;
     @MockitoSpyBean CrewTransferStore transfers;
+    @MockitoSpyBean cz.mh.rallye.rallye_backend.shared.persistence.CommandStore commands;
     AuthService.LoginSession owner,target;
     AuthService.LoginSession account() {
         String email=UUID.randomUUID()+"@example.test";
@@ -70,6 +72,99 @@ class CrewTransfersIT {
         Throwable thrown=assertThrows(RuntimeException.class,work::run);
         while(thrown.getCause()!=null) thrown=thrown.getCause();
         assertSame(marker,thrown,"Must fail at the injected persistence write");
+    }
+    String targetEmail() {return jdbc.queryForObject("SELECT email FROM user_account WHERE id=?",String.class,target.principal().accountId());}
+    long messages() {return mail.deliveries.stream().filter(item->item.purpose.equals("CREW_TRANSFER")).count();}
+    @Test void restFoundationCreatesOneDigestAndOneMailForSameIdempotentCommand() {
+        var crew=crew();UUID key=UUID.randomUUID();long before=messages();String email=targetEmail();
+        var first=service.create(owner.principal(),crew.id(),key,email,0);
+        String secret=mail.token(email,"CREW_TRANSFER");
+        var tokens=new SecretTokens();assertTrue(tokens.hash(secret).equals(transfers.find(first.id()).tokenHash()));
+        assertFalse(secret.equals(transfers.find(first.id()).tokenHash()));
+        assertEquals(first,service.create(owner.principal(),crew.id(),key,email,0));assertEquals(before+1,messages());
+        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,
+                ()->service.create(owner.principal(),crew.id(),key,email,1)).code());
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM crew_transfer WHERE crew_id=?",Integer.class,crew.id()));
+        String ledger=jdbc.queryForObject("SELECT result_data::text FROM admin_role_command WHERE actor_id=? AND command_key=?",
+                String.class,owner.principal().accountId(),key);
+        assertFalse(ledger.contains(secret));assertFalse(ledger.contains("token_hash"));assertFalse(ledger.contains("tokenHash"));
+        assertEquals(0,crews.detail(owner.principal(),crew.id()).version());
+    }
+    @Test void resendRotatesTokenDoesNotExtendLifetimeAndReplaysWithoutMail() {
+        var crew=crew();String email=targetEmail();var first=service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,0);
+        String old=mail.token(email,"CREW_TRANSFER");UUID key=UUID.randomUUID();long before=messages();
+        var resent=service.resend(owner.principal(),crew.id(),first.id(),key);String fresh=mail.token(email,"CREW_TRANSFER");
+        assertFalse(old.equals(fresh));assertEquals(first.expiresAt(),resent.expiresAt());
+        assertEquals(before+1,messages());
+        assertEquals(resent,service.resend(owner.principal(),crew.id(),first.id(),key));assertEquals(before+1,messages());
+        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,
+                ()->service.create(owner.principal(),crew.id(),key,email,0)).code());
+        var tokens=new SecretTokens();
+        assertEquals("INVALID_OR_EXPIRED_TOKEN",assertThrows(AuthFailure.class,
+                ()->tx(()->lifecycle.accept(target.principal(),first.id(),tokens.hash(old)))).code());
+        assertEquals(1,tx(()->lifecycle.accept(target.principal(),first.id(),tokens.hash(fresh))).crewVersion());
+    }
+    @Test void changedVersionWithUsedKeyConflictsBeforeCheckingCurrentCrewVersion() {
+        var crew=crew();String email=targetEmail();UUID key=UUID.randomUUID();
+        var original=service.create(owner.principal(),crew.id(),key,email,0);long before=messages();
+        crews.update(owner.principal(),crew.id(),0,"Edited",null,null);
+        assertEquals(original,service.create(owner.principal(),crew.id(),key,email,0));
+        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,
+                ()->service.create(owner.principal(),crew.id(),key,email,2)).code());
+        assertEquals("CREW_VERSION_CONFLICT",assertThrows(AuthFailure.class,
+                ()->service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,2)).code());
+        assertEquals(before,messages());
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM crew_transfer WHERE crew_id=?",Integer.class,crew.id()));
+        assertEquals(1,crews.detail(owner.principal(),crew.id()).version());
+    }
+    @Test void failedCommandWriteRollsBackRequestAndPreventsEmailThenAllowsSameKey() {
+        var crew=crew();UUID key=UUID.randomUUID();String email=targetEmail();long before=messages();
+        var marker=new IllegalStateException("injected command failure");
+        doAnswer(call->{call.callRealMethod();throw marker;}).when(commands).save(any(),eq(key),any(),any(),any(),any(),any());
+        try {failure(()->service.create(owner.principal(),crew.id(),key,email,0),marker);}finally {reset(commands);}
+        assertEquals(before,messages());assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM crew_transfer WHERE crew_id=?",Integer.class,crew.id()));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM admin_role_command WHERE actor_id=? AND command_key=?",Integer.class,owner.principal().accountId(),key));
+        assertNotNull(service.create(owner.principal(),crew.id(),key,email,0));assertEquals(before+1,messages());
+    }
+    @Test void failedResendRollsBackRotationAndLedgerWithoutMail() {
+        var crew=crew();String email=targetEmail();var first=service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,0);
+        String digest=transfers.find(first.id()).tokenHash();long before=messages();UUID key=UUID.randomUUID();
+        var marker=new IllegalStateException("injected resend command failure");
+        doAnswer(call->{call.callRealMethod();throw marker;}).when(commands).save(any(),eq(key),any(),any(),any(),any(),any());
+        try {failure(()->service.resend(owner.principal(),crew.id(),first.id(),key),marker);}finally {reset(commands);}
+        assertTrue(digest.equals(transfers.find(first.id()).tokenHash()));assertEquals(before,messages());
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM admin_role_command WHERE actor_id=? AND command_key=?",Integer.class,owner.principal().accountId(),key));
+        assertNotNull(service.resend(owner.principal(),crew.id(),first.id(),key));assertEquals(before+1,messages());
+    }
+    @Test void missingDisabledUnverifiedAndSelfTargetsAndStaleVersionNeverSendMail() {
+        var crew=crew();String email=targetEmail();long before=messages();
+        assertEquals("CAPTAIN_UNAVAILABLE",assertThrows(AuthFailure.class,
+                ()->service.create(owner.principal(),crew.id(),UUID.randomUUID(),"absent-"+UUID.randomUUID()+"@example.test",0)).code());
+        jdbc.update("UPDATE user_account SET email_verified_at=NULL WHERE id=?",target.principal().accountId());
+        assertEquals("CAPTAIN_UNAVAILABLE",assertThrows(AuthFailure.class,()->service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,0)).code());
+        jdbc.update("UPDATE user_account SET email_verified_at=now(),status='DISABLED' WHERE id=?",target.principal().accountId());
+        assertEquals("CAPTAIN_UNAVAILABLE",assertThrows(AuthFailure.class,()->service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,0)).code());
+        jdbc.update("UPDATE user_account SET status='ACTIVE' WHERE id=?",target.principal().accountId());
+        String own=jdbc.queryForObject("SELECT email FROM user_account WHERE id=?",String.class,owner.principal().accountId());
+        assertEquals("CAPTAIN_UNCHANGED",assertThrows(AuthFailure.class,()->service.create(owner.principal(),crew.id(),UUID.randomUUID(),own,0)).code());
+        assertEquals("CREW_VERSION_CONFLICT",assertThrows(AuthFailure.class,()->service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,1)).code());
+        assertEquals(404,assertThrows(AuthFailure.class,()->service.create(target.principal(),crew.id(),UUID.randomUUID(),own,0)).status());
+        assertEquals(before,messages());
+    }
+    @Test void pendingAndExpiredRequestsCannotBeResentByWrongActorOrAfterDeadline() {
+        var crew=crew();String email=targetEmail();var first=service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,0);long before=messages();
+        assertEquals("TRANSFER_ALREADY_PENDING",assertThrows(AuthFailure.class,
+                ()->service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,0)).code());
+        assertEquals(404,assertThrows(AuthFailure.class,()->service.resend(target.principal(),crew.id(),first.id(),UUID.randomUUID())).status());
+        expired(transfers.find(first.id()));
+        assertEquals("TRANSFER_NOT_PENDING",assertThrows(AuthFailure.class,
+                ()->service.resend(owner.principal(),crew.id(),first.id(),UUID.randomUUID())).code());assertEquals(before,messages());
+    }
+    @Test void concurrentIdempotentCreationCommitsOneRequestAndOneMail() throws Exception {
+        var crew=crew();String email=targetEmail();UUID key=UUID.randomUUID();long before=messages();
+        var results=race(()->service.create(owner.principal(),crew.id(),key,email,0),()->service.create(owner.principal(),crew.id(),key,email,0));
+        assertInstanceOf(CrewTransferService.View.class,results[0]);assertEquals(results[0],results[1]);assertEquals(before+1,messages());
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM crew_transfer WHERE crew_id=?",Integer.class,crew.id()));
     }
     @Test void acceptanceUsesCurrentVersionAndCannotBeRepeated() {
         var crew=crew();var transfer=request(crew.id(),hash());

@@ -36,6 +36,9 @@ class IdentityIT {
     static final class TestMail implements AccountMailSender {
         final List<Delivery> deliveries = new CopyOnWriteArrayList<>();
         @Override public void send(String email, String purpose, String token) { deliveries.add(new Delivery(email,purpose,token)); }
+        @Override public void sendTransfer(String email,String name,UUID id,String token,java.time.Instant expires) {
+            deliveries.add(new Delivery(email,"CREW_TRANSFER",token));
+        }
         String token(String email, String purpose) {
             return deliveries.stream().filter(item -> item.email.equals(email) && item.purpose.equals(purpose))
                     .reduce((a,b) -> b).orElseThrow().token;

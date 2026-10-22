@@ -38,4 +38,14 @@ class AuthPrimitivesTest {
         for (int i = 0; i < 50; i++) throttle.check("login", "account-" + i, "source");
         assertThrows(AuthFailure.class, () -> throttle.check("login", "new-account", "source"));
     }
+    @Test void transferCreateAndResendHaveSeparateAccountAndIpWindows() {
+        var clock=new MutableClock();var throttle=new LoginThrottle(clock,new SecretTokens());
+        for(int i=0;i<10;i++) throttle.check("crew-transfer-create","account","source");
+        assertEquals(429,assertThrows(AuthFailure.class,()->throttle.check("crew-transfer-create","account","another-source")).status());
+        throttle.check("crew-transfer-resend","account","source");
+        for(int i=0;i<49;i++) throttle.check("crew-transfer-resend","account-"+i,"source");
+        assertEquals(429,assertThrows(AuthFailure.class,()->throttle.check("crew-transfer-resend","new-account","source")).status());
+        clock.advance(Duration.ofMinutes(15));throttle.check("crew-transfer-create","account","source");
+        throttle.check("crew-transfer-resend","account","source");
+    }
 }
