@@ -209,3 +209,17 @@ Postman kolekce je staticky ověřená proti oficiálnímu schématu v2.1, má 6
 požadavků a 99 validních skriptů. Samostatné scénáře DELETE a administrátorské
 změny kapitána obsahují aktuální kontrakt version/Idempotency-Key. Toto statické
 ověření se nezaměňuje s kompletním manuálním průchodem všech scénářů.
+
+## Testy interního základu 3b.3a
+
+Nové `CrewTransferLifecycleTest` a `CrewTransferTransactionTest` pokrývají
+stavové operace, sedmidenní expiraci, verze a povinnou vnější transakci.
+Codex provedl s JDK 21 `.\mvnw.cmd verify`: BUILD SUCCESS, 137 testů,
+0 failures, 0 errors, 0 skipped (z toho 19 nových případů). Nové IT se zkompilovaly.
+`CrewTransfersIT` obsahuje 9 testů nad izolovaným schématem rallye_test včetně
+databázových omezení, souběhu a skutečného rollbacku. Jejich spuštění je podle
+AGENTS.md ponecháno uživateli. Uživatel potvrdil `.\mvnw.cmd -Pit verify`
+s výsledkem BUILD SUCCESS; dostupný Failsafe report uvádí 48 testů, 0 errors,
+0 failures a 0 skipped. Jde o uživatelem potvrzený běh proti rallye_test,
+nikoli PostgreSQL běh Codexu.
+Rozsah a návaznosti: [crew-transfers-3b3a.md](crew-transfers-3b3a.md).
