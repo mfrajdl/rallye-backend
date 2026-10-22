@@ -82,6 +82,76 @@
       "key": "adminRevokeKey",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "crewId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewVersion",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "crewName",
+      "value": "Postman crew",
+      "type": "string"
+    },
+    {
+      "key": "crewCreateKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewCaptainKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewOrphanId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewOrphanVersion",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "crewOrphanCreateKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewOwnerEmail",
+      "value": "crew-owner@example.test",
+      "type": "string"
+    },
+    {
+      "key": "crewOwnerPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewCaptainOriginalVersion",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "newCaptainAccountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewCaptainChangeVersion",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewCaptainChangeKey",
+      "value": "",
+      "type": "string"
     }
   ],
   "event": [
@@ -1519,6 +1589,1144 @@
                   }
                 }
               ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 — Crews 3b.2 owner (run individually)",
+      "description": "Set crewOwnerEmail/crewOwnerPassword for an activated ordinary account. Run in order. Choose upload file manually. Keep create key for replay; clear it only for a new independent create.",
+      "item": [
+        {
+          "name": "3b2 01 Login crew owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{crewOwnerEmail}}\",\"password\":\"{{crewOwnerPassword}}\",\"rememberMe\":false}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 02 Create own crew",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewCreateKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{crewName}}\",\n  \"registrationPlate\": \"TEST-001\",\n  \"description\": \"Private test crew\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('crewCreateKey')) pm.collectionVariables.set('crewCreateKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewId',crew.id); pm.collectionVariables.set('crewVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 03 Replay same create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewCreateKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{crewName}}\",\n  \"registrationPlate\": \"TEST-001\",\n  \"description\": \"Private test crew\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('crewCreateKey')) pm.collectionVariables.set('crewCreateKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewId',crew.id); pm.collectionVariables.set('crewVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 04 Create key conflict",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewCreateKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Different command\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('crewCreateKey')) pm.collectionVariables.set('crewCreateKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Error code', () => pm.expect(pm.response.json().code).to.eql('IDEMPOTENCY_CONFLICT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 05 List own crews",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews?page=0&size=50",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 06 Detail and refresh version",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewId',crew.id); pm.collectionVariables.set('crewVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 07 Update text",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Updated crew\",\"registrationPlate\":\"TEST-001\",\"description\":null,\"version\":{{crewVersion}}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewId',crew.id); pm.collectionVariables.set('crewVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 08 Stale version",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Stale\",\"version\":0}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Error code', () => pm.expect(pm.response.json().code).to.eql('CREW_VERSION_CONFLICT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 09 Upload photo - choose local JPEG or PNG",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/photo?version={{crewVersion}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewId',crew.id); pm.collectionVariables.set('crewVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 10 Read private photo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/photo",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 11 Remove photo",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/photo?version={{crewVersion}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewId',crew.id); pm.collectionVariables.set('crewVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 12 Ordinary user cannot list all",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews?scope=all",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Error code', () => pm.expect(pm.response.json().code).to.eql('ADMIN_REQUIRED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 13 Invalid crew name",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewCreateKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\" \"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('crewCreateKey')) pm.collectionVariables.set('crewCreateKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error code', () => pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 14 Ordinary user cannot orphan crew",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewCaptainKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/captain",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"captainAccountId\":null,\"version\":{{crewVersion}}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('crewCaptainKey')) pm.collectionVariables.set('crewCaptainKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Error code', () => pm.expect(pm.response.json().code).to.eql('ADMIN_REQUIRED'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 — Crews 3b.2 administration (run individually)",
+      "description": "Requires existing SQL bootstrap, adminEmail/adminPassword, and owner scenario first. Last requests delete only the selected test crews. Explicit cleanup affects unreferenced photo files older than 24 hours only.",
+      "item": [
+        {
+          "name": "3b2 15 Login administrator",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{adminEmail}}\",\"password\":\"{{adminPassword}}\",\"rememberMe\":false}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code===200) pm.collectionVariables.set('adminAccountId',pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 16 List all crews",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews?scope=all",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 17 Create orphan crew",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewOrphanCreateKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Orphan crew\",\"captainAccountId\":null}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('crewOrphanCreateKey')) pm.collectionVariables.set('crewOrphanCreateKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewOrphanId',crew.id); pm.collectionVariables.set('crewOrphanVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 18 List orphans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews?scope=all&orphaned=true",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 19 Assign orphan to administrator himself",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewCaptainKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewOrphanId}}/captain",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"captainAccountId\":\"{{adminAccountId}}\",\"version\":{{crewOrphanVersion}}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('crewCaptainOriginalVersion',pm.collectionVariables.get('crewOrphanVersion')); // Keep original version for exact replay below."
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('crewCaptainKey')) pm.collectionVariables.set('crewCaptainKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewOrphanId',crew.id); pm.collectionVariables.set('crewOrphanVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 20 Replay captain change with original version",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewCaptainKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewOrphanId}}/captain",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"captainAccountId\":\"{{adminAccountId}}\",\"version\":{{crewCaptainOriginalVersion}}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('crewCaptainKey')) pm.collectionVariables.set('crewCaptainKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewOrphanId',crew.id); pm.collectionVariables.set('crewOrphanVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 21 Same captain with new key is rejected",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewOrphanId}}/captain",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"captainAccountId\":\"{{adminAccountId}}\",\"version\":{{crewOrphanVersion}}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.upsert({key:'Idempotency-Key',value:pm.variables.replaceIn('{{$guid}}')});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Error code', () => pm.expect(pm.response.json().code).to.eql('CAPTAIN_UNCHANGED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 22 Remove captain with new key",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewOrphanId}}/captain",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"captainAccountId\":null,\"version\":{{crewOrphanVersion}}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.upsert({key:'Idempotency-Key',value:pm.variables.replaceIn('{{$guid}}')});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewOrphanId',crew.id); pm.collectionVariables.set('crewOrphanVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 23 Read crew audit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/audit-events?eventType=CREW_CAPTAIN_CHANGED&targetId={{crewOrphanId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 24 Explicit photo orphan cleanup (files older than 24 hours)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/photo-cleanups",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 25 Delete orphan crew",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewOrphanId}}?version={{crewOrphanVersion}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 26 Refresh original crew version before delete",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if ([200,201].includes(pm.response.code)) { const crew=pm.response.json(); pm.collectionVariables.set('crewId',crew.id); pm.collectionVariables.set('crewVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b2 27 Delete original test crew as administrator",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}?version={{crewVersion}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 — Optional crew deletion by owner or ADMIN",
+      "description": "Run individually. Existing administrator deletes remain in folder 07 (3b2 25 and 27). Log in with an activated owner account using folder 06, choose an existing own crewId, refresh its version, then delete. This removes the selected test crew and may invalidate other scenarios using that ID. Recreate a test crew with a new create key when needed. The collection-level CSRF script remains active.",
+      "item": [
+        {
+          "name": "Owner delete 1 - Refresh crew version",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Run after logging in as the current owner (or ADMIN) and choosing crewId. Fetches the current version immediately before deletion."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if(pm.response.code===200) { const crew=pm.response.json(); pm.collectionVariables.set('crewVersion',String(crew.version)); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Owner delete 2 - Delete crew using current version (optional destructive test)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}?version={{crewVersion}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Deletes the crew selected by crewId. Requires current owner or ADMIN, fresh CSRF for cookies, and nonnegative integer query parameter version. No body and no Idempotency-Key. Run request 1 immediately before this request. Later access returns 404; an old version returns 409."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id=pm.collectionVariables.get('crewId');",
+                  "const version=String(pm.collectionVariables.get('crewVersion') ?? '');",
+                  "if (!id || !/^[0-9]+$/.test(version)) { pm.execution.skipRequest(); throw new Error('Set crewId and run Refresh crew version first.'); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09 — Manual ADMIN change of existing crew captain",
+      "description": "Standalone manual scenario. Does not create or delete a crew. Use an existing crew owned by ordinary user A and active verified target user B, while logged in as ADMIN. Keep original request version and key for replay.",
+      "item": [
+        {
+          "name": "3b2 Change captain of existing crew",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewCaptainChangeKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/captain",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Manual ADMIN transfer from ordinary user A to ordinary user B. First log in as ADMIN (3b2 15 Login administrator or 18 Login administrator). Set crewId to an existing crew owned by A; GET its detail and copy version to crewCaptainChangeVersion. Set newCaptainAccountId to the internal UUID of active, email-verified user B, different from A. The original captain ID is read by the server, not supplied by this request. Cookie jar and inherited collection CSRF script remain active. crewCaptainChangeKey is generated once if empty. Repeat unchanged key, crewId, target and request version for idempotent replay. For another independent change, clear the key and set a fresh version from GET detail. A stale version returns 409 CREW_VERSION_CONFLICT; changed parameters with the same key return 409 IDEMPOTENCY_CONFLICT; the same current captain with a new key returns 409 CAPTAIN_UNCHANGED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"captainAccountId\": \"{{newCaptainAccountId}}\",\n  \"version\": {{crewCaptainChangeVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "const crewId = String(pm.collectionVariables.get('crewId') || '');",
+                  "const target = String(pm.collectionVariables.get('newCaptainAccountId') || '');",
+                  "const version = String(pm.collectionVariables.get('crewCaptainChangeVersion') ?? '');",
+                  "if (!uuid.test(crewId) || !uuid.test(target) || !/^[0-9]+$/.test(version) || !Number.isSafeInteger(Number(version))) {",
+                  "    pm.execution.skipRequest();",
+                  "    throw new Error('Set crewId, newCaptainAccountId (UUIDs), and crewCaptainChangeVersion from GET crew detail. Log in as ADMIN first.');",
+                  "}",
+                  "let key = pm.collectionVariables.get('crewCaptainChangeKey');",
+                  "if (!key) { key = pm.variables.replaceIn('{{$guid}}'); pm.collectionVariables.set('crewCaptainChangeKey', key); }",
+                  "if (!uuid.test(String(key))) { pm.execution.skipRequest(); throw new Error('crewCaptainChangeKey must be a UUID; clear it to generate a new one.'); }",
+                  "// Do not refresh the request version on replay: same key requires exactly the same parameters."
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const crew = pm.response.json();",
+                  "    pm.test('Correct existing crew', () => pm.expect(crew.id).to.eql(pm.collectionVariables.get('crewId')));",
+                  "    pm.test('New captain assigned', () => pm.expect(crew.captainAccountId).to.eql(pm.collectionVariables.get('newCaptainAccountId')));",
+                  "    pm.test('Version incremented once', () => pm.expect(crew.version).to.eql(Number(pm.collectionVariables.get('crewCaptainChangeVersion')) + 1));",
+                  "    pm.collectionVariables.set('crewVersion', String(crew.version));",
+                  "    // Preserve crewCaptainChangeVersion and crewCaptainChangeKey for an exact replay.",
+                  "}"
+                ]
+              }
             }
           ]
         }

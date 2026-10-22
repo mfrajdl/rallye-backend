@@ -1,6 +1,6 @@
 # Backend: architektura a plán po etapě 2A a rozhodnutích 3b
 
-Aktuální funkční základ je [specifikace 0.6.0](Zavody_specifikace_v0.6.0.md), která doplňuje schválená pravidla etapy 3b. Vydání 0.5.0 a starší i rozpracovaná kopie Rallye_specifikace.md zůstávají beze změny. Potvrzené požadavky mají přednost před technickými návrhy. Etapa 2A je dokončena; etapa 3b.1 je dokončena a ověřena, další kroky 3b nejsou implementované. Dokumentace sama nedává oprávnění k databázovým operacím či nasazení.
+Aktuální funkční základ je [specifikace 0.6.0](Zavody_specifikace_v0.6.0.md), která doplňuje schválená pravidla etapy 3b. Vydání 0.5.0 a starší i rozpracovaná kopie Rallye_specifikace.md zůstávají beze změny. Potvrzené požadavky mají přednost před technickými návrhy. Etapa 2A je dokončena; etapa 3b.1 je dokončena a ověřena, etapa 3b.2 je dokončena; dostupné reporty potvrzují 118 testů bez DB a 39 IT bez chyb. Dokumentace sama nedává oprávnění k databázovým operacím či nasazení.
 
 ## Stav projektu
 
@@ -205,7 +205,7 @@ Schválené fotografie vozidla jsou JPEG/PNG do 5 MiB (5 242 880 bajtů), maxim�
 | --- | --- |
 | 2A – lokální autentizace (dokončena) | Účty, LOCAL identita, ověření e-mailu, obnova a změna hesla, databázové relace, cookies/Bearer a CSRF. Automatické i manuální ověření úspěšné; skutečné doručování zbývá před nasazením. |
 | 3a – infrastruktura testů (testovací připojení ověřeno) | Vyhrazená DB/role rallye_test je dostupná a uživatel potvrdil úspěšné IT včetně lokální schránky. Postup a read-only kontroly oprávnění zůstávají v ops/postgresql-test a postgresql-test-setup.md; úspěch IT sám nedokládá provedení všech administrátorských kontrol. Žádné další cloudové změny nespouštět automaticky. |
-| 3b – vlastnictví, posádky, administrace a audit (část 3b.1 dokončena a ověřena) | ADMIN, SQL bootstrap, audit rolí a 2A jsou v kódu. Další kroky: posádky/fotografie, běžné a administrátorské převody, rušení účtů podle historie, auditní export a ruční úklid. Rozdělení a kritéria níže; ostatní části se nevydávají za hotové. |
+| 3b – vlastnictví, posádky, administrace a audit (části 3b.1 a 3b.2 dokončeny) | ADMIN, SQL bootstrap, audit rolí a 2A jsou v kódu. Posádky/fotografie a okamžité administrátorské kapitánství jsou v 3b.2. Další kroky: potvrzované převody, rušení účtů podle historie, auditní export a ruční úklid. Rozdělení a kritéria níže; ostatní části se nevydávají za hotové. |
 | 3c – externí přihlášení | Google a Apple, minimální údaje, bezpečné propojení/konflikty identit a mobilní předání relace. Automatické testy validace tokenů/state/nonce a souběhu propojení; manuální smoke s oběma poskytovateli až po dodání konfigurace. |
 | 4 – šablony | GPS/CODE, časová pravidla, pořadí a statistické verze. Testy DTO validace, ms hranic bodování a rozsahu; žádné kvízy. |
 | 5 – konání a účasti | Kopie šablony, přihláška přes odkaz, historický název, text členů a počet dětí, maximum (výchozí 5), kopie i z nedokončené účasti a uzamčení. Testy počítání řádků, limitů, unikátnosti a souběhu oficiálního startu s úpravami. |
@@ -236,8 +236,8 @@ Zrušení posledního aktivního ADMIN se odmítne, dokud existuje jen tento adm
 | --- | --- |
 | 3b.0 | Schválená pravidla jsou v 0.6.0; dopracovat technický kontrakt API, vazby a testy. Žádný dosud zjištěný obchodní rozpor neblokuje zahájení 3b.1. Okraje závodního startu řešit před implementací jeho návazností. |
 | 3b.1 – dokončeno a ověřeno | Flyway V2, auditní základ a čtení s filtry, aktuální ADMIN, správa rolí jiných aktivních ověřených uživatelů, SQL bootstrap a DB ochrany posledního administrátora. Audit bezpečnostních operací 2A je podle aktuálního zadání již zahrnut. Grant/revoke i audit a idempotentní výsledek jsou atomické. Unit testy 90/90, integrační sada 26/26 a manuální Postman ověření dokončeny; integrační BUILD SUCCESS potvrdil uživatel. |
-| 3b.2 | CRUD posádek, limity a soukromé fotografie, aktuální vlastnictví/ADMIN, Idempotency-Key. Ověřit duplicity názvu/RZ, posádku bez kapitána, konflikty a autorizovaný souborový přístup. |
-| 3b.3 | Běžný převod na ID cíle do 7 dní, zrušení původním kapitánem, editace ano/smazání ne; administrativní změna bez potvrzení atomicky ruší čekající žádost. Ověřit souběhy, audit, replay a zachování závodního oprávnění v budoucí návaznosti. |
+| 3b.2 – dokončeno | CRUD posádek, limity a soukromé fotografie, aktuální vlastnictví/ADMIN, sdílený Idempotency-Key a podle dodatečného schválení i okamžité administrátorské přiřazení/změna/odebrání kapitána. Jedna version pro texty/fotografie/kapitánství. V3, CrewsIT a Postman dokončeny; 118 testů bez DB a report 39/39 IT bez chyb. Podrobnosti v crews-3b2.md. |
+| 3b.3 | Běžný převod na ID cíle do 7 dní, zrušení původním kapitánem, editace ano/smazání ne; administrativní změna bez potvrzení je již v 3b.2; zde doplnit atomické zrušení čekající žádosti při změně/odebrání kapitána. Ověřit souběhy, audit, replay a zachování závodního oprávnění v budoucí návaznosti. |
 | 3b.4 | Rušení účtu uživatelem i ADMIN: bez historické účasti smazat, jinak anonymizovat; během závodění odmítnout, pouhou přihlášku zachovat. Všechny čekající převody daného uživatele zrušit, posádky zachovat bez kapitána. Ověřit transakční rollback, FK, neměnnou historickou vazbu i po převodu a zákaz zrušení posledního ADMIN. |
 | 3b.5 | Audit úspěšného přihlášení, odhlášení a změny/resetu hesla je již implementován v 3b.1; znovu jej nepřidávat. Zbývá CSV export kdykoliv bez DB změn, UTF-8 s BOM a středníkem. Archivace/mazání od stáří 90 dní, dvoukrokové potvrzení a opětovná kontrola hranice při provedení; audit úklidu a rollback. Žádná automatika. |
 | 3b.6 | Regresní testy 2A, jednotkové/HTTP testy, chráněné PostgreSQL IT a Postman scénáře více vlastníků a administrátorů. Codex spouští testy bez DB, uživatel integrační běh a potvrzuje výsledek. Aktualizovat dokumentaci podle skutečné implementace. |
@@ -283,3 +283,14 @@ Skutečné PostgreSQL a SMTP ověření vyžadují dostupné vyhrazené údaje a
 Ověření etapy 2A: po doplnění lokální schránky prošlo 68 lokálních testů a JAR je sestaven. Uživatel následně potvrdil funkční tunel a úspěšné `.\mvnw.cmd -Pit verify` ve svém PowerShellu (`BUILD SUCCESS`). Jde o uživatelem potvrzené PostgreSQL ověření; předchozí selhání před připojením se týkalo prostředí Codexu. Další integrační běhy spouští uživatel: Codex připraví testy, předá příkaz a počká na výsledek. Kompilaci a testy bez databáze spouští Codex. Podrobnosti a seznam změněných souborů jsou v authentication-2a.md. Skutečné SMTP spojení nebylo bez konfigurace ověřeno.
 
 Lokální ověření účtů bez SMTP: profil local používá souborovou schránku mimo Git a bind na loopback. Uživatel dne 21. 10. 2026 potvrdil opakované `.\mvnw.cmd -Pit verify` proti `rallye_test` s výsledkem `BUILD SUCCESS`, včetně `LocalMailboxIT`; integrační ověření této změny je uzavřeno jako uživatelem potvrzené. Platnost a jednorázovost tokenů zůstávají stejné. Výběr SMTP poskytovatele a ověření skutečného doručování se provede před nasazením, nikoli jako podmínka lokálního vývoje. Návod je v authentication-2a.md.
+
+## Implementace 3b.2
+
+Rozsah a technické volby jsou v [crews-3b2.md](crews-3b2.md). V3 rozšiřuje původní
+admin_role_command do společné evidence bez ztráty ADMIN klíčů a přidává crew
+a bezpečné auditní údaje. Specifikace 2.2 vyžaduje aktivní ověřený cílový účet
+i pro ADMIN. Po schválení je okamžitá administrativní změna kapitána již v 3b.2;
+potvrzované převody zůstávají v 3b.3. ADMIN smí přiřadit sebe cizí či osiřelé
+posádce, stejný dosavadní kapitán se odmítá. Texty/fotografie/kapitánství sdílejí
+version. Ruční souborový úklid nad 24 hodinami používá zámek a opětovné kontroly
+referencí; nemá vztah k budoucímu úklidu auditu. Závěrečné dostupné Surefire/Failsafe reporty potvrzují 118 testů bez DB a 39 IT bez chyb. Postman má 63 požadavků a 99 validních skriptů; zahrnuje samostatné mazání vlastníkem a změnu kapitána existující posádky. Úplný manuální běh všech scénářů zde není vydáván za samostatně potvrzený.

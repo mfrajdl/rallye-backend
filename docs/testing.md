@@ -132,3 +132,80 @@ Podklady: [PostgreSQL oprávnění](https://www.postgresql.org/docs/17/ddl-priv.
 ## Lokální schránka bez SMTP
 
 LocalFileAccountMailTest ověřuje zprávy, výběr adaptéru a požadavek na loopback bez databáze. LocalMailboxIT ověřuje celý tok registrace, jednorázové aktivace, přihlášení a odhlášení přes souborovou schránku a chráněnou databázi rallye_test. Používá dočasný adresář, žádné SMTP a uklízí pouze vlastní testovací účet. Spouští jej uživatel standardním příkazem integračního profilu. Uživatel dne 21. 10. 2026 potvrdil úspěšné `.\mvnw.cmd -Pit verify` proti `rallye_test` (`BUILD SUCCESS`), včetně nového testu `LocalMailboxIT`. Jde o uživatelem potvrzený běh, nikoli vlastní běh Codexu. Skutečné SMTP doručování zůstává odloženo před nasazení.
+
+## Ověření etapy 3b.2
+
+Nové PhotoFilesTest/CrewServiceTest/CrewHttpTest ověřují validaci, skutečné
+formáty a rozměry obrázků, souborový úklid a jeho zámek, oprávnění, verze,
+kapitánství, HTTP a transakční hranice bez DB. Regrese 2A/3b.1 zůstávají zapojené.
+
+CrewsIT používá původní TestDatabaseInitializer a pouze rallye_test. Má vlastní
+schéma it_crews_<UUID>, dočasný soukromý adresář a pro regresi V2→V3 ještě
+*_upgrade schéma. Na konci ověří databázi, roli a jméno a odstraní pouze vlastní
+fixture schémata/soubory. Nepoužívá Flyway clean ani vývojovou DB. Testy pokrývají
+reálný rollback po zápisu auditu/idempotence, původní příčinu výjimky, souběhy,
+CRUD, soukromé fotografie, kapitánství a zachování původních ADMIN klíčů migrací.
+
+Běh proti PostgreSQL po V3 a ruční ověření Postman složek 06/07 zatím čekají
+na uživatele. Spustit v jeho čisté testovací PowerShell relaci:
+
+```powershell
+.\mvnw.cmd -Pit verify
+```
+
+Ochrany RALLYE_TEST_DB_*, ověření skutečné DB/role, zákaz clean/baseline/DDL
+zůstávají beze změny. Podrobný scénář a API jsou v [crews-3b2.md](crews-3b2.md).
+
+Vlastní závěrečný běh Codexu 22. 10. 2026: **BUILD SUCCESS**, 111 testů bez DB,
+0 failures/errors/skipped, JDK 21.0.12.1, sestavený JAR. Nových 13 CrewsIT
+je zkompilováno; očekávaná celá PostgreSQL sada má 39 případů a dosud nebyla
+po změnách 3b.2 potvrzena. Postman Collection v2.1 ověřena podle oficiálního
+schématu: 60 požadavků a syntaxe 94 skriptů; běh kolekce zůstává ruční.
+
+### Oprava přípravy rollback testů 3b.2
+
+Uživatelův PostgreSQL běh měl 39 případů, 0 failures a 3 errors. TXT i XML
+Failsafe reporty ukazují IllegalTransactionStateException již při přípravě
+Mockito doAnswer(...).when(audit).crew(...), na původních řádcích CrewsIT
+166/192/202. Přes AuditService Spring CGLIB proxy se ještě před Mockito spy
+spustí TransactionInterceptor a kontrola Propagation.MANDATORY; test v tomto
+okamžiku správně nemá obchodní transakci. Potlačené InvalidUseOfMatchersException
+jsou následkem přerušeného nastavení spy. Testované operace se vůbec nezavolaly.
+
+Produkční AuditService a jeho MANDATORY se nemění. CrewService vytváří obchodní
+transakce pomocí TransactionTemplate a za normálního běhu do nich audit vstupuje.
+CrewsIT nyní vkládá selhání do AuditStore.appendCrew, který nemá transakční
+precondition při nastavování spy. Při operaci nejprve provede skutečný INSERT
+a teprve potom vyhodí jedinečnou testovací výjimku. Kontrola zachovává původní
+příčinu výjimky, již ukončenou transakci, DB stav, audit, nepoužitý idempotentní
+klíč a původní fotografii/verzi i počet souborů. Kapitánství se navíc po chybě
+úspěšně zopakuje se stejným klíčem. Testy nemají vnější testovací transakci.
+
+AuditTransactionTest nově bez DB ověřuje, že konfigurace repository spy nevolá
+JDBC, skutečná služba MANDATORY nadále odmítá volání mimo transakci a vložené
+selhání po auditním JDBC zápisu vyvolá jediný rollback vnější transakce. Používá
+skutečné Spring proxy a HibernateJpaDialect; nenahrazuje PostgreSQL ověření dat.
+Cílených 5 transakčních testů prošlo. Nový databázový běh stále provádí uživatel:
+
+```powershell
+.\mvnw.cmd -Pit verify
+```
+
+Úspěšné opakování opravené sady 39 IT zatím není potvrzené.
+
+Po opravě přípravy testů: vlastní běh Codexu s JDK 21.0.12.1, mvnw.cmd verify,
+**BUILD SUCCESS**, 113 testů bez DB, 0 failures/errors/skipped; JAR sestaven
+a všech 39 IT zkompilováno. PostgreSQL testy Codex nespouštěl; opakování po
+této opravě zůstává na uživateli.
+
+### Uzavření 3b.2 – konečné výsledky
+
+Dostupné závěrečné Surefire reporty obsahují 118 testů bez DB a Failsafe reporty
+39 integračních testů; obě sady mají 0 failures/errors/skipped. PostgreSQL běh
+provedl uživatel, nikoli Codex. Konečný výsledek nahrazuje výše uvedené průběžné
+stavy včetně původních tří chyb přípravy auditního spy.
+
+Postman kolekce je staticky ověřená proti oficiálnímu schématu v2.1, má 63
+požadavků a 99 validních skriptů. Samostatné scénáře DELETE a administrátorské
+změny kapitána obsahují aktuální kontrakt version/Idempotency-Key. Toto statické
+ověření se nezaměňuje s kompletním manuálním průchodem všech scénářů.

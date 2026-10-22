@@ -38,7 +38,7 @@ class AuditTransactionTest {
         @Bean PersistenceExceptionTranslator jpaExceptionTranslator() { return new HibernateJpaDialect(); }
         @Bean RecordingTransactions transactionManager() { return new RecordingTransactions(); }
         @Bean JdbcTemplate jdbc() { return mock(JdbcTemplate.class); }
-        @Bean AuditStore store(JdbcTemplate jdbc) { return new AuditStore(jdbc); }
+        @Bean AuditStore store(JdbcTemplate jdbc) { return spy(new AuditStore(jdbc)); }
         @Bean AuditService service(AuditStore store) {
             return new AuditService(store,Clock.fixed(Instant.parse("2026-10-21T12:00:00Z"),ZoneOffset.UTC));
         }
@@ -92,6 +92,35 @@ class AuditTransactionTest {
             assertThrows(IllegalTransactionStateException.class,()->
                     context.getBean(AuditService.class).record(UUID.randomUUID(),Event.LOGIN_SUCCEEDED,UUID.randomUUID()));
             verifyNoInteractions(jdbc);
+        }
+    }
+    @Test void crewAuditStillRequiresExistingBusinessTransaction() {
+        try(var context=new AnnotationConfigApplicationContext(Fixtures.class)) {
+            var jdbc=context.getBean(JdbcTemplate.class);
+            clearInvocations(jdbc);
+            assertThrows(IllegalTransactionStateException.class,()->context.getBean(AuditService.class)
+                    .crew(UUID.randomUUID(),Event.CREW_CREATED,UUID.randomUUID(),null,UUID.randomUUID()));
+            verifyNoInteractions(jdbc);
+        }
+    }
+    @Test void repositorySpyCanBePreparedWithoutTransactionAndFailsOnlyAfterCrewAuditInsert() {
+        try(var context=new AnnotationConfigApplicationContext(Fixtures.class)) {
+            var jdbc=context.getBean(JdbcTemplate.class);
+            var store=context.getBean(AuditStore.class);
+            var service=context.getBean(AuditService.class);
+            var manager=context.getBean(RecordingTransactions.class);
+            var marker=new IllegalStateException("Test crew audit persistence failure");
+            clearInvocations(jdbc);
+            // Same injection point as CrewsIT: no service method is called while configuring the spy.
+            doAnswer(invocation->{invocation.callRealMethod();throw marker;})
+                    .when(store).appendCrew(any(),any(),any(),eq(Event.CREW_CREATED),any(),any(),any());
+            verifyNoInteractions(jdbc);
+            var translated=assertThrows(InvalidDataAccessApiUsageException.class,()->
+                    new TransactionTemplate(manager).executeWithoutResult(status->
+                            service.crew(UUID.randomUUID(),Event.CREW_CREATED,UUID.randomUUID(),null,UUID.randomUUID())));
+            assertSame(marker,translated.getMostSpecificCause());
+            verify(jdbc,times(1)).update(anyString(),any(Object[].class));
+            assertEquals(1,manager.rollbacks);assertEquals(0,manager.commits);
         }
     }
 }

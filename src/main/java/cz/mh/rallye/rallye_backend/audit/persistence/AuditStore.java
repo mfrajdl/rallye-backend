@@ -11,7 +11,24 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class AuditStore {
-    public record Entry(UUID id, Instant occurredAt, String actorKind, UUID actorId, String eventType, UUID targetId) { }
+    public record Entry(UUID id, Instant occurredAt, String actorKind, UUID actorId, String eventType, UUID targetId,
+                        String targetType,UUID previousCaptainId,UUID newCaptainId) {
+        public Entry(UUID id,Instant time,String kind,UUID actor,String event,UUID target) {
+            this(id,time,kind,actor,event,target,"ACCOUNT",null,null);
+        }
+    }
+    public void appendMaintenance(UUID id,Instant time,UUID actor) {
+        jdbc.update("""
+                INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type)
+                VALUES (?,?,'USER',?,'PHOTO_CLEANUP_STARTED',?,'PHOTO_STORAGE')
+                """,id,Timestamp.from(time),actor,actor);
+    }
+    public void appendCrew(UUID id, Instant time, UUID actor, Event event, UUID crew, UUID previous, UUID next) {
+        jdbc.update("""
+                INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type,previous_captain_id,new_captain_id)
+                VALUES (?,?,'USER',?,?,?,'CREW',?,?)
+                """,id,Timestamp.from(time),actor,event.name(),crew,previous,next);
+    }
     private final JdbcTemplate jdbc;
     public AuditStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
     public void append(UUID id, Instant time, UUID actor, Event type, UUID target) {
@@ -30,7 +47,8 @@ public class AuditStore {
         values.add(size + 1); values.add((long) page * size);
         return jdbc.query(sql.toString(), (rs, row) -> new Entry(rs.getObject("id", UUID.class),
                 rs.getTimestamp("occurred_at").toInstant(), rs.getString("actor_kind"),
-                rs.getObject("actor_id", UUID.class), rs.getString("event_type"), rs.getObject("target_id", UUID.class)),
+                rs.getObject("actor_id", UUID.class), rs.getString("event_type"), rs.getObject("target_id", UUID.class),
+                rs.getString("target_type"),rs.getObject("previous_captain_id",UUID.class),rs.getObject("new_captain_id",UUID.class)),
                 values.toArray());
     }
 }

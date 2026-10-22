@@ -15,7 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AdminService {
-    public record AuditEntry(UUID id, Instant occurredAt, String actorKind, UUID actorId, String eventType, UUID targetId) { }
+    public record AuditEntry(UUID id, Instant occurredAt, String actorKind, UUID actorId, String eventType, UUID targetId,
+                             String targetType,UUID previousCaptainId,UUID newCaptainId) { }
     public record AuditPage(List<AuditEntry> items, int page, int size, boolean hasMore) { }
     private final AdminStore roles;
     private final AccountStore accounts;
@@ -59,7 +60,8 @@ public class AdminService {
             throw new AuthFailure(400, "INVALID_AUDIT_FILTER");
         }
         var found = events.find(actorId, targetId, event, from, until, page, size);
-        var entries = found.stream().limit(size).map(e -> new AuditEntry(e.id(), e.occurredAt(), e.actorKind(), e.actorId(), e.eventType(), e.targetId())).toList();
+        var entries = found.stream().limit(size).map(e -> new AuditEntry(e.id(), e.occurredAt(), e.actorKind(), e.actorId(), e.eventType(), e.targetId(),
+                e.targetType(),e.previousCaptainId(),e.newCaptainId())).toList();
         return new AuditPage(entries, page, size, found.size()>size);
     }
 }

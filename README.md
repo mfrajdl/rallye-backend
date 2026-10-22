@@ -80,6 +80,7 @@ Přeskočení testů nepotvrzuje funkčnost aplikace ani připojení. Na Linuxu 
 
 - [Účty a lokální autentizace – etapa 2A](docs/authentication-2a.md)
 - [Administrátorská oprávnění, audit a ruční SQL bootstrap – 3b.1](docs/administration-3b1.md)
+- [Posádky, soukromé fotografie a kapitánství – 3b.2](docs/crews-3b2.md)
 
 - [Specifikace 0.6.0](docs/Zavody_specifikace_v0.6.0.md)
 - [Testovací prostředí](docs/testing.md)

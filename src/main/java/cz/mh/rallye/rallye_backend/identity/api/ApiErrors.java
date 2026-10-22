@@ -20,9 +20,19 @@ public class ApiErrors {
     }
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class,
             org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class,
             org.springframework.web.bind.MissingRequestHeaderException.class})
     ResponseEntity<ProblemDetail> invalid(Exception ignored) {
         return ResponseEntity.badRequest().body(problem(400, "INVALID_REQUEST"));
+    }
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    ResponseEntity<ProblemDetail> oversized(Exception ignored) {
+        return ResponseEntity.status(413).body(problem(413,"PHOTO_TOO_LARGE"));
+    }
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ProblemDetail> unsupported(Exception ignored) {
+        return ResponseEntity.status(415).body(problem(415,"UNSUPPORTED_MEDIA_TYPE"));
     }
     @ExceptionHandler(Exception.class)
     ResponseEntity<ProblemDetail> unexpected(Exception ignored) {

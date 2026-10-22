@@ -11,7 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuditService {
     public enum Event { LOGIN_SUCCEEDED, LOGOUT_SUCCEEDED, PASSWORD_CHANGED, PASSWORD_RESET_COMPLETED,
-        ADMIN_GRANTED, ADMIN_REVOKED, ADMIN_BOOTSTRAPPED }
+        ADMIN_GRANTED, ADMIN_REVOKED, ADMIN_BOOTSTRAPPED,
+        CREW_CREATED, CREW_UPDATED, CREW_DELETED, CREW_CAPTAIN_CHANGED, CREW_PHOTO_CHANGED, CREW_PHOTO_DELETED, PHOTO_CLEANUP_STARTED }
     private final AuditStore store;
     private final Clock clock;
     public AuditService(AuditStore store, Clock clock) { this.store = store; this.clock = clock; }
@@ -20,5 +21,13 @@ public class AuditService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void record(UUID actor, Event event, UUID target) {
         store.append(UUID.randomUUID(), clock.instant().truncatedTo(ChronoUnit.MILLIS), actor, event, target);
+    }
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void crew(UUID actor, Event event, UUID target, UUID previousCaptain, UUID newCaptain) {
+        store.appendCrew(UUID.randomUUID(),clock.instant().truncatedTo(ChronoUnit.MILLIS),actor,event,target,previousCaptain,newCaptain);
+    }
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void photoCleanup(UUID actor) {
+        store.appendMaintenance(UUID.randomUUID(),clock.instant().truncatedTo(ChronoUnit.MILLIS),actor);
     }
 }
