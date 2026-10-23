@@ -262,6 +262,31 @@
       "key": "accountCancellationConflictTargetId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "auditExportFrom",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "auditExportUntil",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "auditExportEventType",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "auditExportActorId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "auditExportTargetAccountId",
+      "value": "",
+      "type": "string"
     }
   ],
   "event": [
@@ -3999,6 +4024,152 @@
             }
           ],
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "14 Audit export 3b.5",
+      "description": "Run individually. See docs/audit-3b5.md. Automatic cleanup has no public endpoint. CSV export records AUDIT_EXPORT best effort after streaming. Enable only populated query filters.",
+      "item": [
+        {
+          "name": "3b5 ADMIN Export all audit events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/audit-events/export",
+            "description": "Cookie jar must be enabled. Login with the role indicated by the request name. No CSRF or Idempotency-Key is required for GET."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"CSV download\", function () { pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"text/csv\"); pm.expect(pm.response.headers.get(\"Content-Disposition\")).to.include(\"attachment\"); pm.expect(pm.response.text()).to.include(\"\\\"id\\\";\\\"occurredAt\\\"\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b5 ADMIN Export with filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/audit-events/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "audit-events",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{auditExportFrom}}",
+                  "disabled": true
+                },
+                {
+                  "key": "until",
+                  "value": "{{auditExportUntil}}",
+                  "disabled": true
+                },
+                {
+                  "key": "eventType",
+                  "value": "{{auditExportEventType}}",
+                  "disabled": true
+                },
+                {
+                  "key": "actorId",
+                  "value": "{{auditExportActorId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "targetAccountId",
+                  "value": "{{auditExportTargetAccountId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Cookie jar must be enabled. Login with the role indicated by the request name. No CSRF or Idempotency-Key is required for GET."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b5 Ordinary user export forbidden",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/audit-events/export",
+            "description": "Cookie jar must be enabled. Login with the role indicated by the request name. No CSRF or Idempotency-Key is required for GET."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 403\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b5 ADMIN Invalid account filter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/audit-events/export?targetAccountId=invalid",
+            "description": "Cookie jar must be enabled. Login with the role indicated by the request name. No CSRF or Idempotency-Key is required for GET."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b5 ADMIN Invalid time interval",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/audit-events/export?from=2026-10-23T00:00:00Z&until=2026-10-22T00:00:00Z",
+            "description": "Cookie jar must be enabled. Login with the role indicated by the request name. No CSRF or Idempotency-Key is required for GET."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

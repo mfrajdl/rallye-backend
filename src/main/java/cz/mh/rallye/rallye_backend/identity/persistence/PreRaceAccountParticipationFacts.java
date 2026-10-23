@@ -14,9 +14,12 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
     @Override @Transactional(propagation=Propagation.MANDATORY)
     public Facts forAccount(UUID account) {
         try {
-            var versions=jdbc.query("SELECT version,type,success FROM flyway_schema_history WHERE type<>'SCHEMA' ORDER BY installed_rank",
-                    (rs,n)->rs.getBoolean("success") && "SQL".equals(rs.getString("type"))?rs.getString("version"):"unsupported");
-            if(!versions.equals(List.of("1","2","3","4","5","6")))throw unavailable();
+            var versions=jdbc.query("SELECT version,type,success,script FROM flyway_schema_history WHERE type<>'SCHEMA' ORDER BY installed_rank",
+                    (rs,n)->rs.getBoolean("success") && "SQL".equals(rs.getString("type"))
+                            && (!"7".equals(rs.getString("version")) || "V7__audit_export_and_retention.sql".equals(rs.getString("script")))
+                            ?rs.getString("version"):"unsupported");
+            if(!versions.equals(List.of("1","2","3","4","5","6"))
+                    && !versions.equals(List.of("1","2","3","4","5","6","7")))throw unavailable();
             return new Facts(false,false);
         } catch(org.springframework.dao.DataAccessException failure) {throw new AuthFailure(503,"PARTICIPATION_CHECK_UNAVAILABLE",failure);}
     }

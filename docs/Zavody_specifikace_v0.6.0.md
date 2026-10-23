@@ -4,7 +4,7 @@
 **Datum:** 2026-10-21
 **Stav:** Pracovní návrh; potvrzené požadavky a návrhová doporučení jsou výslovně rozlišeny.
 
-V rámci vydání 0.6.0 byla doplněna následně schválená rozhodnutí 3b o historickém kapitánství, rušení účtů, přiřazování kapitánů, 90denním auditním úklidu, CSV exportu a 24hodinové idempotenci. Číslo verze zůstává podle zadání 0.6.0.
+V rámci vydání 0.6.0 byla doplněna následně schválená rozhodnutí 3b o historickém kapitánství, rušení účtů, přiřazování kapitánů, auditním úklidu, CSV exportu a 24hodinové idempotenci. Pravidla bezpečnostního auditu byla následně výslovně změněna schválením etapy 3b.5: automatická retence 365 dní s konfigurovatelným minimem 90 dní a best-effort audit dokončeného exportu. Číslo verze zůstává 0.6.0.
 
 ## Historie verzí
 
@@ -91,7 +91,7 @@ Administrátor má plná oprávnění ke správě posádek, včetně posádek be
 
 Administrátor může spravovat role **ADMIN jiných aktivních uživatelů**. Systém po zřízení prvního administrátora nesmí zůstat bez administrátora: odebrání role, zrušení účtu či jiné zneplatnění posledního aktivního administrátora musí být odmítnuto. Tato ochrana platí také při souběžných požadavcích a při zrušení účtu samotným uživatelem. Pravidla případné změny vlastní role nejsou tímto rozhodnutím rozšířena.
 
-První administrátor vznikne jednorázovým SQL bootstrapem konkrétního existujícího aktivního účtu. **Veřejné bootstrap API se nezavádí**, role se neuděluje registrací ani automaticky při startu aplikace. Administrátorské zásahy včetně bootstrapu, správy rolí, změn kapitána a rušení účtů se auditují. Výslovnou výjimkou je samostatný read-only CSV export podle 13.1, který nemění databázi.
+První administrátor vznikne jednorázovým SQL bootstrapem konkrétního existujícího aktivního účtu. **Veřejné bootstrap API se nezavádí**, role se neuděluje registrací ani automaticky při startu aplikace. Administrátorské zásahy včetně bootstrapu, správy rolí, změn kapitána a rušení účtů se auditují. Dokončený CSV export má best-effort audit podle 13.1.
 
 ## 3. Šablona a konkrétní konání
 
@@ -407,7 +407,7 @@ Konkrétní datový kontrakt není schválen. JSONB je doporučen pro typově sp
 
 Autorizace musí vždy ověřovat práva k dané šabloně, konání nebo posádce. Názvy endpointů jsou pracovní.
 
-Pro etapu 3b se navíc navrhují administrativní operace pod `/api/v1/admin`: správa cizích posádek a kapitána, přidání/odebrání ADMIN jiného aktivního účtu, zrušení účtu a samostatný read-only CSV export a potvrzovaná auditní archivace/úklid. Přesné endpointy a potvrzovací kontrakty se schválí před implementací. Žádný bootstrap endpoint nevzniká.
+Pro etapu 3b se navíc navrhují administrativní operace pod `/api/v1/admin`: správa cizích posádek a kapitána, přidání/odebrání ADMIN jiného aktivního účtu, zrušení účtu a streamovaný CSV export `GET /api/v1/admin/audit-events/export`. Bezpečnostní audit se čistí plánovanou úlohou podle 13.1; ruční archivace ani dvoukrokové mazání se nezavádějí. Žádný bootstrap endpoint nevzniká.
 
 ## 12. Architektura a technologie
 
@@ -446,13 +446,13 @@ flowchart TB
 
 Auditují se změny posádek, běžné i administrátorské převody a další administrátorské zásahy, úspěšná přihlášení, odhlášení, změny a resety hesel a rušení účtů. Neúspěšná přihlášení se zatím zaznamenávají pouze do provozních logů. Do žádného záznamu nepatří hesla, tokeny ani nadbytečné osobní údaje.
 
-Auditní záznamy se standardně uchovávají **bez časového omezení**, bez automatického úklidu. Minimální stáří pro archivaci nebo mazání je pevně **90 dní**, nikoli kalendářní měsíce; při provedení musí mít každý záznam stáří alespoň 90 dní podle UTC času serveru.
+Bezpečnostní audit se automaticky čistí jednou denně v **03:15 Europe/Prague**. Výchozí retence je **365 dní**, konfigurovatelné minimum **90 dní**. Neplatná konfigurace nesmí umožnit úklid. Mažou se všechny typy bezpečnostního auditu starší než retenční hranice, včetně starých AUDIT_EXPORT a AUDIT_CLEANUP. Přesně na hranici záznam zůstává; stáří je skutečná doba v násobcích 24 hodin podle UTC okamžiků, nikoli počet místních kalendářních dní.
 
-Samostatný export auditu do **CSV** je možný kdykoliv bez omezení stáří a **bez změn v databázi**; nevytváří ani auditní záznam exportu. CSV používá **UTF-8 s BOM** a **středník** jako oddělovač pro otevření v Excelu. Export je přístupný pouze oprávněnému administrátorovi a nesmí obsahovat tajné nebo nadbytečné osobní údaje.
+Samostatný export auditu do **CSV** je možný kdykoliv bez omezení stáří a pouze pro aktivního ověřeného ADMIN s platnou relací. CSV používá **UTF-8 s BOM**, **středník**, hlavičku, správné escapování a ochranu před interpretací hodnot jako vzorců. Obsahuje dostupné strukturované údaje a metadata jako JSON pole; žádná autentizační tajemství ani nadbytečné osobní údaje. Časy se prezentují v Europe/Prague se skutečným CET/CEST a offsetem. Filtry rozlišují časový interval, typ události, aktéra a cílový účet podle skutečné struktury auditu. Výsledek se řadí od nejstaršího času a při shodě podle ID, bez pevného limitu počtu.
 
-**Archivace** znamená export záznamů s požadovaným stářím a jejich následné odstranění po výslovném potvrzení. Bez úspěšného exportu se archivované záznamy nemažou. **Mazání bez exportu je také povoleno.** Mazání, včetně mazací části archivace, je dvoukrokové: nejprve ověření podmínek a zobrazení počtu dotčených záznamů, potom výslovné potvrzení. Před samotným mazáním se znovu ověří časová hranice i oprávnění a úklid se zapíše do auditu.
+Export přímo streamuje konzistentní read-only snapshot REPEATABLE READ bez načtení celého výsledku do paměti a bez dočasného souboru. Nezadržuje zámky blokující úklid. Až po dokončení generování a serverového flush se v oddělené zapisovací transakci best effort vytvoří **AUDIT_EXPORT** s UUID administrátora, časem, filtry a počtem událostí. Obsah CSV se neukládá. Vlastní událost exportu není součástí jeho snapshotu. Potvrzení klientského převzetí není potřeba; selhání generování/streamování nevytváří úspěšný exportní audit. Selhání následného zápisu AUDIT_EXPORT se bezpečně zaloguje a již odeslané CSV se neodvolává.
 
-Běžné operace záznamy pouze přidávají; výslovně potvrzený administrativní úklid je kontrolovaná výjimka. Výmaz a audit úklidu musí být transakčně konzistentní. Úklid nesmí smazat svůj nový auditní záznam ani historické účasti, výsledky nebo historii pokusů. Žádný automatický úklid auditu se neprovádí.
+Běžné operace záznamy pouze přidávají; automatický retenční úklid je kontrolovaná výjimka. Výmaz a **AUDIT_CLEANUP** s časem, retenční hranicí a počtem odstraněných záznamů jsou v jedné transakci. Při chybě vše rollbackuje, chyba se bezpečně zaloguje a neprovádí se okamžitý retry. Koordinace instancí používá PostgreSQL advisory lock, bez trvalé evidence neúspěšných pokusů; restart neprovádí dohánění vynechaných běhů. Před odstraněním auditní historie se musí bezpečně vyřešit závislé legacy idempotentní záznamy, včetně expirovaných; neznámý formát či neověřitelná vazba úklid zastaví. Úklid nikdy nemaže historii závodů, účasti, výsledky, penalizace ani historii pokusů a nesmaže svůj nový auditní záznam. Ruční archivace a dvoukrokové mazání se neimplementují. Tato schválená pravidla 3b.5 nahrazují předchozí neomezenou retenci, ruční úklid a export bez auditu v rozsahu bezpečnostního auditu.
 
 Trvalé smazání účtu nesmí být blokované požadavkem na zachování auditní historie ani audit kaskádově smazat. Vazby aktéra musí umožnit zachování události bez otevřených osobních údajů odstraněného účtu; konkrétní pseudonymizace je technickým návrhem. Stejná minimalizace se vztahuje na exporty a archivy.
 
@@ -481,7 +481,7 @@ Nová potvrzená rozhodnutí mají přednost: pouze registrace posádky do závo
 - Běžný potvrzovaný převod do 7 dní na ID cíle; původní kapitán může čekající žádost zrušit, editace během čekání je povolena, smazání nikoli. Administrátor mění kapitána bez potvrzení a ruší čekající žádost atomicky. Závodní zařízení se nemění.
 - Plná správa posádek administrátorem, správa ADMIN jiných aktivních účtů, ochrana posledního administrátora a jednorázový SQL bootstrap.
 - Trvalé smazání účtu bez historické účasti, jinak anonymizace; zachování posádek bez kapitána a stejné pravidlo pro administrátora.
-- Audit dle 13.1 bez automatického úklidu; archivace/mazání od pevného stáří 90 dní s dvoukrokovým potvrzením a auditem úklidu. Samostatný CSV export kdykoliv, UTF-8 s BOM a středníkem, bez změn DB. Idempotency-Key v 3b: původní výsledek pro shodné parametry, HTTP 409 pro odlišné, retence 24 hodin.
+- Audit dle 13.1: automatická retence výchozích 365 dní, minimum 90, denně 03:15 Europe/Prague, transakční AUDIT_CLEANUP a ochrana legacy vazeb. Přímý CSV export kdykoliv, UTF-8 s BOM a středníkem, read-only snapshot a následný best-effort AUDIT_EXPORT. Žádná ruční archivace/dvoukrokové mazání. Idempotency-Key v 3b: původní výsledek pro shodné parametry, HTTP 409 pro odlišné, retence 24 hodin.
 
 - Historická účast patří kapitánovi při skutečném zahájení závodu, nikoli pouhé přihlášce; převod ji nepřepisuje. Zrušení účtu ruší všechny jeho čekající převody, zachová přihlášku, během závodění se odmítne a po ukončení respektuje historickou vazbu.
 - Běžný uživatel zakládá vlastní posádku, administrátor může zakládat i bez kapitána a kapitána odebrat. Cíl každého převodu musí existovat, být aktivní a mít ověřený e-mail; převod na sebe sama je zakázán.
@@ -497,7 +497,7 @@ Nová potvrzená rozhodnutí mají přednost: pouze registrace posádky do závo
 7. **Publikace:** dostupnost starších verzí a archivu dosud nepublikovaných minulých konání a další veřejná pole. Jména členů ani interní důvody nejsou veřejné; ruční rozřazení dvou i více posádek je vyřešeno.
 8. **Okraje průběhu:** přípustnost oficiálního startu vůči end_at, řetězec zrušených závěrečných stanovišť a čas dokončení při zrušení posledního zbývajícího stanoviště ve vztahu k nezapočtení doby zrušeného stanoviště.
 
-9. **Technika auditního úklidu:** konkrétní endpointy, vazba potvrzení na zobrazený výběr a způsob uložení/doručení archivu jsou technickým návrhem. Stáří alespoň 90 dní, dvoukrokové mazání a CSV export bez změn DB jsou již schválené.
+9. **Auditní export a retence – uzavřeno schválením 3b.5:** streamovaný CSV snapshot, následný best-effort audit exportu a automatická denní retence dle 13.1 nahrazují původní ruční archivaci a dvoukrokové mazání.
 10. **Technika idempotence 3b:** přesné pokrytí endpointů a způsob fyzického úklidu evidence navrhnout před implementací; retence 24 hodin, shodný výsledek a konflikt HTTP 409 jsou již schválené. Speciální závodní idempotence se nemění.
 11. **Rušení účtu a uchování stop:** technicky dopracovat pseudonymizaci auditních aktérů a FK historických převodů při fyzickém smazání účtu; nejde o znovuotevření schválených pravidel zrušení a zachování historie.
 

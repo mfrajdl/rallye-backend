@@ -57,7 +57,7 @@ public class ApiErrors {
         return ResponseEntity.internalServerError().body(problem(500, "INTERNAL_ERROR"));
     }
     /** Shared with the authentication filter, which runs outside MVC exception handling. */
-    static void logServerFailure(Throwable failure) {
+    public static void logServerFailure(Throwable failure) {
         org.slf4j.LoggerFactory.getLogger(ApiErrors.class).error("API server failure",
                 diagnostic(failure,java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>())));
     }

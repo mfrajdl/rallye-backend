@@ -41,6 +41,13 @@ public class AuditStore {
     }
     private final JdbcTemplate jdbc;
     public AuditStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    public void appendAuditMaintenance(UUID id,Instant time,UUID actor,Event event,String metadata) {
+        jdbc.update("""
+                INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type,metadata)
+                VALUES (?,?,?,?,?,?,'AUDIT_LOG',?::jsonb)
+                """,id,Timestamp.from(time),actor==null?"SYSTEM":"USER",actor,event.name(),
+                UUID.fromString("00000000-0000-0000-0000-000000000005"),metadata);
+    }
     public void append(UUID id, Instant time, UUID actor, Event type, UUID target) {
         jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id) VALUES (?,?,'USER',?,?,?)",
                 id, Timestamp.from(time), actor, type.name(), target);

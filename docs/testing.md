@@ -361,3 +361,35 @@ Uživatel potvrdil ruční scénáře přístupu nového a původního kapitána
 již v 3b.3c. Nejde o vlastní manuální běh Codexu. Revize 3b.3d a převody 3b.3
 jsou uzavřené; 3b.4, 3b.5, 3b.6 a 3c zůstávají plánované.
 [Revize 3b.3d](crew-transfers-3b3d.md).
+
+## Ověření etapy 3b.5
+
+Codex po cílené opravě P2 spustil `mvnw.cmd verify`: BUILD SUCCESS,
+234 testů bez databáze, 0 failures, 0 errors a 0 skipped (JDK 21).
+CSV a HTTP testy ověřují autorizaci, hlavičky, filtry, escapování, CET/CEST,
+read-only snapshot a oddělený best-effort audit. Retenční testy ověřují konfiguraci,
+pořadí operací, rollback a plán 03:15 Europe/Prague.
+
+Původních 14 scénářů AuditMaintenanceIT pokrývalo export, souběh, přesnou hranici
+retence, legacy idempotenci, rollback a V7. Uživatel potvrdil úspěšné
+`.\mvnw.cmd -Pit verify` nad rallye_test, včetně těchto nových scénářů.
+Jde o uživatelem potvrzený výsledek, nikoli PostgreSQL běh Codexu.
+Celkový počet integračních testů nebyl uveden. Uživatel potvrdil také ruční CSV
+export, filtrování podle parametrů, vytváření AUDIT_EXPORT a zamítnutí běžného
+uživatele.
+
+Oprava P2 přidává CommandRetentionEvidenceTest a rozšiřuje AuditMaintenanceIT na
+17 scénářů. Legacy CREW_CAPTAIN bez related_account_ids nelze spolehlivě spojit
+s konkrétní auditní událostí; retence proto skončí rollbackem i při existenci
+jiné či zdánlivě odpovídající změny stejné posádky. Úplná metadata nadále fungují
+bez auditní historie a umožňují následný úklid při rušení účtu. Backfill známého
+legacy ADMIN_ROLE a jeho rollback při chybě AUDIT_CLEANUP zůstávají pokryté.
+Dosavadní účetní, převodní a idempotentní testy bez DB prošly v celé sadě.
+Uživatel následně potvrdil úspěšné `.\mvnw.cmd -Pit verify` proti rallye_test
+také po opravě P2, včetně upravené sady 17 scénářů AuditMaintenanceIT.
+Jde o uživatelem potvrzený výsledek, nikoli vlastní PostgreSQL běh Codexu.
+Celkový počet integračních testů nebyl uveden. Integrační ověření opravy P2
+je tím uzavřeno.
+Profil it vypíná časový plánovač, testy službu volají explicitně v izolovaném
+schématu. Všechny dosavadní ochrany připojení zůstávají zachovány.
+Podrobnosti: [audit-3b5.md](audit-3b5.md). 3b.6 a 3c zůstávají plánované.
