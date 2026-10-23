@@ -256,3 +256,20 @@ rollbacku auditu, vlastnictví i evidence idempotence. Uživatel potvrdil
 úspěšné .\mvnw.cmd -Pit verify proti rallye_test. Failsafe report uvádí 71 testů,
 0 errors, 0 failures a 0 skipped. Jde o uživatelem potvrzený běh, nikoli běh Codexu.
 Podrobnosti a Postman: [crew-transfers-3b3c.md](crew-transfers-3b3c.md).
+
+## Závěrečná revize převodů 3b.3d
+
+Codex provedl .\mvnw.cmd verify s JDK 21: BUILD SUCCESS, 176 testů bez DB,
+0 failures, 0 errors, 0 skipped. Do CrewTransfersIT přibyly pouze dva chybějící
+případy: souběh resend/accept a přesná 24hodinová retence. Původní test
+reject/cancel byl posílen o replay a nový klíč po odstranění posádky.
+Uživatel dne 2026-10-23 potvrdil .\mvnw.cmd -Pit verify proti rallye_test:
+BUILD SUCCESS. Failsafe report uvádí 73 IT celkem, 0 errors, 0 failures,
+0 skipped, včetně 34 CrewTransfersIT. Jde o uživatelem potvrzený běh, nikoli
+běh Codexu. Nové případy i posílený replay test tím prošly.
+Postman má 76 požadavků a 125 syntakticky ověřených skriptů, dva výslovné
+GET scénáře přístupu obou kapitánů a replay založení bez generování nového klíče.
+Uživatel potvrdil ruční scénáře přístupu nového a původního kapitána ověřené
+již v 3b.3c. Nejde o vlastní manuální běh Codexu. Revize 3b.3d a převody 3b.3
+jsou uzavřené; 3b.4, 3b.5, 3b.6 a 3c zůstávají plánované.
+[Revize 3b.3d](crew-transfers-3b3d.md).

@@ -211,3 +211,9 @@ HTTP regrese pokrývají 405 včetně Allow a absence neočekávaného error log
 404, 406 a zachování 415 vedle dřívějšího testu bezpečné diagnostiky 500.
 Po této opravě `.\mvnw.cmd verify`: BUILD SUCCESS, 176 testů, 0 failures,
 0 errors, 0 skipped. Běh nevyžadoval databázi.
+
+## Závěrečná revize převodů
+
+Aktuální výsledek kontroly celého procesu a podmínky uzavření 3b.3 jsou
+v [crew-transfers-3b3d.md](crew-transfers-3b3d.md). Revize 3b.3d neuzavírá
+celou 3b; další kroky zůstávají 3b.4, 3b.5 a 3b.6, teprve potom 3c.

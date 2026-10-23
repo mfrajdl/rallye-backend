@@ -207,6 +207,9 @@ class CrewTransfersIT {
         assertEquals(owner.principal().accountId(),crews.detail(owner.principal(),crew.id()).captainAccountId());
         assertEquals(1,transferAudits(id,operation.equals("cancel")?"CREW_TRANSFER_CANCELLED":"CREW_TRANSFER_REJECTED"));
         crews.delete(owner.principal(),crew.id(),0);assertNotNull(transfers.find(id));
+        assertEquals(result,service.decide(actor,id,key,operation,secret));
+        assertEquals("TRANSFER_NOT_PENDING",assertThrows(AuthFailure.class,
+                ()->service.decide(actor,id,UUID.randomUUID(),operation,secret)).code());
     }
     @Test void oldTokenAndWrongUserCannotDecideAndLiveTransferBlocksDeletion() {
         var crew=crew();String old=secret(crew.id());UUID id=pendingId(crew.id());
@@ -294,6 +297,38 @@ class CrewTransfersIT {
             assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM crew_transfer WHERE crew_id=?",Integer.class,crew.id()));
             assertTrue(java.util.Arrays.asList(results).contains("CREW_NOT_FOUND"));
         } else {assertTrue(java.util.Arrays.asList(results).contains("CREW_TRANSFER_PENDING"));assertNotNull(pendingId(crew.id()));}
+    }
+    @Test void resendRacingAcceptanceNeverAcceptsInvalidatedTokenOrChangesOwnerTwice() throws Exception {
+        var crew=crew();String old=secret(crew.id());UUID id=pendingId(crew.id());long before=messages();
+        var results=race(()->service.resend(owner.principal(),crew.id(),id,UUID.randomUUID()),
+                ()->service.decide(target.principal(),id,UUID.randomUUID(),"accept",old));
+        if(transfers.find(id).status()==CrewTransfer.Status.ACCEPTED) {
+            assertInstanceOf(CrewTransferService.Decision.class,results[1]);
+            assertEquals("CREW_NOT_FOUND",results[0]);assertEquals(before,messages());
+            assertEquals(1,crews.detail(target.principal(),crew.id()).version());
+            assertEquals(1,transferAudits(id,"CREW_TRANSFER_ACCEPTED"));
+        } else {
+            assertInstanceOf(CrewTransferService.View.class,results[0]);assertEquals("INVALID_REQUEST",results[1]);
+            assertEquals(before+1,messages());assertEquals(0,crews.detail(owner.principal(),crew.id()).version());
+            assertEquals(0,transferAudits(id,"CREW_TRANSFER_ACCEPTED"));
+            String fresh=mail.token(targetEmail(),"CREW_TRANSFER");assertFalse(old.equals(fresh));
+            assertEquals(1,service.decide(target.principal(),id,UUID.randomUUID(),"accept",fresh).crewVersion());
+        }
+    }
+    @Test void commandRetentionEndsAtExactly24HoursWithoutExtendingTransferLifetime() {
+        var crew=crew();UUID createKey=UUID.randomUUID(),resendKey=UUID.randomUUID();String email=targetEmail();
+        var original=service.create(owner.principal(),crew.id(),createKey,email,0);
+        service.resend(owner.principal(),crew.id(),original.id(),resendKey);
+        var created=jdbc.queryForMap("SELECT created_at,expires_at FROM admin_role_command WHERE actor_id=? AND command_key=?",owner.principal().accountId(),resendKey);
+        assertEquals(Duration.ofHours(24),Duration.between(((Timestamp)created.get("created_at")).toInstant(),((Timestamp)created.get("expires_at")).toInstant()));
+        clock.advance(Duration.ofHours(24).minusMillis(1));long before=messages();
+        assertEquals(original,service.create(owner.principal(),crew.id(),createKey,email,0));
+        service.resend(owner.principal(),crew.id(),original.id(),resendKey);assertEquals(before,messages());
+        clock.advance(Duration.ofMillis(1));
+        assertEquals("TRANSFER_ALREADY_PENDING",assertThrows(AuthFailure.class,
+                ()->service.create(owner.principal(),crew.id(),createKey,email,0)).code());
+        var resent=service.resend(owner.principal(),crew.id(),original.id(),resendKey);
+        assertEquals(original.expiresAt(),resent.expiresAt());assertEquals(before+1,messages());
     }
     @Test void expirationAfterLocksAreAcquiredPreventsDecision() {
         var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id());

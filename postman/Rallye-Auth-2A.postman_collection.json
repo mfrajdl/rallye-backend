@@ -2911,8 +2911,8 @@
                   "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
                   "if(!uuid.test(pm.collectionVariables.get('crewId')||'')) {pm.execution.skipRequest();throw new Error('Set crewId and log in as its current captain.');}",
                   "if(!pm.collectionVariables.get('crewTransferTargetEmail') || !/^[0-9]+$/.test(pm.collectionVariables.get('crewTransferVersion')||'')) {pm.execution.skipRequest();throw new Error('Set crewTransferTargetEmail and crewTransferVersion from GET crew detail.');}",
-                  "if(!pm.collectionVariables.get('crewTransferKey')) pm.collectionVariables.set('crewTransferKey',pm.variables.replaceIn('{{$guid}}'));",
-                  "if(!pm.collectionVariables.get('crewTransferId')) {pm.execution.skipRequest();throw new Error('Create the request first.');}"
+                  "if(!pm.collectionVariables.get('crewTransferId')) {pm.execution.skipRequest();throw new Error('Create the request first.');}",
+                  "if(!uuid.test(pm.collectionVariables.get('crewTransferKey')||'')){pm.execution.skipRequest();throw new Error('Replay requires the original creation key; no new key is generated.');}"
                 ]
               }
             },
@@ -3374,6 +3374,79 @@
                 "exec": [
                   "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
                   "if(pm.response.code===200)pm.collectionVariables.set('crewVersion',String(pm.response.json().version));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "12 — Transfer access review 3b.3d (switch accounts manually)",
+      "description": "Run individually after successful accept. Use the existing Login request to switch between the ordinary target and ordinary original captain. Do not use an ADMIN original captain because ADMIN legitimately retains access. Keep crewId unchanged.",
+      "item": [
+        {
+          "name": "3b3d New captain can read transferred crew",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}",
+            "description": "Log in as the target account that accepted this crew transfer, then send this GET."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('crewId')){pm.execution.skipRequest();throw new Error('Set crewId to the transferred crew.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3d Original captain cannot read transferred crew",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}",
+            "description": "Log in as the original ordinary non-ADMIN captain. Its session is valid but ownership access is revoked. Keep the same crewId."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('crewId')){pm.execution.skipRequest();throw new Error('Set crewId to the transferred crew.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404',()=>pm.response.to.have.status(404));",
+                  "pm.test('Old owner has no access',()=>pm.expect(pm.response.json().code).to.eql('CREW_NOT_FOUND'));"
                 ]
               }
             }

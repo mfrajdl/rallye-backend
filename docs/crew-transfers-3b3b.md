@@ -203,3 +203,9 @@ opakováním skutečně změní verzi posádky.
 Rozhodovací REST API, audit a ochrany mazání/ADMIN změn nyní implementuje
 [crew-transfers-3b3c.md](crew-transfers-3b3c.md). Původní popis hranice etapy
 v tomto dokumentu je historický; uživatel nyní potvrdil úspěšné integrační ověření 3b.3c.
+
+## Závěrečná revize převodů
+
+Aktuální výsledek kontroly celého procesu a podmínky uzavření 3b.3 jsou
+v [crew-transfers-3b3d.md](crew-transfers-3b3d.md). Revize 3b.3d neuzavírá
+celou 3b; další kroky zůstávají 3b.4, 3b.5 a 3b.6, teprve potom 3c.
