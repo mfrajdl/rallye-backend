@@ -7,6 +7,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CommandAccountsTest {
     UUID actor=UUID.randomUUID(),target=UUID.randomUUID(),owner=UUID.randomUUID();
+    @Test void adminCancellationStoresOnlyIdsAndKnownOutcome() {
+        var request="[\""+target+"\"]";
+        assertEquals(Set.of(actor,target),CommandAccounts.inspect(actor,target,"ADMIN_ACCOUNT_CANCEL",request,
+                "{\"id\":\""+target+"\",\"outcome\":\"DELETED\"}").accounts());
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"ADMIN_ACCOUNT_CANCEL",request,
+                "{\"id\":\""+target+"\",\"outcome\":\"DELETED\",\"password\":\"must-not-persist\"}"));
+    }
     @Test void roleTargetIsAccountButCrewTargetIsNot() {
         assertEquals(Set.of(actor,target),CommandAccounts.inspect(actor,target,"ADMIN_ROLE",null,null).accounts());
         var crew=CommandAccounts.inspect(actor,target,"CREW_CREATE","[\"Crew\",null,null,\""+owner+"\"]",

@@ -49,6 +49,7 @@ public class AuthService {
         String hash = passwords.encode(password); // Also perform work on duplicate registration.
         UUID id = UUID.randomUUID();
         Instant now = now();
+        roles.lock();
         if (store.create(id, normalized, name.strip(), hash, now)) {
             issue(id, normalized, "EMAIL_VERIFICATION", Duration.ofHours(24), now);
         }
@@ -58,7 +59,7 @@ public class AuthService {
         var account = store.byEmail(normalizeEmail(email));
         if (account == null) return;
         account = store.lockAccount(account.id());
-        if ("PENDING_EMAIL".equals(account.status())) {
+        if (account != null && "PENDING_EMAIL".equals(account.status())) {
             issue(account.id(), account.email(), "EMAIL_VERIFICATION", Duration.ofHours(24), now());
         }
     }
@@ -81,6 +82,9 @@ public class AuthService {
             throw AuthFailure.credentials();
         }
         account = store.lockAccount(account.id());
+        if(account==null) {
+            passwords.matches(password,dummyHash);failedLogin();throw AuthFailure.credentials();
+        }
         boolean valid = passwords.matches(password, account.passwordHash() == null ? dummyHash : account.passwordHash());
         if (!valid || account.passwordHash() == null || !"ACTIVE".equals(account.status())) {
             failedLogin(); throw AuthFailure.credentials();
@@ -113,7 +117,7 @@ public class AuthService {
         var account = store.byEmail(normalizeEmail(email));
         if (account == null) return;
         account = store.lockAccount(account.id());
-        if ("ACTIVE".equals(account.status()) && account.passwordHash() != null) {
+        if (account != null && "ACTIVE".equals(account.status()) && account.passwordHash() != null) {
             issue(account.id(), account.email(), "PASSWORD_RESET", Duration.ofMinutes(30), now());
         }
     }

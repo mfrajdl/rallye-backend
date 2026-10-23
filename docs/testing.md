@@ -1,5 +1,64 @@
 # Testování bez lokálního Dockeru
 
+## 3b.4b – služba a API rušení účtů
+
+**Závěrečný stav: 3b.4b i celá 3b.4 dokončeny.** Uživatel po review potvrdil
+`mvnw.cmd verify` – BUILD SUCCESS, 217 testů, `mvnw.cmd -Pit verify` –
+BUILD SUCCESS ve svém prostředí a všechny plánované ruční scénáře.
+Níže popsaná překážka prostředí Codexu je historický průběh review;
+nový PostgreSQL běh uživatel následně úspěšně ověřil. Nejde o PostgreSQL běh Codexu.
+
+Závěrečné review viz [review-3b4b.md](review-3b4b.md): bez nalezené funkční
+chyby. Uživatel potvrdil ruční Postman ověření vlastní/ADMIN cesty, session,
+nové registrace stejného e-mailu, replay, 404/403/409, zachování osiřelé posádky
+a jejího převzetí ADMIN se zvýšením verze. Nové `-Pit verify` v prostředí Codexu
+provedlo 217 testů bez DB bez chyby, ale integrační část správně odmítla chybějící
+testovací opt-in/konfiguraci (18 chyb inicializace/kontextu, žádný ověřený DB běh).
+Předcházelo tomu selhání JVM kvůli paměti Windows; použité dočasné limity jsou
+popsány v review. Dřívější uživatelský úspěch 112 IT je historický výsledek,
+nikoli výsledek tohoto pokusu Codexu. Potřebné opakování následně provedl
+a úspěšně potvrdil uživatel, jak uvádí závěrečný stav výše.
+Závěrečné samostatné `mvnw.cmd verify` s dočasně omezenou pamětí JVM následně
+prošlo: **BUILD SUCCESS, 217 testů, 0 failures/errors/skipped**, JAR sestaven.
+
+Po doplnění diagnostiky ruční chyby 500 prošlo nové `mvnw.cmd verify` s JDK 21:
+**217 testů, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS**. HTTP testy
+ověřují bezpečné logování obecné i explicitní aplikační 500, selhání filtru
+a zachování SQL příčiny chyby kontroly účastí. Log nesmí obsahovat původní
+zprávy výjimek, hesla, e-maily ani tokeny. Konkrétní příčina ručního selhání
+nebyla doložena; následné uživatelem potvrzené ruční scénáře již prošly.
+Podrobnosti v [account-cancellation-3b4b.md](account-cancellation-3b4b.md).
+Níže uvedený uživatelský PostgreSQL úspěch předcházel této diagnostické úpravě.
+
+Nové AccountCancellationServiceTest, AccountCancellationHttpTest,
+LocalCancellationIdentityCheckTest a PreRaceAccountParticipationFactsTest
+ověřují autorizaci, heslo, audit, replay, CSRF/Bearer, rate limiting a odmítnutí
+nepodporovaného schématu. AuthServiceTest doplňuje chybějící účet po získání
+zámku; CommandAccountsTest kontroluje bezpečný formát ADMIN cancellation.
+
+AccountCancellationServiceIT přidává 21 testů proti izolovanému schématu
+`it_cancel_service_<uuid>` a soukromému dočasnému adresáři fotografií. Ověřuje
+obě cesty rušení, PENDING_EMAIL/DISABLED, skutečné odstranění relací/tokenů,
+opětovnou registraci, osiřelé posádky a zachované soubory, převody na obou
+stranách, historii přes testovací adaptér, posledního ADMIN, idempotenci,
+rollback po zápisu auditu a při odmítnutí úklidu, neznámé/nedostupné schéma,
+zmizení účtu mezi lookup/zámkem a souběhy s převody/registrací/ADMIN kapitánstvím.
+
+Uživatel potvrdil `.\mvnw.cmd -Pit verify` proti `rallye_test`: **BUILD SUCCESS**.
+Failsafe report dokládá **112 integračních testů, 0 failures, 0 errors, 0 skipped**,
+včetně 21 nových scénářů 3b.4b. Jde o uživatelem provedený běh, nikoli běh Codexu.
+Ruční scénáře jsou ve složce 13 Postman kolekce, návod a omezení v
+[account-cancellation-3b4b.md](account-cancellation-3b4b.md).
+Ruční Postman ověření i závěrečný úspěšný PostgreSQL běh v uživatelově prostředí
+jsou potvrzeny. Celá 3b.4 je uzavřena.
+
+Codex provedl `mvnw.cmd verify` s JDK 21: **BUILD SUCCESS, 211 testů bez DB,
+0 failures, 0 errors, 0 skipped**. PostgreSQL běh následně potvrdil uživatel.
+Kolekce prošla JSON parsery Node.js a PowerShellu,
+strukturální kontrolou Collection v2.1 a syntaktickou kontrolou 147 skriptů;
+obsahuje 87 požadavků, z toho 11 nových. Původní požadavky, proměnné,
+autentizační nastavení i skripty byly při kontrole porovnány s HEAD a zachovány.
+
 ## 3b.4a – databázový základ rušení účtů
 
 Nový `CommandAccountsTest` ověřuje klasifikaci idempotentních operací, význam

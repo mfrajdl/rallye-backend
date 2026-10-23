@@ -14,6 +14,21 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class AuthServiceTest {
+    @Test void accountRemovedBetweenEmailLookupAndLockCannotLogin() {
+        when(store.byEmail(anyString())).thenReturn(active());
+        when(store.lockAccount(account)).thenReturn(null);
+        assertEquals("INVALID_CREDENTIALS",assertThrows(AuthFailure.class,()->service.login("crew@example.test","bad",false)).code());
+        verify(passwords).matches("bad","argon-hash");
+        verify(store,never()).insertSession(any(),any(),anyBoolean(),any(),any());
+        verifyNoInteractions(audit,mail);
+    }
+    @Test void accountRemovedBeforeResetOrVerificationLockIsGenericNoOp() {
+        when(store.byEmail(anyString())).thenReturn(active());
+        when(store.lockAccount(account)).thenReturn(null);
+        assertDoesNotThrow(()->service.requestReset("crew@example.test"));
+        assertDoesNotThrow(()->service.requestVerification("crew@example.test"));
+        verify(store,never()).insertAction(any(),any(),any(),any(),any());verifyNoInteractions(mail);
+    }
     AccountStore store;
     PasswordEncoder passwords;
     AccountMailSender mail;

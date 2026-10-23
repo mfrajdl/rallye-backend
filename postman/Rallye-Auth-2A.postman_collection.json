@@ -232,6 +232,36 @@
       "key": "crewTransferAdminVersion",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "cancellationPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "selfCancellationKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminCancellationKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accountCancellationTargetId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accountCancellationOriginalTargetId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accountCancellationConflictTargetId",
+      "value": "",
+      "type": "string"
     }
   ],
   "event": [
@@ -3447,6 +3477,523 @@
                 "exec": [
                   "pm.test('HTTP 404',()=>pm.response.to.have.status(404));",
                   "pm.test('Old owner has no access',()=>pm.expect(pm.response.json().code).to.eql('CREW_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "13 — Account cancellation 3b.4b (DESTRUCTIVE, run individually)",
+      "description": "See docs/account-cancellation-3b4b.md. Verify /auth/me before cancellation. All requests use the existing automatic cookie/CSRF mechanism. Never run this whole folder as a batch. No passwords or tokens are prefilled.",
+      "item": [
+        {
+          "name": "3b4b Self cancellation - wrong password (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{selfCancellationKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "description": "Run while logged in as a disposable LOCAL account. Does not cancel the account.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"intentionally-incorrect-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{$guid}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401',()=>pm.response.to.have.status(401));",
+                  "pm.test('Error code',()=>pm.expect(pm.response.json().code).to.eql('INVALID_CREDENTIALS'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b Self cancellation - missing Idempotency-Key (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{cancellationPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('cancellationPassword')){pm.execution.skipRequest();throw new Error('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Error code',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b Self cancellation - last ADMIN (409, optional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{selfCancellationKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "description": "Only while logged in as the sole active ADMIN. Use its current password; account remains unchanged.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{cancellationPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('cancellationPassword')){pm.execution.skipRequest();throw new Error('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409',()=>pm.response.to.have.status(409));",
+                  "pm.test('Error code',()=>pm.expect(pm.response.json().code).to.eql('LAST_ADMIN_REQUIRED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b Self cancellation - DELETE TEST ACCOUNT (204)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{selfCancellationKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "description": "DESTRUCTIVE for the currently logged-in test account. Preserves crews/photos, removes login credentials. Run individually after checking identity with /auth/me. Never run the entire folder unattended.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{cancellationPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('cancellationPassword')){pm.execution.skipRequest();throw new Error('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204',()=>pm.response.to.have.status(204));",
+                  "pm.test('No response body',()=>pm.expect(pm.response.text()).to.eql(''));",
+                  "pm.collectionVariables.unset('cancellationPassword');"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b Self cancellation - original credentials are invalid (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{selfCancellationKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "description": "Immediately after successful self cancellation. Original session has been deleted and the web cookie cleared; do not log in again before this check.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"unused-after-cancellation\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{$guid}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401',()=>pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b ADMIN cancellation - ordinary user forbidden (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{adminCancellationKey}}",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/users/{{accountCancellationTargetId}}/cancellations",
+            "description": "Log in as an ordinary user first. ADMIN route must reject access."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('accountCancellationTargetId')){pm.execution.skipRequest();throw new Error('Set accountCancellationTargetId to a disposable target account UUID.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403',()=>pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b ADMIN cancellation - own account forbidden (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{adminCancellationKey}}",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/users/{{adminAccountId}}/cancellations",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('adminAccountId')){pm.execution.skipRequest();throw new Error('Set adminAccountId to the currently logged-in ADMIN account UUID.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403',()=>pm.response.to.have.status(403));",
+                  "pm.test('Error code',()=>pm.expect(pm.response.json().code).to.eql('SELF_ACCOUNT_CANCELLATION_FORBIDDEN'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b ADMIN cancellation - DELETE TARGET TEST ACCOUNT (204)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{adminCancellationKey}}",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/users/{{accountCancellationTargetId}}/cancellations",
+            "description": "DESTRUCTIVE for accountCancellationTargetId. Log in as ADMIN first; target must be a different disposable account. PENDING_EMAIL and DISABLED are supported."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('accountCancellationTargetId')){pm.execution.skipRequest();throw new Error('Set accountCancellationTargetId to a disposable target account UUID.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204',()=>pm.response.to.have.status(204));",
+                  "if(pm.response.code===204)pm.collectionVariables.set('accountCancellationOriginalTargetId',pm.collectionVariables.get('accountCancellationTargetId'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b ADMIN cancellation - replay after deletion (204)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{adminCancellationKey}}",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/users/{{accountCancellationOriginalTargetId}}/cancellations",
+            "description": "Same ADMIN, key and original target. Must not produce another cancellation audit entry."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')){pm.execution.skipRequest();throw new Error('Run the successful ADMIN cancellation first; retain its key.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204',()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b ADMIN cancellation - same key different target (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{adminCancellationKey}}",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/users/{{accountCancellationConflictTargetId}}/cancellations",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')||!pm.collectionVariables.get('accountCancellationConflictTargetId')||pm.collectionVariables.get('accountCancellationConflictTargetId')===pm.collectionVariables.get('accountCancellationOriginalTargetId')){pm.execution.skipRequest();throw new Error('Complete ADMIN cancellation and set a different UUID in accountCancellationConflictTargetId.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409',()=>pm.response.to.have.status(409));",
+                  "pm.test('Error code',()=>pm.expect(pm.response.json().code).to.eql('IDEMPOTENCY_CONFLICT'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b4b ADMIN cancellation - deleted target new key (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/users/{{accountCancellationOriginalTargetId}}/cancellations",
+            "description": "Uses a new UUID header without replacing the saved successful ADMIN replay key."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')){pm.execution.skipRequest();throw new Error('Complete ADMIN cancellation first.');}",
+                  "pm.request.headers.upsert({key:'Idempotency-Key',value:pm.variables.replaceIn('{{$guid}}')});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404',()=>pm.response.to.have.status(404));",
+                  "pm.test('Error code',()=>pm.expect(pm.response.json().code).to.eql('ACCOUNT_NOT_FOUND'));"
                 ]
               }
             }

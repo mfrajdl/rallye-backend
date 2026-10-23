@@ -238,7 +238,7 @@ Zrušení posledního aktivního ADMIN se odmítne, dokud existuje jen tento adm
 | 3b.1 – dokončeno a ověřeno | Flyway V2, auditní základ a čtení s filtry, aktuální ADMIN, správa rolí jiných aktivních ověřených uživatelů, SQL bootstrap a DB ochrany posledního administrátora. Audit bezpečnostních operací 2A je podle aktuálního zadání již zahrnut. Grant/revoke i audit a idempotentní výsledek jsou atomické. Unit testy 90/90, integrační sada 26/26 a manuální Postman ověření dokončeny; integrační BUILD SUCCESS potvrdil uživatel. |
 | 3b.2 – dokončeno | CRUD posádek, limity a soukromé fotografie, aktuální vlastnictví/ADMIN, sdílený Idempotency-Key a podle dodatečného schválení i okamžité administrátorské přiřazení/změna/odebrání kapitána. Jedna version pro texty/fotografie/kapitánství. V3, CrewsIT a Postman dokončeny; 118 testů bez DB a report 39/39 IT bez chyb. Podrobnosti v crews-3b2.md. |
 | 3b.3 – dokončeno a ověřeno | Běžný převod na ID cíle do 7 dní, zrušení původním kapitánem, editace ano/smazání ne; administrativní změna bez potvrzení je již v 3b.2; 3b.3c doplňuje atomické zrušení čekající žádosti při změně/odebrání kapitána. Část 3b.3a je dokončená a ověřená: V4 a interní životní cyklus s povinnou vnější transakcí; 137 testů bez DB a 48 integračních testů bez chyb, integrační BUILD SUCCESS potvrdil uživatel. Část 3b.3b je dokončená a ověřená; přidává REST založení a resend, tokeny, SMTP/souborové doručení po commitu a stávající idempotenci; verify prošlo se 159 testy bez DB, 56 IT prošlo v uživatelem potvrzeném běhu. Část 3b.3c implementuje accept/reject/cancel, audit včetně REQUESTED, ochrany DELETE a ADMIN změn, V5 a oddělené otisky idempotence. 3b.3c dokončeno a ověřeno: verify 176 testů bez DB, 71 IT bez chyb v uživatelem potvrzeném běhu; Revize 3b.3d dokončila kontrolu převodů, opravila Postman replay a doplnila souběh resend/accept a 24h retenci; verify 176 testů prošlo, uživatel potvrdil nový integrační BUILD SUCCESS (73 IT, 0 chyb). Automatická revize je ověřená; uživatel potvrdil také ruční scénáře přístupu obou kapitánů provedené v 3b.3c. Převody 3b.3 jsou uzavřené. Viz [crew-transfers-3b3d.md](crew-transfers-3b3d.md). Uzavírá se pouze 3b.3, dále následují 3b.4 → 3b.5 → 3b.6 → 3c. Viz [crew-transfers-3b3c.md](crew-transfers-3b3c.md). Viz [crew-transfers-3b3b.md](crew-transfers-3b3b.md). Podrobnosti a rozdělení 3b.3a–d: [crew-transfers-3b3a.md](crew-transfers-3b3a.md). |
-| 3b.4 | Rušení účtu uživatelem i ADMIN: bez historické účasti smazat, jinak anonymizovat; během závodění odmítnout, pouhou přihlášku zachovat. Všechny čekající převody daného uživatele zrušit, posádky zachovat bez kapitána. Ověřit transakční rollback, FK, neměnnou historickou vazbu i po převodu a zákaz zrušení posledního ADMIN. |
+| 3b.4 – dokončeno a ověřeno | Rušení účtu uživatelem i ADMIN: bez historické účasti smazat, jinak anonymizovat; během závodění odmítnout, pouhou přihlášku zachovat. Všechny čekající převody daného uživatele zrušit, posádky zachovat bez kapitána. Ověřit transakční rollback, FK, neměnnou historickou vazbu i po převodu a zákaz zrušení posledního ADMIN. |
 | 3b.5 | Audit úspěšného přihlášení, odhlášení a změny/resetu hesla je již implementován v 3b.1; znovu jej nepřidávat. Zbývá CSV export kdykoliv bez DB změn, UTF-8 s BOM a středníkem. Archivace/mazání od stáří 90 dní, dvoukrokové potvrzení a opětovná kontrola hranice při provedení; audit úklidu a rollback. Žádná automatika. |
 | 3b.6 | Regresní testy 2A, jednotkové/HTTP testy, chráněné PostgreSQL IT a Postman scénáře více vlastníků a administrátorů. Codex spouští testy bez DB, uživatel integrační běh a potvrzuje výsledek. Aktualizovat dokumentaci podle skutečné implementace. |
 
@@ -253,11 +253,38 @@ idempotentních záznamů včetně starších formátů a e-mailů v JSON hodnot
 Podrobnosti a omezení jsou v [account-cancellation-3b4a.md](account-cancellation-3b4a.md).
 3b.4a je dokončena a ověřena: `mvnw.cmd verify` prošlo se 184 testy bez DB;
 uživatel potvrdil `mvnw.cmd -Pit verify` – BUILD SUCCESS, 91 PostgreSQL IT.
-Celá 3b.4 není uzavřena.
+Navazující 3b.4b je nyní také dokončena; tím je uzavřena celá 3b.4.
 
-3b.4b doplní celkovou orchestraci/autorizaci, kontrolu hesla a historie účasti,
-ochranu souběhů s autentizací, audit rušení a veřejné API. Nedoplňovat zatím
-externí přihlášení ani závodní účasti. Následující 3b.5, 3b.6 a 3c zůstávají plánované.
+### Dílčí realizace 3b.4b – dokončeno a ověřeno
+
+Společná AccountCancellationService spojuje vlastní a ADMIN rušení v jediné
+transakci s aktuálním oprávněním, kontrolou hesla, posledního aktivního ADMIN,
+odpojením posádek, ukončením převodů, odstraněním přihlašovacích prostředků,
+úklidem idempotence a auditem výsledku DELETED/ANONYMIZED i navazujících změn.
+Nové POST endpointy jsou `/api/v1/auth/account-cancellations` a
+`/api/v1/admin/users/{accountId}/cancellations`; oba vyžadují UUID Idempotency-Key.
+ADMIN replay funguje i po odstranění cíle; vlastní cesta odstraní cookie a relace.
+
+Adaptér AccountParticipationFacts dovolí prázdná fakta jen pro přesné V1–V6,
+jinak odmítá 503. Závody ani OAuth se neimplementují. Audit využívá existující
+schéma bez V7; budoucí závodní migrace musí dodat skutečný adaptér účastí.
+Pořadí zámků autentizace je sjednoceno s rušením a ošetřuje zmizení účtu před
+zámkem. Připraveny jsou unit/HTTP testy, PostgreSQL souběhy/rollback a Postman.
+Viz [account-cancellation-3b4b.md](account-cancellation-3b4b.md).
+Codex ověřil `mvnw.cmd verify`: BUILD SUCCESS, 211 testů bez DB;
+uživatel potvrdil `mvnw.cmd -Pit verify`: BUILD SUCCESS, 112 PostgreSQL testů
+bez chyb včetně 21 nových scénářů. Nejde o vlastní PostgreSQL běh Codexu.
+Uživatel následně potvrdil ruční Postman scénáře včetně osiřelé posádky a jejího
+převzetí. Review neodhalilo funkční problém. Závěrečné `-Pit verify` v prostředí
+Codexu po 217 úspěšných testech bez DB odmítlo chybějící testovací konfiguraci;
+nový PostgreSQL běh tedy není ověřen. Viz [review-3b4b.md](review-3b4b.md).
+Samostatné závěrečné `verify` s dočasně omezenou pamětí JVM prošlo: 217 testů,
+BUILD SUCCESS. Produkční kód nebylo při review potřeba měnit.
+Uživatel následně potvrdil závěrečné `mvnw.cmd verify` – BUILD SUCCESS,
+217 testů, `mvnw.cmd -Pit verify` – BUILD SUCCESS ve svém prostředí a všechny
+plánované ruční scénáře. Předchozí překážka opakování IT je tím vyřešena;
+3b.4b i celá 3b.4 jsou uzavřeny. Následující 3b.5, 3b.6
+a 3c zůstávají plánované.
 
 ## Zdroje technického návrhu
 

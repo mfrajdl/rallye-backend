@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class ApiErrors {
     @ExceptionHandler(AuthFailure.class)
     ResponseEntity<ProblemDetail> auth(AuthFailure failure) {
+        if(failure.status()>=500) logServerFailure(failure);
         var builder = ResponseEntity.status(failure.status());
         if (failure.status() == 429) builder.header("Retry-After", "900");
         return builder.body(problem(failure.status(), failure.code()));
@@ -54,6 +55,11 @@ public class ApiErrors {
         org.slf4j.LoggerFactory.getLogger(ApiErrors.class).error("Unexpected API failure",
                 diagnostic(failure,java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>())));
         return ResponseEntity.internalServerError().body(problem(500, "INTERNAL_ERROR"));
+    }
+    /** Shared with the authentication filter, which runs outside MVC exception handling. */
+    static void logServerFailure(Throwable failure) {
+        org.slf4j.LoggerFactory.getLogger(ApiErrors.class).error("API server failure",
+                diagnostic(failure,java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>())));
     }
     private static Throwable diagnostic(Throwable failure,java.util.Set<Throwable> seen) {
         if(!seen.add(failure)) return new RuntimeException("Repeated exception reference");

@@ -3,6 +3,7 @@ package cz.mh.rallye.rallye_backend.identity.persistence;
 import java.time.Instant;
 import java.sql.Timestamp;
 import java.util.UUID;
+import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.*;
@@ -42,6 +43,15 @@ public class AccountCancellationStore {
         jdbc.queryForList("SELECT id FROM crew WHERE captain_account_id=? ORDER BY id FOR UPDATE",id);
         return jdbc.update("UPDATE crew SET captain_account_id=NULL,version=version+1,updated_at=? WHERE captain_account_id=?",
                 Timestamp.from(now),id);
+    }
+    public List<UUID> ownedCrewIds(UUID id) {
+        lock(id);
+        return jdbc.queryForList("SELECT id FROM crew WHERE captain_account_id=? ORDER BY id FOR UPDATE",UUID.class,id);
+    }
+    public List<UUID> pendingTransferIds(UUID id) {
+        lock(id);
+        // The shared control lock already excludes writers; closePendingTransfers locks crew rows first.
+        return jdbc.queryForList("SELECT id FROM crew_transfer WHERE status='PENDING' AND (from_account_id=? OR to_account_id=?) ORDER BY id",UUID.class,id,id);
     }
     public int closePendingTransfers(UUID id,UUID actor,Instant now) {
         if(actor==null) throw new IllegalArgumentException("Resolution actor is required");

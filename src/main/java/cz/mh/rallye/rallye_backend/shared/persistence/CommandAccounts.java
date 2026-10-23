@@ -18,6 +18,8 @@ final class CommandAccounts {
             JsonNode req=JSON.readTree(request),res=JSON.readTree(result);
             if(!req.isArray() || !res.isObject()) throw invalid();
             switch(operation) {
+                case "ADMIN_ACCOUNT_CANCEL" -> {size(req,1);ids.add(requiredId(req.get(0)));
+                    if(!target.equals(requiredId(req.get(0))) || res.get("outcome")==null || !Set.of("DELETED","ANONYMIZED").contains(res.get("outcome").asString()))throw invalid();}
                 case "CREW_CREATE" -> {size(req,4);if(!req.get(0).isString())throw invalid();textOrNull(req.get(1));textOrNull(req.get(2));id(ids,req.get(3));id(ids,res.get("captainAccountId"));}
                 case "CREW_CAPTAIN" -> {size(req,3);requiredId(req.get(0));if(!req.get(1).isIntegralNumber())throw invalid();id(ids,req.get(2));id(ids,res.get("captainAccountId"));}
                 case "CREW_TRANSFER_CREATE" -> {size(req,3);requiredId(req.get(0));if(!req.get(1).isString() || !req.get(2).isIntegralNumber())throw invalid();transfer(ids,res);}
@@ -29,7 +31,8 @@ final class CommandAccounts {
                 }
                 default -> throw invalid();
             }
-            Set<String> fields=operation.equals("CREW_CREATE") || operation.equals("CREW_CAPTAIN")
+            Set<String> fields=operation.equals("ADMIN_ACCOUNT_CANCEL")?Set.of("id","outcome")
+                    :operation.equals("CREW_CREATE") || operation.equals("CREW_CAPTAIN")
                     ?Set.of("id","captainAccountId","name","registrationPlate","description","hasPhoto","createdAt","updatedAt","version")
                     :operation.equals("CREW_TRANSFER_CREATE") || operation.equals("CREW_TRANSFER_RESEND")
                     ?Set.of("id","crewId","fromAccountId","toAccountId","status","createdAt","expiresAt")

@@ -8,6 +8,11 @@ public final class AuthFailure extends RuntimeException {
         this.status = status;
         this.code = code;
     }
+    public AuthFailure(int status,String code,Throwable cause) {
+        super(code,cause);
+        this.status=status;
+        this.code=code;
+    }
     public int status() { return status; }
     public String code() { return code; }
     public static AuthFailure credentials() { return new AuthFailure(401, "INVALID_CREDENTIALS"); }

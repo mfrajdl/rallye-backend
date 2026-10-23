@@ -31,7 +31,8 @@ public class AccountStore {
                 """, this::mapAccount, normalizedEmail));
     }
     public Account lockAccount(UUID id) {
-        // Always lock account before token/session, including login/reset/password change.
+        // Shared order with cancellation, role writers and account-state triggers: control -> account -> token/session.
+        jdbc.queryForObject("SELECT id FROM admin_control WHERE id=1 FOR UPDATE",Integer.class);
         jdbc.queryForList("SELECT id FROM user_account WHERE id=? FOR UPDATE", id);
         return first(jdbc.query("""
                 SELECT a.*, i.password_hash FROM user_account a

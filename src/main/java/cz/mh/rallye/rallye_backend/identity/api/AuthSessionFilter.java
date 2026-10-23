@@ -46,9 +46,11 @@ public class AuthSessionFilter extends OncePerRequestFilter {
                 }
             }
         } catch (AuthFailure failure) {
+            if(failure.status()>=500) ApiErrors.logServerFailure(failure);
             ApiErrors.write(response, failure.status(), failure.code());
             return;
         } catch (RuntimeException failure) {
+            ApiErrors.logServerFailure(failure);
             ApiErrors.write(response, 503, "AUTHENTICATION_UNAVAILABLE");
             return;
         }
