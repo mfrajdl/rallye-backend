@@ -7,6 +7,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.Supplier;
 import cz.mh.rallye.rallye_backend.crews.persistence.CrewStore;
+import cz.mh.rallye.rallye_backend.crews.persistence.CrewTransferStore;
+import cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer.Status;
 import cz.mh.rallye.rallye_backend.crews.persistence.CrewStore.Crew;
 import cz.mh.rallye.rallye_backend.identity.application.AuthFailure;
 import cz.mh.rallye.rallye_backend.identity.application.AuthService.Principal;
@@ -27,6 +29,7 @@ public class CrewService {
     public record Page(List<View> items,int page,int size,boolean hasMore) { }
     public record Photo(byte[] bytes,String contentType) { }
     private final CrewStore crews;
+    private final CrewTransferStore transfers;
     private final AccountStore accounts;
     private final AdminStore roles;
     private final CommandStore commands;
@@ -36,9 +39,10 @@ public class CrewService {
     private final TransactionTemplate tx;
     private final JsonMapper json=JsonMapper.builder().build();
     public CrewService(CrewStore crews,AccountStore accounts,AdminStore roles,CommandStore commands,
-                       AuditService audit,PhotoFiles files,Clock clock,PlatformTransactionManager manager) {
+                       AuditService audit,PhotoFiles files,Clock clock,PlatformTransactionManager manager,CrewTransferStore transfers) {
         this.crews=crews;this.accounts=accounts;this.roles=roles;this.commands=commands;
         this.audit=audit;this.files=files;this.clock=clock;this.tx=new TransactionTemplate(manager);
+        this.transfers=transfers;
     }
     private <T> T transaction(Supplier<T> body) { return tx.execute(status->body.get()); }
     private Instant now() { return clock.instant().truncatedTo(ChronoUnit.MILLIS); }
@@ -123,9 +127,17 @@ public class CrewService {
             String request=encode(Arrays.asList(id,expected,captain));
             String replay=commands.replay(actor.accountId(),key,"CREW_CAPTAIN",request,now());
             if(replay!=null) return decode(replay);
+            captainAvailable(captain);
             Crew crew=accessible(id,actor,true);version(crew,expected);
             if(Objects.equals(crew.captainAccountId(),captain)) throw new AuthFailure(409,"CAPTAIN_UNCHANGED");
-            captainAvailable(captain);
+            var pending=transfers.pending(id);
+            if(pending!=null) {
+                Instant at=now();
+                if(pending.pendingAt(at)) {
+                    var cancelled=transfers.resolve(pending.id(),Status.CANCELLED,at,actor.accountId(),"ADMIN_CAPTAIN_CHANGED");
+                    audit.transfer(actor.accountId(),Event.CREW_TRANSFER_CANCELLED,cancelled,"ADMIN_CAPTAIN_CHANGED");
+                } else transfers.resolve(pending.id(),Status.EXPIRED,at,null,"EXPIRED");
+            }
             crews.captain(id,captain,now());
             audit.crew(actor.accountId(),Event.CREW_CAPTAIN_CHANGED,id,crew.captainAccountId(),captain);
             View result=view(crews.find(id));
@@ -137,7 +149,9 @@ public class CrewService {
         files.exclusive(()->{
             UUID old=transaction(()->{
                 Crew crew=accessible(id,actor,authorize(actor));version(crew,expected);
-                // Participation/transfer tables do not exist yet. Their modules must add RESTRICT/checks before writing references.
+                var pending=transfers.pending(id);
+                if(pending!=null&&pending.pendingAt(now())) throw new AuthFailure(409,"CREW_TRANSFER_PENDING");
+                // Participation module must add its history restriction before writing participation references.
                 crews.delete(id);audit.crew(actor.accountId(),Event.CREW_DELETED,id,crew.captainAccountId(),null);
                 return crew.photoId();
             });

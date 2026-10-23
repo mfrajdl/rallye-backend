@@ -22,7 +22,8 @@ class CrewServiceTest {
     AuditService audit=mock(AuditService.class);PhotoFiles files=mock(PhotoFiles.class);
     PlatformTransactionManager manager=mock(PlatformTransactionManager.class);
     Clock clock=Clock.fixed(Instant.parse("2026-10-22T10:00:00Z"),ZoneOffset.UTC);
-    CrewService service=new CrewService(crews,accounts,roles,commands,audit,files,clock,manager);
+    cz.mh.rallye.rallye_backend.crews.persistence.CrewTransferStore transfers=mock(cz.mh.rallye.rallye_backend.crews.persistence.CrewTransferStore.class);
+    CrewService service=new CrewService(crews,accounts,roles,commands,audit,files,clock,manager,transfers);
     UUID actor=UUID.randomUUID(),id=UUID.randomUUID(),other=UUID.randomUUID(),key=UUID.randomUUID();
     AuthService.Principal principal=new AuthService.Principal(actor,UUID.randomUUID(),false);
     CrewStore.Crew row(UUID owner,long version) {
@@ -42,6 +43,28 @@ class CrewServiceTest {
         assertThrows(AuthFailure.class,()->CrewService.validate(null,null,null));
         assertThrows(AuthFailure.class,()->CrewService.validate("x","a".repeat(33),null));
         assertThrows(AuthFailure.class,()->CrewService.validate("x",null,"a".repeat(2001)));
+    }
+    @Test void deletionRejectsLiveTransferButAllowsExpiredHistory() {
+        var pending=new cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer(UUID.randomUUID(),id,actor,other,"a".repeat(64),
+                cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer.Status.PENDING,clock.instant(),clock.instant().plusSeconds(604800),null,null,null);
+        when(transfers.pending(id)).thenReturn(pending);
+        assertEquals("CREW_TRANSFER_PENDING",assertThrows(AuthFailure.class,()->service.delete(principal,id,0)).code());
+        verify(crews,never()).delete(any());
+        when(transfers.pending(id)).thenReturn(new cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer(pending.id(),id,actor,other,pending.tokenHash(),
+                pending.status(),clock.instant().minusSeconds(604800),clock.instant(),null,null,null));
+        service.delete(principal,id,0);verify(crews).delete(id);
+    }
+    @Test void adminCaptainChangeCancelsPendingBeforeWritingCaptainAndAuditFailureRollsBack() {
+        when(roles.administrator(actor)).thenReturn(true);when(roles.activeVerified(other)).thenReturn(true);
+        var pending=new cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer(UUID.randomUUID(),id,actor,other,"a".repeat(64),
+                cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer.Status.PENDING,clock.instant(),clock.instant().plusSeconds(604800),null,null,null);
+        when(transfers.pending(id)).thenReturn(pending);
+        when(transfers.resolve(any(),any(),any(),any(),any())).thenReturn(pending);
+        doThrow(new IllegalStateException("audit failure")).when(audit).transfer(any(),any(),any(),any());
+        assertThrows(IllegalStateException.class,()->service.captain(principal,id,0,other,key));
+        verify(transfers).resolve(pending.id(),cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer.Status.CANCELLED,
+                clock.instant(),actor,"ADMIN_CAPTAIN_CHANGED");
+        verify(crews,never()).captain(any(),any(),any());verify(manager).rollback(any());
     }
     @Test void normalUserCannotCreateOrphanOrForAnotherAccount() {
         for(UUID owner:Arrays.asList(null,other))

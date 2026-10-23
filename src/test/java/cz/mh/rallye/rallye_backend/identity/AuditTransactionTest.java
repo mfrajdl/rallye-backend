@@ -103,6 +103,24 @@ class AuditTransactionTest {
             verifyNoInteractions(jdbc);
         }
     }
+    @Test void transferAuditRequiresSameBusinessTransactionAndOmitsAuthenticationDigest() {
+        try(var context=new AnnotationConfigApplicationContext(Fixtures.class)) {
+            var jdbc=context.getBean(JdbcTemplate.class);var service=context.getBean(AuditService.class);
+            UUID actor=UUID.randomUUID(),crew=UUID.randomUUID(),id=UUID.randomUUID(),target=UUID.randomUUID();
+            var now=Instant.parse("2026-10-21T12:00:00Z");
+            var transfer=new cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer(id,crew,actor,target,"a".repeat(64),
+                    cz.mh.rallye.rallye_backend.crews.domain.CrewTransfer.Status.PENDING,now,now.plusSeconds(604800),null,null,null);
+            clearInvocations(jdbc);
+            assertThrows(IllegalTransactionStateException.class,()->service.transfer(actor,Event.CREW_TRANSFER_REQUESTED,transfer,"REQUESTED"));
+            verifyNoInteractions(jdbc);
+            new TransactionTemplate(context.getBean(RecordingTransactions.class)).executeWithoutResult(status->
+                    service.transfer(actor,Event.CREW_TRANSFER_REQUESTED,transfer,"REQUESTED"));
+            var args=org.mockito.ArgumentCaptor.forClass(Object[].class);
+            verify(jdbc).update(anyString(),args.capture());
+            assertTrue(java.util.Arrays.asList(args.getValue()).contains(id));assertTrue(java.util.Arrays.asList(args.getValue()).contains(crew));
+            assertFalse(java.util.Arrays.asList(args.getValue()).contains(transfer.tokenHash()));
+        }
+    }
     @Test void repositorySpyCanBePreparedWithoutTransactionAndFailsOnlyAfterCrewAuditInsert() {
         try(var context=new AnnotationConfigApplicationContext(Fixtures.class)) {
             var jdbc=context.getBean(JdbcTemplate.class);

@@ -22,7 +22,8 @@ class CrewTransferServiceTest {
     CommandStore commands=mock(CommandStore.class);AccountMailSender mail=mock(AccountMailSender.class);
     MutableClock clock=new MutableClock();SecretTokens tokens=new SecretTokens();
     AuditTransactionTest.RecordingTransactions manager=new AuditTransactionTest.RecordingTransactions();
-    CrewTransferService service=new CrewTransferService(lifecycle,transfers,crews,accounts,roles,commands,tokens,mail,clock,manager);
+    cz.mh.rallye.rallye_backend.audit.application.AuditService audit=mock(cz.mh.rallye.rallye_backend.audit.application.AuditService.class);
+    CrewTransferService service=new CrewTransferService(lifecycle,transfers,crews,accounts,roles,commands,tokens,mail,clock,manager,audit);
     UUID owner=UUID.randomUUID(),target=UUID.randomUUID(),crew=UUID.randomUUID(),id=UUID.randomUUID(),key=UUID.randomUUID();
     AuthService.Principal actor=new AuthService.Principal(owner,UUID.randomUUID(),false);
     String email="target@example.test";
@@ -130,5 +131,39 @@ class CrewTransferServiceTest {
     @Test void deliveryFailureAfterCommitDoesNotUndoRequest() {
         doThrow(new IllegalStateException("delivery failure")).when(mail).sendTransfer(any(),any(),any(),any(),any());
         assertNotNull(service.create(actor,crew,key,email,3));assertEquals(1,manager.commits);assertEquals(0,manager.rollbacks);
+    }
+    @ParameterizedTest @ValueSource(strings={"accept","reject","cancel"})
+    void decisionsJoinLifecycleAuditAndLedgerWithoutPersistingAuthenticationSecret(String operation) {
+        var principal=operation.equals("cancel")?actor:new AuthService.Principal(target,UUID.randomUUID(),false);
+        var outcome=switch(operation){case "accept"->CrewTransfer.Status.ACCEPTED;case "reject"->CrewTransfer.Status.REJECTED;default->CrewTransfer.Status.CANCELLED;};
+        var resolved=new CrewTransfer(id,crew,owner,target,"a".repeat(64),outcome,clock.instant(),pending("").expiresAt(),clock.instant(),principal.accountId(),outcome.name());
+        var transition=new CrewTransferLifecycle.Transition(resolved,operation.equals("accept")?4:3);
+        String secret=tokens.create();when(lifecycle.accept(any(),any(),any())).thenReturn(transition);
+        when(lifecycle.reject(any(),any(),any())).thenReturn(transition);when(lifecycle.cancel(any(),any())).thenReturn(transition);
+        var result=service.decide(principal,id,key,operation,operation.equals("cancel")?null:secret);
+        assertEquals(outcome.name(),result.status());assertEquals(transition.crewVersion(),result.crewVersion());
+        var request=org.mockito.ArgumentCaptor.forClass(String.class);var encoded=org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(commands).save(eq(principal.accountId()),eq(key),eq(id),any(),request.capture(),encoded.capture(),any());
+        assertFalse(request.getValue().contains(secret));assertFalse(request.getValue().contains(tokens.hash(secret)));
+        verify(audit).transfer(eq(principal.accountId()),any(),eq(resolved),eq(outcome.name()));
+        when(commands.replay(eq(principal.accountId()),eq(key),any(),eq(request.getValue()),any())).thenReturn(encoded.getValue());
+        clearInvocations(lifecycle,audit);
+        assertEquals(result,service.decide(principal,id,key,operation,operation.equals("cancel")?null:secret));
+        verifyNoInteractions(lifecycle,audit);verifyNoInteractions(mail);
+    }
+    @Test void decisionsHideOtherUsersRequestsAndMapBadTokenToInvalidRequest() {
+        assertEquals(404,assertThrows(AuthFailure.class,()->service.decide(actor,id,key,"accept",tokens.create())).status());
+        var principal=new AuthService.Principal(target,UUID.randomUUID(),false);
+        when(lifecycle.accept(any(),any(),any())).thenThrow(new AuthFailure(400,"INVALID_OR_EXPIRED_TOKEN"));
+        assertEquals("INVALID_REQUEST",assertThrows(AuthFailure.class,()->service.decide(principal,id,key,"accept",tokens.create())).code());
+        assertEquals("INVALID_REQUEST",assertThrows(AuthFailure.class,()->service.decide(principal,id,key,"accept","invalid")).code());
+        verify(commands,never()).save(any(),any(),any(),any(),any(),any(),any());verifyNoInteractions(audit);
+    }
+    @Test void decisionAuditFailureRollsBackAndDoesNotSaveIdempotentResult() {
+        var resolved=new CrewTransfer(id,crew,owner,target,"a".repeat(64),CrewTransfer.Status.CANCELLED,clock.instant(),pending("").expiresAt(),clock.instant(),owner,"OWNER_CANCELLED");
+        when(lifecycle.cancel(actor,id)).thenReturn(new CrewTransferLifecycle.Transition(resolved,3));
+        doThrow(new IllegalStateException("audit failure")).when(audit).transfer(any(),any(),any(),any());
+        assertThrows(IllegalStateException.class,()->service.decide(actor,id,key,"cancel",null));assertEquals(1,manager.rollbacks);
+        verify(commands,never()).save(any(),any(),any(),any(),any(),any(),any());
     }
 }

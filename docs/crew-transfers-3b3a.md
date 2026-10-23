@@ -120,3 +120,9 @@ a ověřená; celá 3b.3 zůstává rozpracovaná.
 Část 3b.3b již přidává REST založení a resend, doručování a idempotenci.
 Tento dokument popisuje původní hranici 3b.3a. Aktuální kontrakt a zbývající
 rozsah 3b.3c uvádí [crew-transfers-3b3b.md](crew-transfers-3b3b.md).
+
+## Návaznost 3b.3c
+
+Rozhodovací REST API, audit a ochrany mazání/ADMIN změn nyní implementuje
+[crew-transfers-3b3c.md](crew-transfers-3b3c.md). Původní popis hranice etapy
+v tomto dokumentu je historický; uživatel nyní potvrdil úspěšné integrační ověření 3b.3c.

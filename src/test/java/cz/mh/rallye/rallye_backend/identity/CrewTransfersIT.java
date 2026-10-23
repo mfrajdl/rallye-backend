@@ -50,6 +50,8 @@ class CrewTransfersIT {
     @Autowired PlatformTransactionManager manager;
     @MockitoSpyBean CrewTransferStore transfers;
     @MockitoSpyBean cz.mh.rallye.rallye_backend.shared.persistence.CommandStore commands;
+    @MockitoSpyBean cz.mh.rallye.rallye_backend.audit.persistence.AuditStore audit;
+    AuthService.LoginSession administrator;
     AuthService.LoginSession owner,target;
     AuthService.LoginSession account() {
         String email=UUID.randomUUID()+"@example.test";
@@ -58,6 +60,11 @@ class CrewTransfersIT {
         return auth.login(email,"test-password",true);
     }
     @BeforeEach void fixtures() {owner=account();target=account();}
+    @BeforeAll void bootstrapAdministrator() throws Exception {
+        administrator=account();
+        String sql=AdministrationIT.bootstrapBody(administrator.principal().accountId());
+        tx(()->{jdbc.execute(sql);return null;});
+    }
     <T> T tx(Supplier<T> work) {return new TransactionTemplate(manager).execute(status->work.get());}
     CrewService.View crew() {return crews.create(owner.principal(),UUID.randomUUID(),"Crew",null,null,false,null);}
     String hash() {return UUID.randomUUID().toString().replace("-","").repeat(2);}
@@ -165,6 +172,135 @@ class CrewTransfersIT {
         var results=race(()->service.create(owner.principal(),crew.id(),key,email,0),()->service.create(owner.principal(),crew.id(),key,email,0));
         assertInstanceOf(CrewTransferService.View.class,results[0]);assertEquals(results[0],results[1]);assertEquals(before+1,messages());
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM crew_transfer WHERE crew_id=?",Integer.class,crew.id()));
+    }
+    String secret(UUID crew) {
+        service.create(owner.principal(),crew,UUID.randomUUID(),targetEmail(),0);
+        return mail.token(targetEmail(),"CREW_TRANSFER");
+    }
+    UUID pendingId(UUID crew) {return jdbc.queryForObject("SELECT id FROM crew_transfer WHERE crew_id=? AND status='PENDING'",UUID.class,crew);}
+    long transferAudits(UUID id,String event) {return jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE transfer_id=? AND event_type=?",Long.class,id,event);}
+    @Test void acceptedDecisionChangesAccessAndVersionAuditsAndReplaysSafely() {
+        var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id()),key=UUID.randomUUID();
+        crews.update(owner.principal(),crew.id(),0,"Edited",null,null);
+        var result=service.decide(target.principal(),id,key,"accept",secret);assertEquals(2,result.crewVersion());
+        assertEquals(404,assertThrows(AuthFailure.class,()->crews.detail(owner.principal(),crew.id())).status());
+        assertEquals(target.principal().accountId(),crews.detail(target.principal(),crew.id()).captainAccountId());
+        assertEquals(result,service.decide(target.principal(),id,key,"accept",secret));
+        assertEquals("TRANSFER_NOT_PENDING",assertThrows(AuthFailure.class,
+                ()->service.decide(target.principal(),id,UUID.randomUUID(),"accept",secret)).code());
+        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,
+                ()->service.decide(target.principal(),id,key,"accept",new SecretTokens().create())).code());
+        assertEquals(1,transferAudits(id,"CREW_TRANSFER_REQUESTED"));assertEquals(1,transferAudits(id,"CREW_TRANSFER_ACCEPTED"));
+        var row=jdbc.queryForMap("SELECT * FROM audit_event WHERE transfer_id=? AND event_type='CREW_TRANSFER_ACCEPTED'",id);
+        assertEquals(crew.id(),row.get("crew_id"));assertEquals(owner.principal().accountId(),row.get("previous_captain_id"));
+        assertEquals(target.principal().accountId(),row.get("new_captain_id"));
+        String request=jdbc.queryForObject("SELECT request_data::text FROM admin_role_command WHERE actor_id=? AND command_key=?",String.class,target.principal().accountId(),key);
+        assertFalse(request.contains(secret));assertFalse(request.contains(new SecretTokens().hash(secret)));
+    }
+    @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"reject","cancel"})
+    void rejectionAndCancellationPreserveOwnerVersionAndReplayWithoutAuditDuplicates(String operation) {
+        var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id()),key=UUID.randomUUID();
+        var actor=operation.equals("cancel")?owner.principal():target.principal();
+        var result=service.decide(actor,id,key,operation,secret);assertEquals(0,result.crewVersion());
+        assertEquals(result,service.decide(actor,id,key,operation,secret));
+        assertEquals("TRANSFER_NOT_PENDING",assertThrows(AuthFailure.class,()->service.decide(actor,id,UUID.randomUUID(),operation,secret)).code());
+        assertEquals(owner.principal().accountId(),crews.detail(owner.principal(),crew.id()).captainAccountId());
+        assertEquals(1,transferAudits(id,operation.equals("cancel")?"CREW_TRANSFER_CANCELLED":"CREW_TRANSFER_REJECTED"));
+        crews.delete(owner.principal(),crew.id(),0);assertNotNull(transfers.find(id));
+    }
+    @Test void oldTokenAndWrongUserCannotDecideAndLiveTransferBlocksDeletion() {
+        var crew=crew();String old=secret(crew.id());UUID id=pendingId(crew.id());
+        service.resend(owner.principal(),crew.id(),id,UUID.randomUUID());
+        assertEquals("INVALID_REQUEST",assertThrows(AuthFailure.class,()->service.decide(target.principal(),id,UUID.randomUUID(),"accept",old)).code());
+        assertEquals(404,assertThrows(AuthFailure.class,()->service.decide(owner.principal(),id,UUID.randomUUID(),"accept",old)).status());
+        assertEquals("CREW_TRANSFER_PENDING",assertThrows(AuthFailure.class,()->crews.delete(owner.principal(),crew.id(),0)).code());
+        expired(transfers.find(id));crews.delete(owner.principal(),crew.id(),0);assertNotNull(transfers.find(id));
+    }
+    @Test void adminCaptainChangeOrRemovalCancelsPendingAndInvalidatesToken() {
+        for(boolean remove:new boolean[]{false,true}) {
+            var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id());
+            var updated=crews.captain(administrator.principal(),crew.id(),0,remove?null:administrator.principal().accountId(),UUID.randomUUID());
+            assertEquals(1,updated.version());assertEquals(CrewTransfer.Status.CANCELLED,transfers.find(id).status());
+            assertEquals("ADMIN_CAPTAIN_CHANGED",transfers.find(id).resolutionReason());
+            assertEquals(1,transferAudits(id,"CREW_TRANSFER_CANCELLED"));
+            assertEquals("TRANSFER_NOT_PENDING",assertThrows(AuthFailure.class,()->service.decide(target.principal(),id,UUID.randomUUID(),"accept",secret)).code());
+        }
+    }
+    @Test void failedTransferAuditRollsBackCaptainStateAndCommandAndRetrySucceeds() {
+        var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id()),key=UUID.randomUUID();
+        var marker=new IllegalStateException("injected transfer audit failure");
+        doAnswer(call->{call.callRealMethod();throw marker;}).when(audit).appendTransfer(any(),any(),any(),any(),eq(id),any(),any(),any(),any());
+        try {failure(()->service.decide(target.principal(),id,key,"accept",secret),marker);}finally {reset(audit);}
+        assertEquals(CrewTransfer.Status.PENDING,transfers.find(id).status());
+        assertEquals(0,crews.detail(owner.principal(),crew.id()).version());assertEquals(0,transferAudits(id,"CREW_TRANSFER_ACCEPTED"));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM admin_role_command WHERE actor_id=? AND command_key=?",Integer.class,target.principal().accountId(),key));
+        assertEquals(1,service.decide(target.principal(),id,key,"accept",secret).crewVersion());
+    }
+    @Test void requestedAuditFailureDoesNotCreateRequestCommandOrMail() {
+        var crew=crew();String email=targetEmail();UUID key=UUID.randomUUID();long before=messages();
+        var marker=new IllegalStateException("requested audit failure");
+        doAnswer(call->{call.callRealMethod();throw marker;}).when(audit).appendTransfer(any(),any(),any(),
+                eq(cz.mh.rallye.rallye_backend.audit.application.AuditService.Event.CREW_TRANSFER_REQUESTED),any(),eq(crew.id()),any(),any(),any());
+        try {failure(()->service.create(owner.principal(),crew.id(),key,email,0),marker);}finally {reset(audit);}
+        assertEquals(before,messages());assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM crew_transfer WHERE crew_id=?",Integer.class,crew.id()));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE crew_id=?",Integer.class,crew.id()));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM admin_role_command WHERE actor_id=? AND command_key=?",Integer.class,owner.principal().accountId(),key));
+        assertNotNull(service.create(owner.principal(),crew.id(),key,email,0));
+    }
+    @Test void decisionCommandFailureRollsBackAlreadyWrittenAuditAndOwnership() {
+        var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id()),key=UUID.randomUUID();
+        var marker=new IllegalStateException("decision command failure");
+        doAnswer(call->{call.callRealMethod();throw marker;}).when(commands).save(any(),eq(key),any(),any(),any(),any(),any());
+        try {failure(()->service.decide(target.principal(),id,key,"accept",secret),marker);}finally {reset(commands);}
+        assertEquals(CrewTransfer.Status.PENDING,transfers.find(id).status());assertEquals(0,crews.detail(owner.principal(),crew.id()).version());
+        assertEquals(0,transferAudits(id,"CREW_TRANSFER_ACCEPTED"));assertEquals(1,transferAudits(id,"CREW_TRANSFER_REQUESTED"));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM admin_role_command WHERE actor_id=? AND command_key=?",Integer.class,target.principal().accountId(),key));
+        assertEquals(1,service.decide(target.principal(),id,key,"accept",secret).crewVersion());
+    }
+    @Test void failedAdminCrewAuditRollsBackCancellationAndCaptainTogether() {
+        var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id()),key=UUID.randomUUID();
+        var marker=new IllegalStateException("injected captain audit failure");
+        doAnswer(call->{call.callRealMethod();throw marker;}).when(audit).appendCrew(any(),any(),any(),eq(cz.mh.rallye.rallye_backend.audit.application.AuditService.Event.CREW_CAPTAIN_CHANGED),eq(crew.id()),any(),any());
+        try {failure(()->crews.captain(administrator.principal(),crew.id(),0,administrator.principal().accountId(),key),marker);}finally {reset(audit);}
+        assertEquals(CrewTransfer.Status.PENDING,transfers.find(id).status());assertEquals(0,crews.detail(owner.principal(),crew.id()).version());
+        assertEquals(0,transferAudits(id,"CREW_TRANSFER_CANCELLED"));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM admin_role_command WHERE actor_id=? AND command_key=?",Integer.class,administrator.principal().accountId(),key));
+        assertEquals(1,service.decide(target.principal(),id,UUID.randomUUID(),"accept",secret).crewVersion());
+    }
+    @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"accept","reject","cancel"})
+    void concurrentDecisionOperationsHaveOneResult(String competing) throws Exception {
+        var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id());
+        var results=race(()->service.decide(target.principal(),id,UUID.randomUUID(),"accept",secret),
+                ()->service.decide(competing.equals("cancel")?owner.principal():target.principal(),id,UUID.randomUUID(),competing,secret));
+        assertEquals(1,java.util.Arrays.stream(results).filter(CrewTransferService.Decision.class::isInstance).count());
+        assertEquals(1,java.util.Arrays.stream(results).filter("TRANSFER_NOT_PENDING"::equals).count());
+        boolean accepted=transfers.find(id).status()==CrewTransfer.Status.ACCEPTED;
+        assertEquals(accepted?1:0,crews.detail(accepted?target.principal():owner.principal(),crew.id()).version());
+    }
+    @Test void acceptanceRacingAdministratorHasCoherentFinalState() throws Exception {
+        var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id());
+        var results=race(()->service.decide(target.principal(),id,UUID.randomUUID(),"accept",secret),
+                ()->crews.captain(administrator.principal(),crew.id(),0,administrator.principal().accountId(),UUID.randomUUID()));
+        boolean accepted=transfers.find(id).status()==CrewTransfer.Status.ACCEPTED;
+        assertEquals(accepted?target.principal().accountId():administrator.principal().accountId(),crews.detail(administrator.principal(),crew.id()).captainAccountId());
+        assertEquals(1,crews.detail(administrator.principal(),crew.id()).version());
+        assertTrue(java.util.Arrays.asList(results).contains(accepted?"CREW_VERSION_CONFLICT":"TRANSFER_NOT_PENDING"));
+    }
+    @Test void creationRacingDeletionNeverLeavesLiveOrphan() throws Exception {
+        var crew=crew();String email=targetEmail();
+        var results=race(()->service.create(owner.principal(),crew.id(),UUID.randomUUID(),email,0),
+                ()->{crews.delete(owner.principal(),crew.id(),0);return "DELETED";});
+        if(java.util.Arrays.asList(results).contains("DELETED")) {
+            assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM crew_transfer WHERE crew_id=?",Integer.class,crew.id()));
+            assertTrue(java.util.Arrays.asList(results).contains("CREW_NOT_FOUND"));
+        } else {assertTrue(java.util.Arrays.asList(results).contains("CREW_TRANSFER_PENDING"));assertNotNull(pendingId(crew.id()));}
+    }
+    @Test void expirationAfterLocksAreAcquiredPreventsDecision() {
+        var crew=crew();String secret=secret(crew.id());UUID id=pendingId(crew.id());
+        doAnswer(call->{clock.advance(Duration.ofHours(168));return call.callRealMethod();}).when(transfers).lock(id);
+        try {assertEquals("TRANSFER_NOT_PENDING",assertThrows(AuthFailure.class,()->service.decide(target.principal(),id,UUID.randomUUID(),"accept",secret)).code());}
+        finally {reset(transfers);}
+        assertEquals(CrewTransfer.Status.PENDING,transfers.find(id).status());assertEquals(0,crews.detail(owner.principal(),crew.id()).version());
     }
     @Test void acceptanceUsesCurrentVersionAndCannotBeRepeated() {
         var crew=crew();var transfer=request(crew.id(),hash());

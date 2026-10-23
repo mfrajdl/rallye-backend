@@ -197,3 +197,9 @@ Nyní používá skutečnou hlavičku zachycenou úspěšným Create; nevytvář
 Regresní unit i PostgreSQL test rozlišují původní replay, změněnou verzi se
 stejným klíčem a změněnou verzi s novým klíčem. PostgreSQL případ navíc před
 opakováním skutečně změní verzi posádky.
+
+## Návaznost 3b.3c
+
+Rozhodovací REST API, audit a ochrany mazání/ADMIN změn nyní implementuje
+[crew-transfers-3b3c.md](crew-transfers-3b3c.md). Původní popis hranice etapy
+v tomto dokumentu je historický; uživatel nyní potvrdil úspěšné integrační ověření 3b.3c.

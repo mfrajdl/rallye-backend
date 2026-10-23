@@ -34,9 +34,41 @@ public class ApiErrors {
     ResponseEntity<ProblemDetail> unsupported(Exception ignored) {
         return ResponseEntity.status(415).body(problem(415,"UNSUPPORTED_MEDIA_TYPE"));
     }
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ProblemDetail> methodNotAllowed(org.springframework.web.HttpRequestMethodNotSupportedException failure) {
+        return ResponseEntity.status(405).headers(failure.getHeaders()).body(problem(405,"METHOD_NOT_ALLOWED"));
+    }
+    @ExceptionHandler({org.springframework.web.servlet.NoHandlerFoundException.class,
+            org.springframework.web.servlet.resource.NoResourceFoundException.class})
+    ResponseEntity<ProblemDetail> notFound(Exception ignored) {
+        return ResponseEntity.status(404).body(problem(404,"NOT_FOUND"));
+    }
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotAcceptableException.class)
+    ResponseEntity<ProblemDetail> notAcceptable(Exception ignored) {
+        return ResponseEntity.status(406).body(problem(406,"NOT_ACCEPTABLE"));
+    }
     @ExceptionHandler(Exception.class)
-    ResponseEntity<ProblemDetail> unexpected(Exception ignored) {
+    ResponseEntity<ProblemDetail> unexpected(Exception failure) {
+        // JDBC details and arbitrary exception messages can contain tokens, hashes or passwords.
+        // Preserve exception types, SQLSTATE and stack frames, not potentially sensitive messages.
+        org.slf4j.LoggerFactory.getLogger(ApiErrors.class).error("Unexpected API failure",
+                diagnostic(failure,java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>())));
         return ResponseEntity.internalServerError().body(problem(500, "INTERNAL_ERROR"));
+    }
+    private static Throwable diagnostic(Throwable failure,java.util.Set<Throwable> seen) {
+        if(!seen.add(failure)) return new RuntimeException("Repeated exception reference");
+        String type=failure.getClass().getName();
+        if(failure instanceof java.sql.SQLException sql) {
+            String state=sql.getSQLState();
+            if(state!=null&&state.matches("[A-Za-z0-9]{5}")) type+=" [SQLSTATE="+state+"]";
+        }
+        var safe=new RuntimeException(type);
+        safe.setStackTrace(failure.getStackTrace());
+        if(failure.getCause()!=null) safe.initCause(diagnostic(failure.getCause(),seen));
+        for(Throwable suppressed:failure.getSuppressed()) safe.addSuppressed(diagnostic(suppressed,seen));
+        if(failure instanceof java.sql.SQLException sql&&sql.getNextException()!=null&&!seen.contains(sql.getNextException()))
+            safe.addSuppressed(diagnostic(sql.getNextException(),seen));
+        return safe;
     }
     private static ProblemDetail problem(int status, String code) {
         ProblemDetail problem = ProblemDetail.forStatus(status);

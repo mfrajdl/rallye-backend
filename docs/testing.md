@@ -243,3 +243,16 @@ Regrese pořadí kontrol: unit test potvrzuje přednost IDEMPOTENCY_CONFLICT
 před doménovou kontrolou verze; verify prošlo se 159 testy. Nový PostgreSQL
 případ ověřuje stejný scénář po skutečné editaci posádky a prošel v uživatelem potvrzeném běhu.
 Postman konflikt používá zachycený klíč úspěšného Create, nikdy negeneruje nový.
+
+## Rozhodnutí převodů a ochrany 3b.3c
+
+Codex provedl s JDK 21 mvnw.cmd verify: BUILD SUCCESS, 176 testů bez DB,
+0 failures, 0 errors, 0 skipped. Testy zahrnují nové HTTP endpointy, CSRF,
+Bearer, oprávnění, auditní transakci, bezpečné otisky, replay a ochrany posádek.
+
+CrewTransfersIT nyní připravuje 32 případů (17 původních a 15 nových), včetně
+všech zadaných souběhů, expirace po zámku, aktuálních oprávnění a skutečného
+rollbacku auditu, vlastnictví i evidence idempotence. Uživatel potvrdil
+úspěšné .\mvnw.cmd -Pit verify proti rallye_test. Failsafe report uvádí 71 testů,
+0 errors, 0 failures a 0 skipped. Jde o uživatelem potvrzený běh, nikoli běh Codexu.
+Podrobnosti a Postman: [crew-transfers-3b3c.md](crew-transfers-3b3c.md).

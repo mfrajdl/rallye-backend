@@ -197,6 +197,41 @@
       "key": "crewTransferCreatedVersion",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "crewTransferAcceptKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferRejectKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferCancelKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferOldToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferOldTokenKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferAdminKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "crewTransferAdminVersion",
+      "value": "",
+      "type": "string"
     }
   ],
   "event": [
@@ -2779,7 +2814,7 @@
     },
     {
       "name": "10 — Crew transfers 3b.3b",
-      "description": "Run individually as current captain, after creating two verified active accounts. Inherited CSRF and cookie jar apply. Keys are generated once and retained for replay. Do not delete the crew or change captain using ADMIN while a request is pending: guards are scheduled for 3b.3c. Client acceptance page is not yet implemented. Never export populated tokens.",
+      "description": "Creation/resend for captain transfers. See folder 11 for decisions and safeguards implemented in 3b.3c. Inherited cookie/CSRF handling remains active. Use original keys for replay; never export populated tokens.",
       "item": [
         {
           "name": "3b3b Create captain transfer",
@@ -2988,6 +3023,357 @@
                   "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
                   "pm.test('No token or hash in response',()=>{const b=pm.response.text();pm.expect(b).not.to.match(/token|token_hash|tokenHash/i);});",
                   "if(pm.response.code===200) pm.test('Expiry unchanged',()=>pm.expect(pm.response.json().expiresAt).to.eql(pm.collectionVariables.get('crewTransferExpiresAt')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11 — Crew transfer decisions 3b.3c (run individually)",
+      "description": "Use separate new transfers for accept, reject, cancel, and ADMIN cancellation. Refresh crewVersion from GET detail. Clear the appropriate operation key only when starting an independent scenario; replay retains keys. Cookies and CSRF inherited. Current owner starts/cancels; target accepts/rejects; ADMIN may change captain. GET of a mail link never performs a decision.",
+      "item": [
+        {
+          "name": "3b3c Accept captain transfer",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/crew-transfers/{{crewTransferId}}/accept",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferAcceptKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Log in as target account. Paste latest mailbox token into crewTransferToken. After 200, old captain loses access immediately. Keep same token and key for replay.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{crewTransferToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewTransferId')||'')){pm.execution.skipRequest();throw new Error('Create a transfer first and set crewTransferId.');}",
+                  "if(!pm.collectionVariables.get('crewTransferAcceptKey'))pm.collectionVariables.set('crewTransferAcceptKey',pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){const r=pm.response.json();pm.collectionVariables.set('crewVersion',String(r.crewVersion));pm.test('No secrets',()=>pm.expect(pm.response.text()).not.to.match(/token|tokenHash|token_hash/i));}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3c Replay accepted transfer",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/crew-transfers/{{crewTransferId}}/accept",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferAcceptKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Repeat successful acceptance with identical token and key. No additional version increment or audit event.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{crewTransferToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.collectionVariables.get('crewTransferAcceptKey')){pm.execution.skipRequest();throw new Error('Run Accept successfully first; replay must not generate a new key.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){const r=pm.response.json();pm.collectionVariables.set('crewVersion',String(r.crewVersion));pm.test('No secrets',()=>pm.expect(pm.response.text()).not.to.match(/token|tokenHash|token_hash/i));}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3c Reject captain transfer",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/crew-transfers/{{crewTransferId}}/reject",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferRejectKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "New pending transfer required. Log in as target and paste latest token. Same key replays; new key after resolution returns 409 TRANSFER_NOT_PENDING.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{crewTransferToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewTransferId')||'')){pm.execution.skipRequest();throw new Error('Create a transfer first and set crewTransferId.');}",
+                  "if(!pm.collectionVariables.get('crewTransferRejectKey'))pm.collectionVariables.set('crewTransferRejectKey',pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){const r=pm.response.json();pm.collectionVariables.set('crewVersion',String(r.crewVersion));pm.test('No secrets',()=>pm.expect(pm.response.text()).not.to.match(/token|tokenHash|token_hash/i));}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3c Cancel captain transfer",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/crew-transfers/{{crewTransferId}}/cancel",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferCancelKey}}"
+              }
+            ],
+            "description": "New pending transfer required. Log in as current original captain. No token required. Same key replays."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewTransferId')||'')){pm.execution.skipRequest();throw new Error('Create a transfer first and set crewTransferId.');}",
+                  "if(!pm.collectionVariables.get('crewTransferCancelKey'))pm.collectionVariables.set('crewTransferCancelKey',pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){const r=pm.response.json();pm.collectionVariables.set('crewVersion',String(r.crewVersion));pm.test('No secrets',()=>pm.expect(pm.response.text()).not.to.match(/token|tokenHash|token_hash/i));}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3c Old token after resend is rejected",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/crew-transfers/{{crewTransferId}}/accept",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferOldTokenKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Save original token into crewTransferOldToken, perform resend as owner, then log in as target. Use separate old-token key; expect INVALID_REQUEST. Valid latest token stays usable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{crewTransferOldToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewTransferId')||'')){pm.execution.skipRequest();throw new Error('Create a transfer first and set crewTransferId.');}",
+                  "if(!pm.collectionVariables.get('crewTransferOldTokenKey'))pm.collectionVariables.set('crewTransferOldTokenKey',pm.variables.replaceIn('{{$guid}}'));",
+                  "const old=String(pm.collectionVariables.get('crewTransferOldToken')||'');const current=String(pm.collectionVariables.get('crewTransferToken')||'');if(!/^[A-Za-z0-9_-]{43}$/.test(old)||!/^[A-Za-z0-9_-]{43}$/.test(current)||old===current){pm.execution.skipRequest();throw new Error('Set distinct valid old and latest tokens after resend.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Invalid old token',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3c Cannot delete crew with pending transfer",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}?version={{crewVersion}}",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "description": "Log in as current captain or ADMIN, with pending unexpired transfer and current crewVersion. No Idempotency-Key for DELETE."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewTransferId')||'')){pm.execution.skipRequest();throw new Error('Create a transfer first and set crewTransferId.');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409',()=>pm.response.to.have.status(409));",
+                  "pm.test('Transfer blocks deletion',()=>pm.expect(pm.response.json().code).to.eql('CREW_TRANSFER_PENDING'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "3b3c ADMIN change captain cancels transfer",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/crews/{{crewId}}/captain",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{crewTransferAdminKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Log in as ADMIN. Set newCaptainAccountId to another active verified account and crewVersion from detail. Pending request is cancelled atomically. Its former target can no longer accept with any token. For removing captain use JSON null instead of quoted UUID.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"captainAccountId\": \"{{newCaptainAccountId}}\",\n  \"version\": {{crewTransferAdminVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if(!uuid.test(pm.collectionVariables.get('crewTransferId')||'')){pm.execution.skipRequest();throw new Error('Create a transfer first and set crewTransferId.');}",
+                  "if(!pm.collectionVariables.get('crewTransferAdminKey')){const version=String(pm.collectionVariables.get('crewVersion')||'');if(!/^[0-9]+$/.test(version)){pm.execution.skipRequest();throw new Error('Refresh crewVersion from crew detail.');}pm.collectionVariables.set('crewTransferAdminVersion',version);pm.collectionVariables.set('crewTransferAdminKey',pm.variables.replaceIn('{{$guid}}'));}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200)pm.collectionVariables.set('crewVersion',String(pm.response.json().version));"
                 ]
               }
             }
