@@ -142,6 +142,7 @@ public class CrewService {
             audit.crew(actor.accountId(),Event.CREW_CAPTAIN_CHANGED,id,crew.captainAccountId(),captain);
             View result=view(crews.find(id));
             commands.save(actor.accountId(),key,id,"CREW_CAPTAIN",request,encode(result),now());
+            commands.relate(actor.accountId(),key,crew.captainAccountId());
             return result;
         });
     }

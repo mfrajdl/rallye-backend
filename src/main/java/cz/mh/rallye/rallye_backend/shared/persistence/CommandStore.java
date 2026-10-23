@@ -3,6 +3,7 @@ package cz.mh.rallye.rallye_backend.shared.persistence;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Set;
 import cz.mh.rallye.rallye_backend.identity.application.AuthFailure;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -39,10 +40,32 @@ public class CommandStore {
         insert(actor,key,target,"ADMIN_ROLE",null,null,grant,now);
     }
     private void insert(UUID actor,UUID key,UUID target,String operation,String request,String result,Boolean grant,Instant now) {
+        var accounts=related(actor,target,operation,request,result);
         jdbc.update("DELETE FROM admin_role_command WHERE actor_id=? AND command_key=? AND expires_at<=?",actor,key,Timestamp.from(now));
         jdbc.update("""
-                INSERT INTO admin_role_command(actor_id,command_key,target_id,operation,request_data,result_data,grant_role,created_at,expires_at)
-                VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?,?)
-                """,actor,key,target,operation,request,result,grant,Timestamp.from(now),Timestamp.from(now.plusSeconds(86400)));
+                INSERT INTO admin_role_command(actor_id,command_key,target_id,operation,request_data,result_data,grant_role,created_at,expires_at,related_account_ids)
+                VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?,?,?::uuid[])
+                """,actor,key,target,operation,request,result,grant,Timestamp.from(now),Timestamp.from(now.plusSeconds(86400)),array(accounts));
+    }
+    Set<UUID> related(UUID actor,UUID target,String operation,String request,String result) {
+        var ids=CommandAccounts.inspect(actor,target,operation,request,result).accounts();
+        if(operation.startsWith("CREW_TRANSFER_")) {
+            var rows=jdbc.query("SELECT from_account_id,to_account_id FROM crew_transfer WHERE id=?",(rs,n)->
+                    new UUID[]{rs.getObject(1,UUID.class),rs.getObject(2,UUID.class)},target);
+            if(rows.size()!=1)throw CommandAccounts.invalid();
+            ids.add(rows.getFirst()[0]);ids.add(rows.getFirst()[1]);
+        }
+        return ids;
+    }
+    /** Adds the previous owner, which is absent from the captain-change response. Same transaction as save. */
+    @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void relate(UUID actor,UUID key,UUID account) {
+        if(account!=null)jdbc.update("""
+                UPDATE admin_role_command SET related_account_ids=ARRAY(SELECT DISTINCT unnest(related_account_ids || ARRAY[?]::uuid[]))
+                WHERE actor_id=? AND command_key=?
+                """,account,actor,key);
+    }
+    private static String array(Set<UUID> ids) {
+        return "{"+String.join(",",ids.stream().map(UUID::toString).sorted().toList())+"}";
     }
 }

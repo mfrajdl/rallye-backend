@@ -244,6 +244,21 @@ Zrušení posledního aktivního ADMIN se odmítne, dokud existuje jen tento adm
 
 Převodní zprávy již mají samostatný účel a odkaz v SMTP i lokálním adaptéru přes sendTransfer; neprocházejí větví obnovy hesla. Zakládání, změna vlastníka, zrušení čekajícího převodu, audit a idempotentní výsledek musejí být konzistentní v jedné transakci. Administrátorské zásahy také neobcházejí zákaz mazání historické posádky. Fyzické rušení účtů neznamená mazání historie posádek ani auditu.
 
+### Dílčí realizace 3b.4a
+
+Připraven databázový základ rušení účtů: V6 (ANONYMIZED, cancelled_at a
+related_account_ids), interní perzistentní operace s povinnou transakcí,
+odpojení posádek, ukončení čekajících převodů na obou stranách a úklid
+idempotentních záznamů včetně starších formátů a e-mailů v JSON hodnotách.
+Podrobnosti a omezení jsou v [account-cancellation-3b4a.md](account-cancellation-3b4a.md).
+3b.4a je dokončena a ověřena: `mvnw.cmd verify` prošlo se 184 testy bez DB;
+uživatel potvrdil `mvnw.cmd -Pit verify` – BUILD SUCCESS, 91 PostgreSQL IT.
+Celá 3b.4 není uzavřena.
+
+3b.4b doplní celkovou orchestraci/autorizaci, kontrolu hesla a historie účasti,
+ochranu souběhů s autentizací, audit rušení a veřejné API. Nedoplňovat zatím
+externí přihlášení ani závodní účasti. Následující 3b.5, 3b.6 a 3c zůstávají plánované.
+
 ## Zdroje technického návrhu
 
 - [Spring Security OAuth2/OIDC](https://docs.spring.io/spring-security/reference/servlet/oauth2/)

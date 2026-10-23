@@ -1,5 +1,34 @@
 # Testování bez lokálního Dockeru
 
+## 3b.4a – databázový základ rušení účtů
+
+Nový `CommandAccountsTest` ověřuje klasifikaci idempotentních operací, význam
+UUID, vyhledávání e-mailu v JSON hodnotách a odmítnutí neznámých formátů.
+`AccountCancellationIT` přidává 18 PostgreSQL scénářů pro migraci V5→V6,
+omezení ANONYMIZED, uvolnění e-mailu, fyzické smazání, odstranění přihlašovacích
+prostředků, ochranu posledního ADMIN, zachování posádek/fotografií a historie,
+ukončení převodů na obou stranách, úklid nových i legacy idempotentních záznamů
+včetně expirovaných, zachování nesouvisejících a rollback.
+
+PostgreSQL testy Codex nespouští. Uživatel provedl `.\mvnw.cmd -Pit verify`
+se stávajícími ochrannými proměnnými a tunelem do `rallye_test` na 5434.
+Závěrečný běh včetně V6 uživatel potvrdil: **BUILD SUCCESS, 91 PostgreSQL
+integračních testů bez chyb**. Viz [account-cancellation-3b4a.md](account-cancellation-3b4a.md).
+
+Codex provedl `mvnw.cmd verify` s JDK 21: **BUILD SUCCESS, 184 testů bez DB,
+0 failures, 0 errors, 0 skipped**. Integrační testy jsou kompilovány, nikoli spuštěny.
+
+Následný uživatelský PostgreSQL běh měl 90/91 úspěšných testů. Jediné selhání
+bylo v očekávání obalové výjimky při ochraně posledního ADMIN: report doložil
+`PSQLException`, SQLSTATE `P0001`, `Cannot remove the last active administrator`
+z `guard_admin_role()`, přeložené Springem na `UncategorizedSQLException`.
+Opravený test kontroluje původní SQLSTATE a konkrétní trigger pro odebrání role,
+anonymizaci i smazání účtu; po každém odmítnutí ověřuje zachování účtu, role,
+jediného aktivního ověřeného ADMIN a `bootstrapped`. Také ověřuje povolenou
+anonymizaci druhého ADMIN. Produkční kód ani migrace se kvůli této opravě nemění.
+Opakovaný PostgreSQL běh včetně opraveného testu uživatel potvrdil jako úspěšný
+(91/91); etapa 3b.4a je ověřena. Nejde o vlastní PostgreSQL běh Codexu.
+
 ## Uzavření etapy 2A
 
 Etapa 2A – lokální autentizace je dokončena na základě následujícího ověření:
