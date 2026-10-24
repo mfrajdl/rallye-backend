@@ -1,6 +1,9 @@
 # 3c.2 – webové externí přihlášení, registrace a profil
 
-Stav: **implementačně dokončena a lokálně otestována**. Verify bez DB prošlo s 271 testy; uživatel potvrdil PostgreSQL BUILD SUCCESS a lokální Postman složku 16 se všemi šesti asercemi Passed. Google/Apple jsou standardně vypnuté. Skutečné ověření poskytovatelů ani prohlížeče nebylo provedeno, není zřízena HTTPS doména ani nasazení. Závazná pravidla zůstávají ve specifikaci 0.7.0, D01–D08 se nemění.
+> Aktuální pravidla: [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md), D09 nahrazuje D04/D05 a D10 nahrazuje D03. Účet má jedinou neměnnou LOCAL/GOOGLE/APPLE identitu; link/unlink a dodatečný LOCAL jsou zakázané. LOCAL vlastní zrušení vyžaduje znovu heslo, externí zrušení platnou relaci a samostatné výslovné potvrzení, nikoli čerstvou reautentizaci. Níže uvedené dokončené etapy a výsledky zachycují tehdejší implementaci; DB omezení je nyní připravené v 3c.3a s uživatelem potvrzeným PostgreSQL ověřením BUILD SUCCESS; externí potvrzení 3c.3b ještě není implementované. Dopady a nový plán: [external-auth-3c.md](external-auth-3c.md).
+
+
+Stav: **implementačně dokončena a lokálně otestována**. Verify bez DB prošlo s 271 testy; uživatel potvrdil PostgreSQL BUILD SUCCESS a lokální Postman složku 16 se všemi šesti asercemi Passed. Google/Apple jsou standardně vypnuté. Skutečné ověření poskytovatelů ani prohlížeče nebylo provedeno, není zřízena HTTPS doména ani nasazení. Závazná pravidla zůstávají ve specifikaci 0.7.0, Historické D03–D05 byly nyní nahrazeny D09/D10; tato revize nemění tehdy ověřený kód.
 
 ## Upřesnění schválená uživatelem při zahájení 3c.2
 
@@ -103,7 +106,7 @@ Pozitivní průchod až v později schváleném HTTPS prostředí (nyní se nez�
 4. Nová identita: 303 external=complete-profile, pouze registrační cookie. GET registrations/current -> 200, doplnit údaje a s CSRF POST completions -> 202. Tento krok v žádném případě nepotvrzuje existenci kolidujícího účtu a nevydává session.
 5. Je-li potřeba vlastní ověření e-mailu, použít novou aktivační zprávu a současný email-verifications endpoint -> 204; bez ní se nepřihlásí. Ověřený nezměněný provider e-mail další aktivační zprávu nevyžaduje.
 6. Zahájit nový externí tok. Nově registrovaná aktivní identita se přihlásí, /me -> 200, logout -> 204 a následné /me -> 401. Ověřit opakovaný Apple login bez jména a relay adresu.
-7. Kolize místního e-mailu: stejné 202 při dokončení, žádná externí identita na místním účtu a původní místní heslo/profil fungují. Nevytvářet automatický link; explicitní link přijde v 3c.3.
+7. Kolize místního e-mailu: stejné 202 při dokončení, žádná externí identita na místním účtu a původní místní heslo/profil fungují. Žádný link se nezavede ani v 3c.3: podle D09 je identita neměnná. Kolize adresy zůstává bezpečně odmítnuta bez propojení.
 8. Negativně ověřit neplatnou korelaci, opakovaný state, 15minutovou expiraci a odmítnutý souhlas. Bez CSRF dokončovací POST vrací 403 i s mobile hlavičkou. Pro potvrzení správných chyb použít odpovídající negativní scénář, ne očekávání 200.
 
 Browser a Postman nesdílejí cookies. Pro ruční API průchod z Postmanu použít výslovně testovací session/cookie jar pro tutéž HTTPS doménu; případný přenos cookie z vlastního browseru dělat pouze lokálně pro testovací účet, nikdy do chatu, exportu kolekce či Gitu. Registrační cookie má HttpOnly a cestu jen pro registrations, korelační cookie jen pro callback. Hotová frontendová obrazovka profilu není součástí backendu; prohlížeč musí integračně zavolat tato API na povoleném originu. Nenastavovat globální CORS/CSRF výjimky kvůli testu.
@@ -170,4 +173,4 @@ Opravený test nastavuje i obnovuje skutečný spy za proxy pomocí `AopTestUtil
 
 Etapa je implementačně dokončená a lokálně otestovaná. Codex provedl verify bez DB: BUILD SUCCESS, 271 testů bez chyb. Uživatel potvrdil PostgreSQL `.\mvnw.cmd -Pit verify` (BUILD SUCCESS) a po reorganizaci kolekce všech šest asercí lokální složky 16 Passed. Jde o uživatelem potvrzené běhy, nikoli PostgreSQL nebo Postman běh Codexu.
 
-Skutečné přihlášení Google/Apple ani pozitivní scénáře složky 17 **nebyly ověřeny**. Vyžadují schválené HTTPS testovací prostředí, konfiguraci poskytovatelů a browser/cookie korelaci; žádná taková infrastruktura nebyla nyní zřízena. Uzavření implementace není potvrzením připravenosti k produkčnímu zapnutí externího přihlašování. Správa identit 3c.3, mobilní předání 3c.4 a Apple revokace 3c.5 zůstávají plánované.
+Skutečné přihlášení Google/Apple ani pozitivní scénáře složky 17 **nebyly ověřeny**. Vyžadují schválené HTTPS testovací prostředí, konfiguraci poskytovatelů a browser/cookie korelaci; žádná taková infrastruktura nebyla nyní zřízena. Uzavření implementace není potvrzením připravenosti k produkčnímu zapnutí externího přihlašování. Konsolidace jediné identity a potvrzení cancellation 3c.3, mobilní předání 3c.4 a Apple revokace 3c.5 zůstávají plánované.

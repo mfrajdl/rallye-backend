@@ -225,5 +225,11 @@ class ExternalWebLoginIT {
             jdbc.update("UPDATE flyway_schema_history SET script='V9__unknown.sql' WHERE version='9'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
     }
+    @Test void reviewedV10AcceptedAndUnknownV10NameFailsClosed() {
+        var facts=new PreRaceAccountParticipationFacts(jdbc);
+        new TransactionTemplate(manager).executeWithoutResult(s->{assertFalse(facts.forAccount(UUID.randomUUID()).historical());
+            jdbc.update("UPDATE flyway_schema_history SET script='V10__unknown.sql' WHERE version='10'");
+            assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
+    }
     @AfterAll void cleanup(){guard();assertTrue(SCHEMA.matches("it_external_web_[0-9a-f]{32}"));jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");}
 }

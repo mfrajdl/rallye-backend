@@ -4570,6 +4570,123 @@
           ]
         }
       ]
+    },
+    {
+      "name": "18 Single immutable identity 3c.3a - LOCAL negative flows",
+      "description": "Run locally with providers disabled, regressionAuthMode=cookie and cookie jar enabled. Collection pre-request obtains CSRF. No login or account mutation. Three removed-purpose requests must return 400 INVALID_REQUEST, even with providers disabled. Existing folders 16/17 retain their prerequisites. No link/unlink, LOCAL-add or fresh grant endpoint is introduced.",
+      "item": [
+        {
+          "name": "3c3a Reject LINK",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"LINK\",\n  \"returnId\": \"web\",\n  \"rememberMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Removed purpose rejected before provider access', () => pm.response.to.have.status(400));",
+                  "pm.test('Safe validation error', () => pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c3a Reject UNLINK",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"UNLINK\",\n  \"returnId\": \"web\",\n  \"rememberMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Removed purpose rejected before provider access', () => pm.response.to.have.status(400));",
+                  "pm.test('Safe validation error', () => pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c3a Reject REAUTHENTICATE",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"REAUTHENTICATE\",\n  \"returnId\": \"web\",\n  \"rememberMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Removed purpose rejected before provider access', () => pm.response.to.have.status(400));",
+                  "pm.test('Safe validation error', () => pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

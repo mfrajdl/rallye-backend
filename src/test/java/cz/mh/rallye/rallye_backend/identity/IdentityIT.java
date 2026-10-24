@@ -52,6 +52,7 @@ class IdentityIT {
     @Autowired TestMail mail;
     @Autowired MutableClock clock;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
     @Autowired org.springframework.test.web.servlet.MockMvc mvc;
     private final List<String> ownEmails = new java.util.ArrayList<>();
     private String email() {
@@ -59,10 +60,15 @@ class IdentityIT {
     }
     @AfterEach void cleanupOnlyOwnFixtures() {
         for (String email : ownEmails) {
-            for (String table : List.of("user_session", "user_action_token", "user_identity")) {
-                jdbc.update("DELETE FROM " + table + " WHERE account_id IN (SELECT id FROM user_account WHERE normalized_email=?)", email);
-            }
-            jdbc.update("DELETE FROM user_account WHERE normalized_email=?", email);
+            new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(status -> {
+                var ids = jdbc.queryForList("SELECT id FROM user_account WHERE normalized_email=? FOR UPDATE", UUID.class, email);
+                for (UUID id : ids) {
+                    for (String table : List.of("user_session", "user_action_token", "user_identity")) {
+                        jdbc.update("DELETE FROM " + table + " WHERE account_id=?", id);
+                    }
+                    jdbc.update("DELETE FROM user_account WHERE id=?", id);
+                }
+            });
         }
     }
     private String activatedAccount() {

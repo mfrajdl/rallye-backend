@@ -25,6 +25,23 @@ class ExternalAuthHttpTest {
     @MockitoBean ExternalFlowService flows;
     @MockitoBean ExternalLoginService login;
     String start="/api/v1/auth/external/GOOGLE/requests";
+    @Test void removedPurposesAreRejectedBeforeAnyFlowStarts() throws Exception {
+        for(String purpose:java.util.List.of("LINK","UNLINK","REAUTHENTICATE"))
+            mvc.perform(post(start).with(csrf()).contentType("application/json")
+                .content("{\"purpose\":\""+purpose+"\",\"returnId\":\"web\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        verifyNoInteractions(flows,login);
+    }
+    @Test void identityManagementEndpointsDoNotExistForAuthenticatedUsers() throws Exception {
+        for(String path:java.util.List.of("/api/v1/auth/identities/link","/api/v1/auth/identities/local","/api/v1/auth/reauthentications"))
+            mvc.perform(post(path).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("test"))
+                .with(csrf()).contentType("application/json").content("{}"))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/v1/auth/identities/"+java.util.UUID.randomUUID())
+            .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("test")).with(csrf()))
+            .andExpect(status().isNotFound());
+        verifyNoInteractions(flows,login);
+    }
     @Test void startRequiresCsrfAndSetsOnlyIsolatedSecureCorrelation() throws Exception {
         String body="{\"purpose\":\"LOGIN\",\"returnId\":\"web\"}";
         mvc.perform(post(start).contentType("application/json").content(body)).andExpect(status().isForbidden());

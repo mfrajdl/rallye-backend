@@ -45,10 +45,11 @@ class AccountCancellationIT {
     <T> T tx(Supplier<T> work) {return new TransactionTemplate(manager).execute(status->work.get());}
     UUID account() {return account(UUID.randomUUID()+"@example.test");}
     UUID account(String email) {
-        UUID id=UUID.randomUUID();jdbc.update("""
+        UUID id=UUID.randomUUID();return tx(()->{jdbc.update("""
                 INSERT INTO user_account(id,email,normalized_email,display_name,status,created_at,updated_at,email_verified_at)
                 VALUES (?,?,?,'Captain','ACTIVE',?,?,?)
-                """,id,email,email,Timestamp.from(NOW),Timestamp.from(NOW),Timestamp.from(NOW));return id;
+                """,id,email,email,Timestamp.from(NOW),Timestamp.from(NOW),Timestamp.from(NOW));
+        jdbc.update("INSERT INTO user_identity VALUES (?,?, 'LOCAL','local',?,'synthetic-password-hash',?)",UUID.randomUUID(),id,id.toString(),Timestamp.from(NOW));return id;});
     }
     UUID crew(UUID captain) {
         UUID id=UUID.randomUUID();jdbc.update("INSERT INTO crew(id,captain_account_id,name,created_at,updated_at) VALUES (?,?,'Crew',?,?)",
@@ -81,7 +82,6 @@ class AccountCancellationIT {
         }
     }
     void credentials(UUID id) {
-        jdbc.update("INSERT INTO user_identity VALUES (?,?, 'LOCAL','local',?,'synthetic-password-hash',?)",UUID.randomUUID(),id,id.toString(),Timestamp.from(NOW));
         jdbc.update("INSERT INTO user_session(id,account_id,token_hash,remember_me,created_at,last_used_at,expires_at) VALUES (?,?,?,false,?,?,?)",
                 UUID.randomUUID(),id,UUID.randomUUID().toString().replace("-","").repeat(2),Timestamp.from(NOW),Timestamp.from(NOW),Timestamp.from(NOW.plusSeconds(3600)));
         jdbc.update("INSERT INTO user_action_token(id,account_id,purpose,token_hash,created_at,expires_at) VALUES (?,?,'PASSWORD_RESET',?,?,?)",
@@ -104,19 +104,19 @@ class AccountCancellationIT {
                     assertTrue(started.await(5,TimeUnit.SECONDS));
                     assertThrows(TimeoutException.class,()->future.get(200,TimeUnit.MILLISECONDS));
                 } catch(InterruptedException failure) {Thread.currentThread().interrupt();throw new IllegalStateException(failure);}
-                accounts.anonymize(id,NOW);return future;
+                accounts.deleteIdentities(id);accounts.anonymize(id,NOW);return future;
             });
             assertEquals("ANONYMIZED",result.get(10,TimeUnit.SECONDS).status());
         } finally {executor.shutdownNow();}
     }
     @Test void physicalDeletionAlsoRollsBack() {
         UUID id=account();var marker=new IllegalStateException("Injected after deletion");
-        assertSame(marker,assertThrows(IllegalStateException.class,()->tx(()->{accounts.deleteAccount(id);throw marker;})));
+        assertSame(marker,assertThrows(IllegalStateException.class,()->tx(()->{accounts.deleteIdentities(id);accounts.deleteAccount(id);throw marker;})));
         assertEquals("ACTIVE",tx(()->accounts.lock(id)).status());
     }
     @Test void anonymizationRemovesIdentifiersAndReleasesEmailImmediately() {
         String email=UUID.randomUUID()+"@example.test";UUID id=account(email);
-        tx(()->accounts.anonymize(id,NOW));
+        tx(()->{accounts.deleteIdentities(id);return accounts.anonymize(id,NOW);});
         var state=tx(()->accounts.lock(id));assertEquals("ANONYMIZED",state.status());assertNull(state.email());
         assertNull(state.normalizedEmail());assertNull(state.displayName());assertEquals(NOW,state.cancelledAt());
         assertNotEquals(id,account(email));
@@ -130,7 +130,7 @@ class AccountCancellationIT {
                 assertThrows(DataIntegrityViolationException.class,()->jdbc.update("UPDATE user_account SET status=?,"+field+"=NULL WHERE id=?",state,id));
             assertThrows(DataIntegrityViolationException.class,()->jdbc.update("UPDATE user_account SET status=?,cancelled_at=? WHERE id=?",state,Timestamp.from(NOW),id));
         }
-        tx(()->accounts.anonymize(id,NOW));
+        tx(()->{accounts.deleteIdentities(id);return accounts.anonymize(id,NOW);});
         assertThrows(DataIntegrityViolationException.class,()->jdbc.update("UPDATE user_account SET display_name='Personal' WHERE id=?",id));
         assertThrows(DataIntegrityViolationException.class,()->jdbc.update("UPDATE user_account SET cancelled_at=NULL WHERE id=?",id));
     }
@@ -149,8 +149,8 @@ class AccountCancellationIT {
                 "Cannot invalidate the last active administrator","guard_admin_account");
         assertLastAdministratorUnchanged(first,original);
         tx(()->{jdbc.update("INSERT INTO user_account_role(account_id,role,granted_at) VALUES (?,'ADMIN',?)",second,Timestamp.from(NOW));return null;});
-        // V6 anonymization itself is valid: the guard permits it when another active ADMIN remains.
-        assertEquals(1,tx(()->accounts.anonymize(second,NOW)));
+        // Anonymization with identity removal is valid when another active ADMIN remains.
+        assertEquals(1,tx(()->{accounts.deleteIdentities(second);return accounts.anonymize(second,NOW);}));
         assertEquals("ANONYMIZED",tx(()->accounts.lock(second)).status());
         assertEquals(1,tx(()->accounts.deleteRoles(second)));
         assertLastAdministratorUnchanged(first,original);
@@ -201,7 +201,7 @@ class AccountCancellationIT {
         assertEquals(3,tx(()->accounts.closePendingTransfers(id,id,NOW)));
         for(UUID transfer:new UUID[]{outgoing,incoming})assertEquals("CANCELLED",jdbc.queryForObject("SELECT status FROM crew_transfer WHERE id=?",String.class,transfer));
         assertEquals("EXPIRED",jdbc.queryForObject("SELECT status FROM crew_transfer WHERE id=?",String.class,expired));
-        tx(()->{accounts.detachCrews(id,NOW);return accounts.deleteAccount(id);});
+        tx(()->{accounts.detachCrews(id,NOW);accounts.deleteIdentities(id);return accounts.deleteAccount(id);});
         assertEquals("REJECTED",jdbc.queryForObject("SELECT status FROM crew_transfer WHERE id=?",String.class,history));
     }
     @Test void metadataCleanupIncludesOtherActorsExpiredAndLegacyRoles() {

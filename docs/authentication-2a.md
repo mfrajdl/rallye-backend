@@ -1,6 +1,9 @@
 # Etapa 2A: účty a lokální autentizace
 
-Aktuální rozšíření: [schválená analýza 3c](external-auth-3c.md), rozhodnutí D01–D08 ve [specifikaci 0.7.0](Zavody_specifikace_v0.7.0.md). Následující text dokumentuje již implementovanou etapu; webové externí přihlášení přidává [3c.2](external-auth-3c2.md), ale nové čerstvé ověření a Apple revokace zatím implementované nejsou. D03 rozšíří vlastní rušení o účelový jednorázový důkaz na 5 minut; ADMIN cesta nadále ověřuje jednajícího administrátora. D06 vyžaduje trvalou bezpečnou revokační práci i po odstranění účtu, bez obnovy jeho práv.
+> Aktuální pravidla: [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md), D09 nahrazuje D04/D05 a D10 nahrazuje D03. Účet má jedinou neměnnou LOCAL/GOOGLE/APPLE identitu; link/unlink a dodatečný LOCAL jsou zakázané. LOCAL vlastní zrušení vyžaduje znovu heslo, externí zrušení platnou relaci a samostatné výslovné potvrzení, nikoli čerstvou reautentizaci. Níže uvedené dokončené etapy a výsledky zachycují tehdejší implementaci; DB omezení je nyní připravené v 3c.3a s uživatelem potvrzeným PostgreSQL ověřením BUILD SUCCESS; externí potvrzení 3c.3b ještě není implementované. Dopady a nový plán: [external-auth-3c.md](external-auth-3c.md).
+
+
+Aktuální rozšíření: [schválená analýza 3c](external-auth-3c.md), aktuální rozhodnutí D09/D10 ve [specifikaci 0.8.0](Zavody_specifikace_v0.8.0.md). Následující text dokumentuje již implementovanou etapu; webové externí přihlášení přidává [3c.2](external-auth-3c2.md), ale externí potvrzení zrušení podle D10 a Apple revokace zatím implementované nejsou. D10 zachovává ověření LOCAL hesla a pro externí vlastní rušení zavádí relaci s explicitním potvrzením; ADMIN cesta nadále ověřuje jednajícího administrátora. D06 vyžaduje trvalou bezpečnou revokační práci i po odstranění účtu, bez obnovy jeho práv.
 
 Implementace pod `cz.mh.rallye.rallye_backend.identity` vychází ze specifikace 0.5.0
 a schválených upřesnění etapy 2A. Neobsahuje Google/Apple OAuth, posádky, závody,

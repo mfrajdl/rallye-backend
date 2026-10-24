@@ -1,193 +1,99 @@
-# Etapa 3c – externí přihlášení a správa identit
+# Etapa 3c – externí přihlášení s jedinou neměnnou identitou
 
-Stav k 24. 10. 2026: analýza dokumentačně uzavřena; D01–D08 schváleny uživatelem. Protokolový základ 3c.1 je dokončen a automaticky otestován; stav ověření a konkrétní API jsou v [external-auth-3c1.md](external-auth-3c1.md). Migrace V8 je připravena, úspěšný PostgreSQL běh již potvrdil uživatel. Webové přihlášení a registraci přidává implementačně dokončená a lokálně otestovaná 3c.2 (verify 271 testů, uživatelem potvrzený PostgreSQL BUILD SUCCESS a Postman 16: 6/6). Skutečné přihlášení Google/Apple a pozitivní Postman 17 zůstávají neověřené do schváleného HTTPS prostředí; podrobné ověření a omezení jsou v [external-auth-3c2.md](external-auth-3c2.md). Správa/propojování identit, konfigurace skutečných poskytovatelů a externí smoke zatím neproběhly. Funkční základ: [specifikace 0.7.0](Zavody_specifikace_v0.7.0.md), která zachovává pravidla 0.6.0 a přidává rozhodnutí 3c. Technické návrhy níže nejsou tvrzením o existujícím API.
+## Aktuální závazný základ a evidence rozhodnutí
 
-## Schválená rozhodnutí
+Závazná je [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md). Vydání 0.7.0 zůstává historicky beze změny. Původní dokumentační revize byla následována schválenou implementací 3c.3a; aktuální stav V10 a uživatelem potvrzené PG ověření: [single-identity-3c3a.md](single-identity-3c3a.md). Návrhy 3c.3b/c a 3c.4/5 nejsou implementované. 3c.1 a 3c.2 byly dokončeny podle tehdejšího rozsahu: verify 271 testů, uživatelem potvrzený PostgreSQL BUILD SUCCESS a lokální Postman 16 (6/6). Skutečné Google/Apple přihlášení a pozitivní Postman 17 jsou neověřené.
 
-| ID | Závazné pravidlo |
+| Rozhodnutí | Aktuální platnost |
 | --- | --- |
-| 3c-D01 | E-mail při první registraci je ověřený jen při spolehlivém potvrzení validovaným údajem Google/Apple; jinak vlastní ověření. Shoda adres nikdy automaticky nespojuje účty. |
-| 3c-D02 | Chybějící povinné jméno nebo použitelný e-mail doplní uživatel v dokončovacím kroku. Doplněný e-mail se ověřuje vlastní cestou. Před dokončením nevzniká plná relace; chybějící údaje při dalších přihlášeních nic nepřepisují. |
-| 3c-D03 | Pro propojení a vlastní zrušení účtu nové ověření heslem nebo již propojenou externí identitou. Účelově vázané jednorázové oprávnění platí 5 minut; samotná session nestačí. Tiché SSO není automaticky důkaz čerstvosti. |
-| 3c-D04 | Součástí 3c je přidání LOCAL hesla externímu účtu, propojení i odpojení identit a zákaz odstranění posledního použitelného způsobu. Obnova hesla LOCAL identitu nevytváří. |
-| 3c-D05 | Nejvýše jedna LOCAL, jedna GOOGLE a jedna APPLE identita na interní účet; externí identita je nadále globálně unikátní. |
-| 3c-D06 | Uchovávat pouze nezbytný Apple revokační prostředek, šifrovaně a s omezeným přístupem. Zrušení včetně administrátorského vede k revokaci; při výpadku bezpečně opakovat bez obnovení účtu. Lokální transakce a síťové volání jsou oddělené. |
-| 3c-D07 | Skutečný Apple test vyžaduje samostatnou HTTPS testovací doménu. Nyní se nic nezřizuje; simulované testy nejsou skutečné ověření poskytovatele. |
-| 3c-D08 | Společný backendový OAuth2/OIDC authorization code tok v systémovém browseru; autorizační stav 10 minut, mobilní předávací kód 60 sekund, jednorázově a s PKCE S256. Jen explicitně povolené návraty; Bearer nikdy v URL. |
+| D01 | E-mail ověřený jen validovaným údajem poskytovatele, jinak vlastní ověření; žádné propojení podle adresy. |
+| D02 | Doplnění profilu bez plné relace; vlastní ověření doplněného e-mailu. Dokončovací kontext 15 minut, aktivace 24 hodin. |
+| D03 | **Nahrazeno D10.** Původní externí čerstvé ověření a 5minutová oprávnění nejsou součástí nového plánu. |
+| D04, D05 | **Nahrazeny D09.** Link/unlink, dodatečný LOCAL a jedna identita každého typu již neplatí. |
+| D06 | Nezbytný šifrovaný Apple prostředek a revokace při zrušení včetně administrátorského, bezpečné retry bez obnovení účtu. |
+| D07 | Skutečná Apple integrace vyžaduje schválené HTTPS prostředí; nyní se nezřizuje. |
+| D08 | Mobilní systémový browser, state 10 minut, handoff 60 sekund, PKCE S256, Bearer nikdy v URL. |
+| D09 | Každý aktivní účet má právě jednu neměnnou LOCAL/GOOGLE/APPLE identitu. Typ ani konkrétní identitu nelze vyměnit, přidat další, odpojit ani externímu účtu přidat heslo. Externí klíč je (provider, issuer, subject). |
+| D10 | LOCAL vlastní zrušení: platná relace a opětovné ověření hesla. GOOGLE/APPLE vlastní zrušení: platná relace a samostatné výslovné potvrzení, bez auth_time/max_age či nového provider loginu. Potvrzení není nové ověření identity, jde o schválený bezpečnostní kompromis. |
 
-Administrátorská cesta rušení nadále ověřuje aktuální oprávnění administrátora, nikoli heslo rušeného uživatele. Návrh D03 pro tuto cestu je čerstvě ověřit jednajícího administrátora stejným mechanismem; tento technický návrh nemění zákaz rušení sebe přes ADMIN endpoint ani invariant posledního ADMIN.
+Změna jména nebo kontaktního e-mailu nemění identitu. U LOCAL lze nadále měnit/resetovat heslo; tím se nemění identita. API změny e-mailu se nyní nepřidává. ADMIN rušení nadále ověřuje aktuálního aktéra, zakazuje sebe přes ADMIN cestu a chrání posledního aktivního ADMIN; nepřidává se nový požadavek čerstvého důkazu.
 
-## Existující základ a hranice
+## Dopady na existující implementaci 3c.1 a 3c.2
 
-- JDBC moduly identity/api, identity/application a identity/persistence, Spring Security a neprůhledné databázové relace. OAuth2 Client zatím není závislostí.
-- user_identity již povoluje LOCAL/GOOGLE/APPLE a UNIQUE(provider, issuer, subject), LOCAL má částečný unikátní index na account_id. Nové UNIQUE(account_id, provider) doplní D05; před migrací ověřit případné duplicity, nic automaticky neslučovat ani nemazat.
-- AccountStore načítá LOCAL heslo přes LEFT JOIN; účet bez něj může existovat, ale současné create() vždy zakládá místní registraci. Nová cesta nesmí vkládat fiktivní heslo.
-- ACTIVE účet vyžaduje použitelné osobní údaje podle existujících omezení, přihlašovací e-mail je unikátní. Neúplný externí profil proto držet odděleně v krátkodobém registračním kontextu, nikoli vytvářet neplatný účet nebo obcházet omezení.
-- AuthService zachová 24 hodin / 30 dní nečinnosti, cookie a Bearer kontrakt, reset všech a změnu ostatních relací. Přidání hesla není reset; politika relací při správě identit je technický bod níže.
-- AuthSessionFilter čte aktuální účet a ADMIN z DB. Externí claims nedávají ADMIN; kapitánství i historie zůstávají na interním UUID.
-- LocalCancellationIdentityCheck dnes ověřuje jen heslo. Externí ověření a nový kontrakt musí zachovat současné místní použití a bezpečnou autorizaci.
-- AuditService má MANDATORY transakci. CommandStore má společný ledger, 24 hodin a uzavřené formáty kontrolované CommandAccounts/CommandCleanupStore. Žádné heslo, kód poskytovatele, ID/access/refresh token ani reautentizační důkaz do ledgeru.
-- PreRaceAccountParticipationFacts přijímá přesné V1–V6/V7. Novou konkrétní migraci výslovně přidat i s kontrolou jména a negativními testy; nepovolit neznámé vyšší verze.
+| Oblast | Skutečný stav | Potřebná budoucí změna |
+| --- | --- | --- |
+| Registrace LOCAL | AccountStore.create vytváří účet i jednu LOCAL identitu v transakci. | Zachovat, doplnit databázový invariant. |
+| Externí registrace | ExternalLoginService.complete vytváří samostatný účet s jedinou externí identitou, bez LOCAL. Kolize normalizovaného e-mailu má generické 202 bez propojení. | Zachovat; odstranit z návodů doporučení budoucího explicitního linku. Kolize nezakládá další účet pod stejnou adresou, unikátnost e-mailu zůstává. |
+| Další externí login | Vyhledání podle provider/issuer/subject, stávající user_session a transakční LOGIN_SUCCEEDED; ACTIVE kontrola, uložené jméno se nepřepisuje. | Zachovat. Nový subject není pokračováním původního účtu. |
+| V1/V8 | V1 má UNIQUE(provider,issuer,subject) a částečnou LOCAL unikátnost. V8 UNIQUE(account_id,provider) dovoluje různé typy u jednoho účtu. | V10 navrhne UNIQUE(account_id), kontrolu existence a neměnnosti. V1–V9 nikdy nepřepisovat. |
+| V9 | Omezená registrace a šifrované Apple prostředky. Více řádků apple_revocation_credential neznamená více identit. | Zachovat, revokační životní cyklus dopracovat v 3c.5. |
+| Účely toku | ExternalFlowService.Purpose a CHECK ve V8 dovolují LOGIN/LINK/REAUTHENTICATE; start umí kontexty vytvořit, citlivé callbacky jsou blokované EXTERNAL_FRESH_AUTH_UNAVAILABLE. | LINK/REAUTHENTICATE jsou nyní nepotřebné. Explicitně odmítnout jejich start, odstranit příslušné větve/API návrhy a následně zúžit DB CHECK na LOGIN. Nestačí spoléhat na odmítnutí callbacku. |
+| external_auth_grant | V8 připravila REAUTH/MOBILE a 5minutový REAUTH; obchodní vydávání REAUTH není implementované. | REAUTH nevydávat, odstranit nepotřebnou podporu. MOBILE 60 sekund zachovat pro 3c.4. Tabulku ani datové prostředky nyní nemažeme. |
+| Identitní API | Nejsou implementované link/unlink/LOCAL-add endpointy. | Nezavádět je. Případné zobrazení vlastního typu může být pouze čtecí profilový údaj, není správou způsobů a nyní není nový funkční požadavek. |
+| Rušení | AccountCancellationService má transakční orchestraci, LocalCancellationIdentityCheck ověřuje heslo; identita se maže před DELETE/anonymizací, relace/granty/kontexty se uklízejí. | Přidat externí výslovné potvrzení podle typu identity načteného z DB. Klient nesmí zvolením typu obejít LOCAL heslo. Zachovat audit a ochrany historie/ADMIN. |
+| CommandStore | Stávající idempotence a úklid při rušení bez tajemství. | Nepřidávat link/unlink operace. Upravit otisk cancellation jen podle schváleného netajného kontraktu, nikdy heslo/token nebo jejich náhradní hash. |
+| Flyway guard | PreRaceAccountParticipationFacts má přesný allowlist V1–V9 a test odmítající neznámou V10. | Při implementaci konkrétní V10 přidat přesný název a posunout unknown-version fixture; nepovolit libovolné vyšší verze. |
 
-Mimo rozsah: změna přihlašovacího e-mailu, slučování dvou existujících účtů, závody, vlastní autorizační server, nové Rallye JWT/refresh tokeny a cloudový deployment. Jednorázové mobilní předání není refresh token.
+### Data a read-only preflight před budoucí migrací
 
-## Tok, data a bezpečnostní invarianty
+Kód běžných registrací je v souladu s jedinou identitou, ale to nedokazuje skutečný stav všech databází. Žádné DB připojení ani diagnostické SQL nebylo v této revizi spuštěno. Před migrací prověřit účty s více identitami, ACTIVE bez identity, nesoulad LOCAL/password_hash a stavů účtu a existující LINK/REAUTH kontexty a granty. Konflikt zastaví migraci s diagnostikou bez osobních údajů; nikdy automaticky nevybírat vítěznou identitu, neslučovat ani nemazat účty. Způsob řešení případných skutečných konfliktů musí schválit uživatel.
 
-Navržené účely: LOGIN, LINK, REAUTHENTICATE. Oddělit běžné přihlášení od důkazu nové identity pro citlivou operaci. Všechny časy v UTC; expirace je striktní, při now >= expires_at odmítnout.
+## Návrh V10 a následná implementace
 
-1. Zahájit tok s poskytovatelem z pevného seznamu, klientským režimem, rememberMe a návratem z konfigurace. Pro LINK/REAUTHENTICATE vázat cílové UUID a původní platnou relaci na serveru.
-2. Vygenerovat state/nonce a potřebný protokolový materiál. Stav platí 10 minut, nesmí jej prodloužit callback ani opakování.
-3. Autorizační kód vyměnit knihovním OAuth2 Client/OIDC adaptérem. Ověřit podpis a povolený algoritmus, issuer, konkrétní audience/azp dle toku, časy, nonce, state a vazbu na správného poskytovatele/klienta. PKCE k poskytovateli jen dle skutečně ověřené podpory, nezaměňovat s povinným PKCE mobilního předání.
-4. Síťové volání neprovádět při držení admin_control ani zámku účtu. Krátká konečná transakce znovu ověří stav účtu, relaci a spotřebu kontextu; dodrží existující pořadí zámků control -> account -> další prostředky. Unique constraints a podmíněné UPDATE chrání souběh. Po unikátním konfliktu nepokračovat v abortované transakci.
-5. Známá externí identita používá stejné interní UUID. DISABLED/ANONYMIZED účet se nepovolí. Neznámá identita s kolidujícím e-mailem vyžaduje přihlášení k existujícímu účtu a explicitní propojení, bez úniku zbytečných informací o účtu a bez slučování.
-6. První registrace musí mít jméno a ověřený použitelný e-mail. Vlastní ověření využije pravidla 24hodinové aktivace, ale krátkodobý OIDC stav tím nezískává 24hodinovou platnost. Dokončovací kontext má uživatelem schválených 15 minut od ověřeného callbacku, bez prodlužování; viz external-auth-3c2.md.
-7. Vydání Rallye relace a LOGIN_SUCCEEDED audit tvoří jednu DB transakci. Web dostane stávající HttpOnly cookie, mobil až po výměně kódu stejný Bearer kontrakt. Při rollbacku žádná platná session ani částečné propojení.
+V10 je nyní připravena v repozitáři; skutečné chování je popsáno v single-identity-3c3a.md. Níže je původní zdůvodnění návrhu, nikoli potvrzení aplikace na databázi.
 
-Použít rozšíření Spring Security, vlastní krátkodobé úložiště autorizačních požadavků a success/failure adaptéry. Nezavádět implicitně trvalou HttpSession nebo serializovaný SecurityContext vedle user_session. Technické API ověřit proti verzi spravované skutečným Boot parentem.
+1. Přidat UNIQUE(user_identity.account_id). Tím se při souběhu vynutí **nejvýše jedna**, ne existence alespoň jedné. Globální unikátnost externího klíče zůstává.
+2. Doporučený odložený constraint trigger kontroluje **právě jednu použitelnou identitu u ACTIVE** na konci transakce. Vyvolat jej na změny user_account i INSERT/UPDATE/DELETE user_identity; kontrolovat oba účty při změně vazby. Stejná transakce může nejprve založit účet a potom identitu nebo nejprve identitu odstranit a účet anonymizovat/smazat. ANONYMIZED a neexistující účet jsou terminální výjimky bez identity.
+3. Pro souběh kontrol uzamykat rodičovský účet konzistentně s pořadím admin_control -> účet -> další řádky. UNIQUE řeší dva INSERT; constraint trigger a zámky řeší nulovou kardinalitu při změnách stavu. Testovat proti skutečnému PostgreSQL, ne pouze mockům.
+4. Neměnnost nelze zajistit samotným UNIQUE. Doporučené DB triggery odmítnou UPDATE id/account_id/provider/issuer/subject existující identity. LOCAL password_hash a profil účtu zůstávají měnitelné. Samostatný odložený DELETE constraint trigger musí povolit odstranění identity pouze tehdy, když při commitu rodič již neexistuje nebo je ANONYMIZED bez přihlašovacích prostředků. Odmítne tak i DELETE+INSERT náhradu u přeživšího účtu (včetně stejného UUID), nejen UPDATE. Návrat ANONYMIZED do přihlásitelného stavu zakázat. Tím není potřeba ukládat duplicitní historický externí subject. Přesné SQL, pořadí triggerů a chování stávajících cancellation transakcí ověřit v implementaci a PG souběhových testech; nyní se nic nemění.
+5. PENDING_EMAIL/DISABLED nesmějí být cestou k výměně identity. Doporučené omezení počtu a neměnnosti platí i pro ně; přesná kontrola právě jedné je závazná pro ACTIVE, u ostatních stavů je nutné zachovat registrační a cancellation transakce. Nikdy nezavádět okamžitý DELETE trigger, který rozbije stávající anonymizaci.
+6. V10 zúží podporované účely na LOGIN a MOBILE. Pokud preflight najde dosud živé LINK/REAUTH údaje, migrace je nesmí tiše odstraňovat; předložit cílené rozhodnutí o jejich zneplatnění. Nezvyšovat platnost stávajících stavů.
 
-### Apple callback a web
+Jde o navržené technické řešení, ne aplikovanou ochranu. Administrátor databáze schopný vypnout triggery je mimo aplikační bezpečnostní hranici; aplikace nemá dostat taková oprávnění.
 
-Podporovat přesnou callback metodu a formát včetně form_post. Pouze tento protokolový callback může mít cílenou CSRF výjimku; ostatní stavové operace webu zůstávají chráněné CSRF. State/nonce a korelace se zahájeným browserem jsou povinné i pro anonymní LOGIN (ochrana před login CSRF).
+## Přepracovaný plán 3c.3
 
-RALLYE_SESSION a XSRF cookie mají dnes SameSite=Strict; nelze očekávat jejich přítomnost v cross-site POST. Technický návrh: samostatná krátkodobá Secure/HttpOnly SameSite=None korelační cookie, ne oslabení přihlašovací cookie. Podporu jejího doručení a náhradní postup při blokaci ověřit v browseru; bez korelace odmítnout bezpečně. U LINK znovu ověřit původní relaci v DB i bez její cookie na callbacku. Samotný state bez vazby na klienta nestačí.
+### 3c.3a – invariant jediné neměnné identity
 
-Jméno z Apple prvního callbacku je profilový vstup, nikoli důkaz identity. Validovat limity a zacházet s ním jako s nedůvěryhodným textem; e-mail pro rozhodnutí o ověření číst z validovaného důkazu, nikoli volného formulářového JSON. Chybějící další jméno ani odlišný externí e-mail nesmí automaticky přepsat účet.
+- Read-only preflight, nová V10 a přesný migration guard; odstranit podporu zahajování LINK/REAUTHENTICATE. LOGIN a Apple form_post/state/nonce zachovat.
+- Žádné link/unlink/LOCAL-add ani vícezpůsobové API, čerstvé granty či odvolávání relací kvůli již zakázaným operacím.
+- Unit/HTTP: odmítnutí starých účelů bez kontaktování poskytovatele, normální registrace/login, změna/reset pouze LOCAL, změna jména nemění identitu.
+- PG: upgrade V9 -> V10 beze změny účtů a relací; fail preflight bez změny konfliktních dat; dva souběžné INSERT různých providerů; ACTIVE bez identity; změna provider/subject/vazby i DELETE+INSERT náhrada; LOCAL password update; atomická registrace, DELETE i anonymizace; rollback a neznámá budoucí migrace.
+- Hotovo až po verify a uživatelem potvrzeném rallye_test běhu. Historické úspěchy V8/V9 nejsou ověřením V10.
 
-### Čerstvé ověření a správa identit
+### 3c.3b – potvrzení vlastního zrušení podle D10
 
-Navržený společný důkaz: náhodné tajemství, v DB digest, účet, relace, konkrétní účel a případný cíl, čas ověření, expires_at a consumed_at. Životnost 5 minut od skutečně přijatého nového ověření. Spotřeba musí být atomická s propojením/odpojením, přidáním LOCAL nebo zrušením účtu; rollback důkaz nespotřebuje trvale. Odvolaná relace a změněný účet důkaz zneplatňují.
+- Rozšířit existující POST /api/v1/auth/account-cancellations, nikoli zakládat paralelní službu. Návrh DTO: dosavadní currentPassword pro LOCAL; samostatné explicitní boolean confirmed=true pro externí účet, výchozí false. Přesný název DTO/error kód uzavřít při implementaci, žádné nové API zatím neexistuje.
+- Typ identity zjistit z DB v téže transakci. Platná relace je povinná v obou větvích, LOCAL heslo se vždy znovu ověří; externí potvrzení se nesmí vydávat za reautentizaci. Bez true nedělat žádnou změnu. Pro web zachovat CSRF a pro mobil stávající Bearer pravidla.
+- Potvrzení není přenosný token, nevytváří grant ani prodloužení relace. Nové přihlášení u poskytovatele ani auth_time/max_age se nevyžaduje. Samostatné potvrzovací UI musí vyjadřovat vědomý souhlas; backend vynucuje explicitní příznak, frontend nelze nahradit automatickým potvrzením na pozadí.
+- Zachovat aktuální idempotenci cancellation, replay po aktuální autorizaci, rollback, úklid CommandStore, relací, převodů a vlastnictví, audit ACCOUNT_CANCELLED a invariant posledního ADMIN. Nové auditní kategorie přidat jen s doloženou potřebou; žádné REAUTHENTICATION_SUCCEEDED při pouhém potvrzení.
+- HTTP/unit/PG: neplatná relace, chybné/chybějící LOCAL heslo, externí potvrzení false/chybí/true, nemožnost podvrhnout typ, CSRF, cancellation souběhy a replay, audit failure rollback, osiřelé posádky, anonymizace, stejný e-mail nového účtu bez práv.
+- ADMIN endpoint nemění kontrakt ani nevyžaduje heslo cíle. Apple revokační enqueue/worker je teprve 3c.5; před jeho dokončením neoznačovat externí cancellation za kompletně produkčně připravenou.
 
-Pro LINK ověřit obě strany: vlastnictví existujícího účtu a samostatně novou identitu. Nová nepropojená identita nesmí sama potvrdit vlastnictví cílového účtu. Pro odpojení a přidání LOCAL navrženo stejné čerstvé účelové oprávnění. V transakci znovu spočítat použitelné identity; dva souběžné unlink nesmějí odstranit poslední způsob. Heslo 8–128 Unicode znaků, Argon2id; reset pouze již existujícího LOCAL.
+### 3c.3c – regrese a dokumentace
 
-Google dokumentuje požadavek na auth_time přes claims; to samo nezaručuje vynucení nové autentizace. prompt=consent ani select_account nepovažovat za důkaz čerstvého přihlášení. Ověřit podporované parametry a validovaný čas autentizace proti zahájení konkrétního toku a povolené malé odchylce hodin. iat nového ID tokenu není auth_time. U Apple není v této analýze prokázána spolehlivá serverově ověřitelná cesta vynucení čerstvosti pro společný webový tok. Do jejího ověření externí citlivý tok selhává bezpečně; nelze tiše změnit D03 ani považovat novou nonce za nové ověření uživatele.
+- Upravit staré LINK/REAUTH testy z podpory kontextu na bezpečné odmítnutí; nevypínat jejich bezpečnostní smysl. Test 5min grantů pro správu identit již není požadavkem, MOBILE grant testy zůstávají.
+- V 3c.3a byla přidána negativní složka 18; pozitivní cancellation požadavky zatím nepřidávat. V budoucnu doplnit lokální LOCAL cancellation scénáře, nepřidávat reauthentication/link/unlink/local-add. Stávající složky 16/17 zachovat, opravit případné popisky kolize odkazující na link. Externí potvrzení cancellation lze otestovat syntetickou fixture pouze v IT; manuálně vyžaduje skutečný externí účet a HTTPS, nikoli ruční SQL do dev.
+- Verify bez DB, uživatelem spuštěné PostgreSQL testy, zvlášť skutečný browser/provider smoke. Nezřizovat infrastrukturu v této etapě bez nového zadání.
 
-### Mobil
+## Návaznosti 3c.4 a 3c.5
 
-Systémový browser provede společný backendový code flow. Jednorázový předávací kód má 60 sekund, hash v DB, vazbu na dokončený tok, klienta, rememberMe, návrat a PKCE S256 challenge. Mobil předá code + verifier přes HTTPS a atomicky získá novou user_session. Znovu ověřit existenci a ACTIVE stav účtu (zrušení může proběhnout mezi callbackem a výměnou). Záměna challenge, replay nebo expirace nevydá token. Do URL lze vrátit pouze předávací kód, nikdy Bearer; odpovědi no-store a bez citlivého logování. Při ztrátě odpovědi po spotřebování zahájit nový tok, neukládat otevřenou session do replay ledgeru.
+**3c.4 – mobilní přihlášení:** systémový browser, LOGIN, 60s jednorázový předávací kód s hash a PKCE S256, allowlist návratů a existující Bearer kontrakt. Žádné mobilní link/unlink nebo správa více metod. Navazuje na 3c.1/3c.2 a konsolidaci invariantů 3c.3a, nikoli na nyní zrušený čerstvý grant. Testy verifier/challenge/replay/expirace/souběh exchange, rollback session/auditu a cancellation mezi callbackem a exchange. Bez Bearer v URL; stávající 24h/30d beze změny. Skutečné app/universal links se ověřují samostatně.
 
-## Návrh migrací a API
+**3c.5 – rušení účtů a Apple revokace:** navazuje na potvrzení D10 v 3c.3b. V lokální cancellation transakci enqueue trvalé chráněné revokační práce, uchovat pouze nezbytný prostředek a minimální vazby; síťové volání až po commitu. Lease/retry/crash recovery, koordinace instancí a bezpečné odstranění ciphertextu po doložené revokaci. Zachovat admin cancellation a anonymizaci. Revokace při unlink se neimplementuje, protože unlink není povolen. Souběh nové registrace stejné Apple identity s čekající revokací zůstává technický bod; zákaz změny identity v existujícím účtu jej sám neřeší. Žádná závislost na Apple reautentizaci, žádné auth_time/max_age pro cancellation.
 
-Migrace se nyní nevytvářejí. Předpoklad: V8 pro základ 3c.1, další nové verze jen podle nutného rozsahu pozdějších částí. V1–V7 zůstanou nedotčené. V8 má zahrnout UNIQUE(account_id, provider), krátkodobé kontexty a podklady pro reautentizaci/mobil i bezpečný úklid při rušení. Před přidáním omezení read-only preflight na duplicity; nalezené duplicity zastaví migraci, nesmějí být automaticky smazané.
+## Otevřené otázky a doporučení
 
-Navržené datové oblasti (konkrétní tabulky až v implementačním návrhu V8):
+| Bod | Blokace | Varianty a doporučení |
+| --- | --- | --- |
+| Ztráta Google/Apple účtu | Neblokuje 3c.3a/b; blokuje případný slib obnovy přístupu jinou cestou. | Doporučujeme nejprve obnovu u poskytovatele. Bez obnovení nelze nynějším schváleným modelem vstoupit do Rallye účtu; nabídka nového účtu nezachraňuje vlastnictví/historii. Alternativní ověření/administrativní převod identity by vyžadovaly nové rozhodnutí, automaticky se nezavádějí. |
+| Vlastní zrušení externího účtu bez auth_time | **Uzavřeno D10, není blokace.** | Platná autentizovaná relace a explicitní potvrzení. Apple reautentizace se nepožaduje. Kompromis: osoba s ovládnutou platnou relací může zrušit účet; CSRF a potvrzení tento fakt nemění. |
+| Změna či zrušení subjectu u poskytovatele | Neblokuje bezpečné odmítnutí, blokuje případný automatický převod. | Identita zůstává neměnná; email ani nové tvrzení subjectu nepřevede účet. Doporučujeme fail closed a individuální analýzu doložených provider migrací; výjimka vyžaduje zvláštní schválení. Samotné ukončení identity u providera nyní automaticky neruší Rallye účet/relace; pravidla notifikací a průběžné revokace nejsou nově zaváděna. |
+| Existující konfliktní data | Podmíněná blokace V10, pokud je preflight najde. | Zastavit s počty/technickými UUID, žádný automatický výběr či smazání. Reálné účty a DB nebyly nyní kontrolovány. |
+| Stejná Apple identita nově registrovaná během retry staré revokace | Blokuje dokončení 3c.5 a produkční zapnutí této cesty. | Doporučená dočasná blokace nové autorizace do vyřízení staré revokace potřebuje minimální chráněnou korelaci a nové schválení konkrétní retence. Alternativa: providerem doložené bezpečné oddělení generací. Nyní neimplementovat. |
 
-- external_auth_request: účel, provider, klient, state/nonce a korelace, cílový účet/relace, challenge, povolený návrat, created/expires/consumed; nepřechovávat celý externí profil nebo token response.
-- registration_completion: minimální nedokončený profil a ověřená externí vazba; žádná plná session. Pravidla expirace viz technické body.
-- reauthentication_grant a mobile_handoff: hash jednorázového tajemství, vazby a jednorázová spotřeba.
-- apple_revocation_credential a apple_revocation_job: šifrovaný nezbytný token, key ID a stav práce; pracovní návrh níže. Odstranění uživatele nesmí kaskádově odstranit nevyřízenou práci.
+Původní otázky politiky relací při link/unlink a odloženého APPLE unlink jsou bezpředmětné. Není třeba je schvalovat; tyto operace se zakazují D09. Čerstvost Google/Apple již neblokuje 3c.3 ani vlastní cancellation. Google auth_time lze technicky získat, iat není jeho náhradou, ale nové chování jej nevyžaduje; žádný výzkum max_age není podmínkou zahájení.
 
-| Navržené API | Vstup / výstup |
-| --- | --- |
-| POST /api/v1/auth/external/{provider}/requests | rememberMe, klientský režim, identifikátor povoleného návratu, u mobilu challenge/S256; autorizační URL, bez tokenu session |
-| GET/POST /api/v1/auth/external/{provider}/callback | Parametry poskytovatele dle podporovaného toku; bezpečný redirect nebo dokončovací krok, bez libovolného návratu |
-| POST /api/v1/auth/external/registrations/completions | Omezený registrační důkaz a chybějící údaje; ověření adresy nebo dokončení, bez předčasného přihlášení |
-| POST /api/v1/auth/external/exchanges | Mobilní code + verifier -> stávající token/tokenType/rememberMe |
-| GET /api/v1/auth/identities | Bezpečný seznam vlastních způsobů, bez surového subjectu a tokenů |
-| POST /api/v1/auth/reauthentications | Heslo nebo zahájení ověření již propojenou identitou, konkrétní účel -> oprávnění nebo pokračování toku |
-| POST /api/v1/auth/identities/link | Provider a důkaz cílového účtu -> samostatný ověřený tok připojované identity |
-| DELETE /api/v1/auth/identities/{identityId} | Vlastní identita + účelový důkaz, kontrola posledního způsobu -> 204 |
-| POST /api/v1/auth/identities/local | Nové heslo + účelový důkaz -> 201, žádný resetový vedlejší efekt |
-| POST /api/v1/auth/account-cancellations | Rozšířit současný kontrakt o externí účelový důkaz; zachovat bezpečné místní ověření |
+## Aktuální doporučení
 
-Jde o návrh, ne existující endpointy. Metody, DTO a konečné error codes se uzavřou před implementací dané části. Navrženo 400 neplatný/expirovaný protokolový důkaz, 401 neplatné přihlášení, 403 zamítnutí účelu/oprávnění, 409 konflikt identity/posledního způsobu, 429 limiter, 503 nedostupné ověření. Callback chyby prezentovat přes pevnou bezpečnou návratovou stránku, ne odrazem údajů poskytovatele.
-
-Pro aplikační vytváření identit/link/unlink použít stávající UUID Idempotency-Key a 24hodinový ledger, kde je relevantní: po aktuální autorizaci replay zkontrolovat před opětovnou spotřebou důkazu, otisk pouze z významových netajných parametrů. Reauth důkaz/heslo ani jeho náhradní hash nepatří do ledgeru. Protokolové callbacky/exchange chrání vlastní jednorázový stav, ne uložená tajná odpověď. Rozšířit uzavřené formáty, related_account_ids i úklid záznamů jiných aktérů; audit/retence nesmějí novými vazbami ztratit bezpečnost legacy dat.
-
-## Apple revokační prostředek a zrušení účtu
-
-Schváleno D06; následující je doporučený technický návrh k dopracování v 3c.1/3c.5:
-
-- Uchovat jen prostředek potřebný pro pozdější revokaci (typicky refresh token) a minimální identifikaci správného client ID. Žádný celý token response ani trvalé ID/access tokeny bez doložené potřeby. Prostředek nepoužívat k prodlužování Rallye session.
-- Autentizované šifrování prověřenou knihovnou, např. AES-GCM se správou unikátních nonce; key ID, ciphertext a potřebná kryptografická metadata. To není změna dříve odmítnutého šifrování idempotentního ledgeru.
-- Klíče mimo Git/DB/logy, zpřístupněné jen běhové službě přes chráněné prostředí nebo připojený soubor tajemství. Oddělit šifrovací klíč od Apple podpisového privátního klíče a od Google client secret. Ztráta klíče nesmí být maskována přepsáním ciphertextu.
-- Rotace: nový key ID pro nové zápisy, zachovat starý klíč do přešifrování živých i čekajících prostředků a ověření obnovy záloh. Zálohy šifrovat a omezit přístup; smazání živé hodnoty neznamená vymazání starých backupů. Před nasazením stanovit i retenci a obnovu záloh.
-- Ve stejné DB transakci jako zrušení uložit trvalý revokační úkol a převést do něj nezbytný šifrovaný prostředek, odstranit identity, relace a citlivé kontexty, odpojit posádky a zapsat stávající audit. Úkol zůstává i po fyzickém smazání účtu, bez e-mailu/jména; nová registrace má jiné UUID a nepřebírá starou práci.
-- Po commitu pracovník volá Apple mimo DB zámky. Nárokování práce krátkým lease/row lockem s expirací, aby crash umožnil retry jiné instance. Jedinečnost úkolu na konkrétní autorizační prostředek; ne na znovu registrovaný e-mail. Bez nové infrastruktury brokeru.
-- Výpadky/síťové timeouty/5xx opakovat s omezeným exponenciálním odstupem a jitterem; konkrétní intervaly jsou technický parametr. Úspěch nebo prokázané již odvolání -> odstranit ciphertext i nepotřebné vazby. Crash po vzdáleném úspěchu před lokálním potvrzením se vyřeší bezpečným opakováním revokace.
-- Neznámé chyby/invalid_client/ztráta klíče nejsou důkaz revokace: uchovat chráněnou práci, bezpečně signalizovat provozní problém, po opravě umožnit opakování. Účet zůstává zrušený. Nikdy jej kvůli retry neobnovit a neuchovávat celý účet.
-- Retence: prostředek po dobu aktivní vazby a po zrušení pouze do prokazatelného dokončení revokace; následně bezodkladně odstranit. Nezavádět automatický limit, který zahodí nevyřízený token a předstírá úspěch. Dlouhodobě nevyřízenou práci provozně sledovat; případné výjimečné opuštění vyžaduje explicitní rozhodnutí, ne tichý timeout.
-- Návrh auditu: IDENTITY_LINKED, IDENTITY_UNLINKED, LOCAL_IDENTITY_ADDED, REAUTHENTICATION_SUCCEEDED a APPLE_REVOCATION_QUEUED/SUCCEEDED/FAILED s bezpečnými UUID/provider/error kategorií. Neúspěšné pokusy o login zůstávají pouze bezpečné provozní logy. Revokační audit není FK na smazaný účet a neukládá token, ciphertext, klíč, subject ani citlivou odpověď Apple. Lokální obchodní audit je transakční; vzdálené dokončení je samostatná následná transakce.
-
-Souběh opětovného přihlášení/propojení stejné Apple identity s dosud čekající revokací musí mít explicitní bezpečný postup před 3c.5 (viz technické body); starý úkol nesmí nečekaně zrušit novou autorizaci. Odpojování Apple identity má navržené použití stejného revokačního mechanismu; rozsah ověřit před 3c.3.
-
-## Implementační části a kritéria dokončení
-
-### 3c.1 – protokolový základ a bezpečnostní infrastruktura
-
-- Rozsah: konfigurace Google/Apple vypnutá bez explicitního zapnutí, knihovní OIDC validace, V8 a omezení D05, krátkodobé kontexty, rozhraní čerstvého ověření a revokačního úložiště. Žádné automatické povolování externí registrace v nedokončeném stavu.
-- DB/backend/API: nové JDBC operace a návrhové DTO; správný SecurityFilterChain/callback matcher, rozšíření přesného seznamu Flyway migrací a bezpečného úklidu. Připravit kontrakty výše, ne tvrdit jejich veřejnou funkčnost před dalšími částmi.
-- Unit/HTTP: state/nonce/issuer/audience/podpis/algoritmus/expirace, chybné klientské vazby a návraty, žádné tajné logy, CSRF mimo callback, nedostupné klíče a provider timeout. Simulovaní poskytovatelé bez sítě.
-- PostgreSQL: upgrade V7, omezení identity, jednorázová spotřeba, rollback a souběhy; výslovné povolení V8, odmítnutí V9/neznámého skriptu; úklid při rušení.
-- Manuálně: Postman validace vstupů a bezpečných chyb; skutečná konfigurace až po schválení prostředí. Protokolový průzkum čerstvosti nesmí být zaměněn za úspěšný test.
-- Hotovo: verify bez DB úspěšné, IT potvrzené uživatelem, protokolové invarianty a konkrétní fallback/block podmínky doložené. Závislost: D01–D08, technické prověření knihovních API.
-
-### 3c.2 – web, první registrace a opakovaný login
-
-- Rozsah: Google i Apple, D01/D02, doplnění profilu, vlastní ověření adresy, stávající rememberMe, cookie a audit loginu.
-- DB/backend/API: registrační kontext a dokončení/ověření, tvorba účtu bez LOCAL, callback a návraty; nová migrace jen pokud V8 nestačí, bez přepsání V8.
-- Bezpečnost: před ověřením žádná plná session; shodný e-mail nespojuje účty; profil není autorizační důkaz; Apple form_post korelace a přesná CSRF výjimka.
-- Unit/HTTP: verified/unverified/missing claims, Apple první jméno a chybějící další jméno, kolidující ACTIVE/PENDING e-mail, limity textů, DISABLED/ANONYMIZED, cookie atributy a absence citlivých odpovědí.
-- PostgreSQL: souběžný první login jedné identity, kolize e-mailu, dokončení/aktivace právě jednou, rollback účet/identita/session/audit, zrušení během callbacku.
-- Manuálně: browser první/další login obou providerů, odmítnutý souhlas a relay; Postman /me/logout a lokální ověření adresy. Simulace Apple neuzavírá skutečný smoke.
-- Hotovo: doložené automatické testy a ruční výsledky odděleně, bezpečný nedokončený stav, žádná regrese 2A. Závislost: 3c.1 a životnost dokončovacího kontextu.
-
-### 3c.3 – nové ověření a úplná správa identit
-
-- Rozsah: 5minutové účelové oprávnění, link/unlink, seznam, LOCAL přidání a ochrana posledního způsobu. Navrženo použít oprávnění i pro unlink/LOCAL a čerstvě ověřit aktéra ADMIN rušení.
-- DB/backend/API: grant a atomická spotřeba, endpointy identities/reauthentications, případné nové formáty ledgeru s related_account_ids, audit provideru bez tokenů. Zachovat současné místní cancellation použití.
-- Unit/HTTP: odlišný účel/účet/relace/cíl, expirace a replay, nové SSO bez důkazu čerstvosti odmítnout, cílová nová identita nedokazuje existující účet; reset nevytváří LOCAL.
-- PostgreSQL: souběžné link do dvou účtů a dvou identit téhož provideru, dva unlink posledních způsobů, rollback grantu/auditu/ledgeru; úklid osobních údajů a expirace 24 hodin.
-- Manuálně: browser propojení jiné adresy i kolize, Postman seznam/unlink/LOCAL/negativní reauth, login každým zbývajícím způsobem. Ověřit čerstvost skutečným providerem, nikoli jen mockem.
-- Hotovo: D03–D05 platí v souběhu, existující účty nemění UUID/role/vlastnictví. Pokud provider neumí doložit čerstvost, závislé citlivé operace nejsou hotové. Závislost: 3c.1–2 a vyřešená čerstvost.
-
-### 3c.4 – mobilní předání
-
-- Rozsah: systémový browser, 60sekundový code, PKCE S256, allowlist návratů a výměna za dosavadní Bearer; rememberMe přeneseno ze serverového kontextu.
-- DB/backend/API: hash kódu, challenge, atomický exchange a session/audit, žádné uložené otevřené session v idempotenci.
-- Unit/HTTP: špatný verifier/challenge/metoda, otevřený redirect, nesprávný klient, přesná expirace, smíšené cookie/Bearer; no-store a žádný Bearer v URL.
-- PostgreSQL: dvě výměny právě jeden vítěz, rollback, zrušení účtu mezi callbackem a exchange, odvolání relace původního LINK/REAUTH toku.
-- Manuálně: Postman exchange/negativní replay, skutečná aplikace ověří app/universal links a browser. Postman sám nedokazuje mobilní integraci.
-- Hotovo: jednorázové předání bez změny 24h/30d pravidel a bezpečné odmítnutí všech záměn. Závislost: 3c.1–2, pro správu identit i 3c.3.
-
-### 3c.5 – rušení, Apple revokace a regrese
-
-- Rozsah: vlastní externí zrušení, administrátorská cesta, atomický úklid všech nových kontextů a trvalá práce pro Apple; žádné obnovení účtu při síťové chybě. Doplnit dokumentaci a Postman, zachovat 3b historii a posledního ADMIN.
-- DB/backend/API: cancellation proof rozšíření a kompatibilita LOCAL, šifrovaný revokační prostředek/práce, pracovník s lease/retry; potřebné nové migrace přes přesný allowlist účastí. Veřejné revokační/diagnostické API není automaticky součástí.
-- Unit: chybné klíče, rotace, šifrování s integritou, retry a bezpečné logy, dočasné/trvalé chyby poskytovatele, nulový token v ledgeru/auditu.
-- PostgreSQL: rollback celé lokální cancellation včetně enqueue, přežití úkolu po DELETE, ADMIN i anonymizace, restart/lease/souběžní pracovníci, crash po síťovém úspěchu, následný login nesmí obejít čekající revokaci; retence auditu nesmí smazat pracovní zdroj pravdy.
-- Manuálně: browser čerstvé ověření a zrušení; Postman 204/401, nová registrace bez práv, ADMIN zákaz sebe a posledního ADMIN; skutečná revokace Apple až v HTTPS prostředí. Neničit skutečné účty, používat výslovně určené testovací účty.
-- Hotovo: verify, uživatelem potvrzené rallye_test IT, zaznamenané skutečné smoke Google/Apple/mobil nebo výslovně otevřená integrace; neoznačit celou 3c za ověřenou jen podle mocků. Závislost: 3c.1–4 a uzavřené revokační technické body.
-
-## Předpoklady skutečného testování (nyní bez zřizování)
-
-1. Samostatná HTTPS doména a certifikát, pevná callback URI; schválené oddělené prostředí a testovací účty/data. Apple web redirect nepovoluje localhost/IP. Profil local nesmí být kvůli tomu vystaven do sítě; později navrhnout samostatnou konfiguraci testovacího prostředí.
-2. Google projekt/OAuth klient, consent screen a testovací uživatelé, registrovaný redirect; client secret mimo Git. Bez nepotřebných scopes nebo offline Google přístupu.
-3. Apple Developer oprávnění, App ID/Services ID a potřebné asociace, registrovaná doména/návrat, Team ID, Key ID a privátní klíč; generování a rotace client-secret JWT. Konkrétní nastavení ověřit v aktuální oficiální dokumentaci při zprovoznění.
-4. U Apple relay adres nakonfigurovat povolené odesílání a ověřit doručení, pokud aplikace posílá e-mail; skutečný SMTP poskytovatel zůstává úkol před nasazením. Žádná nevyžádaná infrastruktura nyní.
-5. Šifrovací klíče a zálohy, přístup jen služby, odchozí HTTPS na token/JWK/revocation endpointy, správný čas serveru, důvěryhodná konfigurace proxy a veřejného originu.
-6. Mobilní identifikátory a asociace app/universal links, explicitní seznam návratů a test na skutečných zařízeních; odlišit webové a mobilní client ID/audience.
-7. Postman a browser testují aplikační tok; automatické U/HTTP/PG používají simulovaného poskytovatele. PG pouze uživatelem přes `.\mvnw.cmd -Pit verify` a TestDatabaseInitializer proti rallye_test; nikdy rallye_dev/rallye. Žádné externí toky v běžném verify.
-
-## Zbývající technické body a pořadí
-
-D01–D08 nejsou otevřené obchodní otázky. Před zahájením každé závislé části se musí dopracovat:
-
-1. **Čerstvost Google/Apple – blokuje dokončení 3c.3 a vlastní externí rušení.** Prokázat konkrétní serverově validovatelný mechanismus, ne pouze nový token/nonce či obrazovku souhlasu. Varianty: doložená čerstvá autentizace poskytovatele; již existující LOCAL/jiný spolehlivý způsob; pokud provider nic takového nezaručí, předložit rozhodnutí o jiné silné cestě, ne ji svévolně zavést. Doporučení: izolovaný průzkum v 3c.1, pro nedoloženou cestu fail closed. E-mailový fallback ani povinné přidání hesla zatím nejsou schválené náhrady.
-2. **Apple korelace callbacku – technická brána 3c.2.** Ověřit samostatnou cookie a vazbu na původní relaci při form_post i při blokaci cookies. Bezpečné odmítnutí je přijatelné, přihlášení bez klientské vazby není.
-3. **Dokončovací kontext – uzavřeno při zahájení 3c.2.** Uživatel schválil 15 minut od ověřeného callbacku bez prodlužování, potom nové externí ověření. Po odeslání profilu se případná vlastní aktivace řídí stávajícími 24 hodinami. Desetiminutový OAuth state se neprodlužuje. Uživatel rovněž schválil minimální šifrované Apple úložiště již v 3c.2; revokační volání/worker/retry zůstávají v 3c.5.
-4. **Životní cyklus revokace – před 3c.3/3c.5.** D06 vyřešilo povinnost a šifrování, nikoli konkrétní lease/retry a souběh nové autorizace. Konzervativní návrh: do prokazatelného dokončení staré revokace nepovolit nové připojení stejné Apple autorizace; pro korelaci může být dočasně nutný chráněný subject, nikoli e-mail. Rozsah nezbytného retenovaného údaje a dopad na opětovnou registraci předložit před implementací. Nic nesmí obnovit původní účet ani přenést jeho práva. Pro unlink navržen stejný revokační proces.
-5. **Politika relací a citlivé operace – před 3c.3.** D03 konzistentně navrženo pro unlink/LOCAL a aktéra ADMIN cancellation; určit, které ostatní relace odvolat při změně způsobů. Nezaměňovat tuto novou politiku s již schváleným resetem (všechny) a změnou hesla (ostatní). Schválená pravidla zůstávají beze změny.
-6. **Klíče a provozní hodnoty – před skutečným prostředím.** Umístění tajemství, key IDs, rotace/zálohy, retry intervaly, monitoring a konkrétní doména/client ID jsou konfigurační a provozní úkoly, ne důvod znovu otevírat D06/D07. Chybné konfigurace mají externí tok/revokaci bezpečně zablokovat.
-
-Část 3c.1 je nyní dokončena a automaticky ověřena podle external-auth-3c1.md. Původní doporučení pro její zahájení bylo splněno: základ, constraints, bezpečné kontexty a simulované testy nejsou závislé na zřízení domény. Nelze předem slíbit plnou externí reautentizaci ani skutečný Apple smoke bez uvedených důkazů a konfigurace. Zahájení implementace není autorizováno touto dokumentací samotnou.
-
-## Oficiální podklady
-
-Ověřeny při dokumentační analýze 24. 10. 2026; skutečnou podporu konkrétního klienta je nutné ověřit před implementací závislé cesty.
-
-- [Spring Security OAuth2 Login](https://docs.spring.io/spring-security/reference/servlet/oauth2/login/advanced.html): extension points autorizačních požadavků a OIDC validace.
-- [Google OIDC reference](https://developers.google.com/identity/openid-connect/reference): prompt a vyžádání auth_time; výběr účtu není důkaz čerstvosti.
-- [Google OIDC](https://developers.google.com/identity/openid-connect/openid-connect): subject, audience a validace identity.
-- [Apple authorization](https://developer.apple.com/documentation/signinwithapplerestapi/request-an-authorization-to-the-sign-in-with-apple-server.): callback a HTTPS redirect.
-- [Apple TN3194](https://developer.apple.com/documentation/technotes/tn3194-handling-account-deletions-and-revoking-tokens-for-sign-in-with-apple): rušení účtů a revokace.
-- [Apple revocation](https://developer.apple.com/documentation/signinwithapplerestapi/revoke-tokens): revokace tokenu a opakování již zneplatněného tokenu.
+Schválená 3c.3a je implementována a uživatelem ověřena PostgreSQL během (BUILD SUCCESS). V1–V9 se nezměnily, V10 není Codexem aplikovaná na DB. Po úspěšném ověření a akceptaci pokračovat 3c.3b, zatím ji neimplementovat. Přesné testy a limity jsou v single-identity-3c3a.md.

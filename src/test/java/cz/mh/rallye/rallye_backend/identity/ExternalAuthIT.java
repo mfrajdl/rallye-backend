@@ -70,7 +70,7 @@ class ExternalAuthIT {
         assertFalse(tx().execute(s->facts.forAccount(UUID.randomUUID())).historical());
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V8__unknown.sql' WHERE version='8'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
-        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='10' WHERE version='8'");
+        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='11' WHERE version='8'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
     }
     @Test void migrationUpgradesV7AndRejectsDuplicateProviderWithoutDeletingData() {
@@ -112,10 +112,8 @@ class ExternalAuthIT {
         String email=UUID.randomUUID()+"@example.test";
         auth.register(email,"test-password","A");auth.verifyEmail(mail.token(email,"EMAIL_VERIFICATION"));
         var login=auth.login(email,"test-password",false);
-        flows.start(ExternalProviders.Provider.GOOGLE,ExternalFlowService.Purpose.LINK,login.principal(),"web",false,null);
-        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM external_auth_flow WHERE account_id=?",Integer.class,login.principal().accountId()));
-        jdbc.update("INSERT INTO external_auth_grant(id,account_id,session_id,kind,purpose,token_hash,created_at,expires_at) VALUES (?,?,?,'REAUTH','LINK',?,now(),now()+interval '5 minutes')",
-            UUID.randomUUID(),login.principal().accountId(),login.principal().sessionId(),secrets.hash(UUID.randomUUID().toString()));
+        jdbc.update("INSERT INTO external_auth_grant(id,account_id,session_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at) VALUES (?,?,?,'MOBILE','LOGIN',?,?,now(),now()+interval '60 seconds')",
+            UUID.randomUUID(),login.principal().accountId(),login.principal().sessionId(),secrets.hash(UUID.randomUUID().toString()),secrets.create());
         cancellation.self(login.principal(),"test-password",UUID.randomUUID());
         for(String table:List.of("external_auth_flow","external_auth_grant"))
             assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE account_id=?",Integer.class,login.principal().accountId()));
@@ -149,7 +147,7 @@ class ExternalAuthIT {
         auth.register(email,"test-password","A");auth.verifyEmail(mail.token(email,"EMAIL_VERIFICATION"));
         var login=auth.login(email,"test-password",false);UUID account=login.principal().accountId();
         try {
-            jdbc.update("INSERT INTO user_identity(id,account_id,provider,issuer,subject,created_at) VALUES (?,?,'GOOGLE','https://accounts.google.com','one',now())",UUID.randomUUID(),account);
+            assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("INSERT INTO user_identity(id,account_id,provider,issuer,subject,created_at) VALUES (?,?,'GOOGLE','https://accounts.google.com','one',now())",UUID.randomUUID(),account));
             assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("INSERT INTO user_identity(id,account_id,provider,issuer,subject,created_at) VALUES (?,?,'GOOGLE','https://accounts.google.com','two',now())",UUID.randomUUID(),account));
             assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("INSERT INTO external_auth_grant(id,account_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at) VALUES (?,?,'MOBILE','LOGIN',?,?,now(),now()+interval '61 seconds')",UUID.randomUUID(),account,secrets.hash("token"),secrets.create()));
         } finally {cancellation.self(login.principal(),"test-password",UUID.randomUUID());}

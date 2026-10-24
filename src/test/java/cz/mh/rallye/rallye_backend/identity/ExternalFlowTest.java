@@ -23,7 +23,7 @@ class ExternalFlowTest {
     ExternalFlowService service() {
         var manager=mock(PlatformTransactionManager.class);
         when(manager.getTransaction(any())).thenAnswer(call->new SimpleTransactionStatus());
-        return new ExternalFlowService(providers,store,accounts,secrets,clock,manager,verifier);
+        return new ExternalFlowService(providers,store,secrets,clock,manager,verifier);
     }
     ExternalFlowStore.Flow flow(String purpose,Instant expiry,String correlation) {
         return new ExternalFlowStore.Flow(UUID.randomUUID(),"GOOGLE",purpose,null,null,secrets.hash("nonce"),secrets.hash(correlation),
@@ -47,13 +47,11 @@ class ExternalFlowTest {
         assertTrue(result.authorizationUrl().contains("response_mode=form_post"));
         assertFalse(providers.registration(ExternalProviders.Provider.APPLE).getScopes().contains("openid"));
     }
-    @Test void sensitiveStartRequiresCurrentActiveSession() {
-        var service=service();
-        assertEquals(401,assertThrows(AuthFailure.class,()->service.start(ExternalProviders.Provider.GOOGLE,ExternalFlowService.Purpose.LINK,null,"web",false,null)).status());
-        var actor=new AuthService.Principal(UUID.randomUUID(),UUID.randomUUID(),false);
-        when(accounts.lockAccount(actor.accountId())).thenReturn(new AccountStore.Account(actor.accountId(),"a@example.test","A","ACTIVE",null));
-        assertThrows(AuthFailure.class,()->service.start(ExternalProviders.Provider.GOOGLE,ExternalFlowService.Purpose.REAUTHENTICATE,actor,"web",false,null));
-        verifyNoInteractions(store);
+    @Test void removedPurposesCannotBeParsedOrPersisted() {
+        for(String purpose:List.of("LINK","UNLINK","REAUTHENTICATE"))
+            assertThrows(IllegalArgumentException.class,()->ExternalFlowService.Purpose.valueOf(purpose));
+        assertThrows(AuthFailure.class,()->service().start(ExternalProviders.Provider.GOOGLE,null,null,"web",false,null));
+        verifyNoInteractions(store,verifier,accounts);
     }
     @Test void validBoundPurposeStillCannotPretendFreshExternalAuthentication() {
         var actor=new AuthService.Principal(UUID.randomUUID(),UUID.randomUUID(),false);
@@ -63,7 +61,7 @@ class ExternalFlowTest {
         var f=new ExternalFlowStore.Flow(UUID.randomUUID(),"GOOGLE","REAUTHENTICATE",actor.accountId(),actor.sessionId(),secrets.hash("nonce"),secrets.hash(correlation),
             providers.registration(ExternalProviders.Provider.GOOGLE).getRedirectUri(),"https://app.example.test/complete",false,null,clock.instant().plusSeconds(10));
         when(store.find(any())).thenReturn(f);
-        assertEquals("EXTERNAL_FRESH_AUTH_UNAVAILABLE",assertThrows(AuthFailure.class,()->service().callback(ExternalProviders.Provider.GOOGLE,state,correlation,"code")).code());
+        assertEquals("EXTERNAL_STATE_INVALID",assertThrows(AuthFailure.class,()->service().callback(ExternalProviders.Provider.GOOGLE,state,correlation,"code")).code());
         verifyNoInteractions(verifier);verify(store,never()).consume(any(),any());
     }
     @Test void providerDenialConsumesOnlyBoundStateWithoutTokenExchange() {

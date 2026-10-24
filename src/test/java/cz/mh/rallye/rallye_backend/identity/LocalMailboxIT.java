@@ -29,6 +29,7 @@ class LocalMailboxIT {
     }
     @Autowired AuthService auth;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
 
     @Test void registrationActivatesThroughRealLocalMailboxWithoutSmtp() throws Exception {
         String email = UUID.randomUUID() + "@example.test";
@@ -49,10 +50,15 @@ class LocalMailboxIT {
             auth.logout(login.principal());
             assertNull(auth.authenticate(login.secret()));
         } finally {
-            for (String table : java.util.List.of("user_session", "user_action_token", "user_identity")) {
-                jdbc.update("DELETE FROM " + table + " WHERE account_id IN (SELECT id FROM user_account WHERE normalized_email=?)", email);
-            }
-            jdbc.update("DELETE FROM user_account WHERE normalized_email=?", email);
+            new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(status -> {
+                var ids = jdbc.queryForList("SELECT id FROM user_account WHERE normalized_email=? FOR UPDATE", UUID.class, email);
+                for (UUID id : ids) {
+                    for (String table : java.util.List.of("user_session", "user_action_token", "user_identity")) {
+                        jdbc.update("DELETE FROM " + table + " WHERE account_id=?", id);
+                    }
+                    jdbc.update("DELETE FROM user_account WHERE id=?", id);
+                }
+            });
         }
     }
 }

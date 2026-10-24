@@ -37,7 +37,6 @@ class ExternalOidcTest {
     }
     @Test void freshTokenIssueTimeDoesNotCreateFreshAuthenticationGrant() {
         assertEquals(Duration.ofSeconds(60),ExternalFlowService.HANDOFF_LIFE);
-        assertEquals(Duration.ofMinutes(5),ExternalFlowService.REAUTH_LIFE);
         // No service operation issues either grant in this protocol-only stage.
     }
 }

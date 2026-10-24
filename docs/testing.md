@@ -1,5 +1,8 @@
 # Testování bez lokálního Dockeru
 
+> Aktuální pravidla: [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md), D09 nahrazuje D04/D05 a D10 nahrazuje D03. Účet má jedinou neměnnou LOCAL/GOOGLE/APPLE identitu; link/unlink a dodatečný LOCAL jsou zakázané. LOCAL vlastní zrušení vyžaduje znovu heslo, externí zrušení platnou relaci a samostatné výslovné potvrzení, nikoli čerstvou reautentizaci. Níže uvedené dokončené etapy a výsledky zachycují tehdejší implementaci; DB omezení je nyní připravené v 3c.3a s uživatelem potvrzeným PostgreSQL ověřením BUILD SUCCESS; externí potvrzení 3c.3b ještě není implementované. Dopady a nový plán: [external-auth-3c.md](external-auth-3c.md).
+
+
 ## Aktuální závěrečný stav po 3b.6 (24. 10. 2026)
 
 Etapy 3b.6a–d a celý blok 3b jsou dokončené. Codex při závěrečné kontrole
@@ -539,3 +542,35 @@ Uživatel po restartu backendu potvrdil šest úspěšných a tři neúspěšné
 
 
 Závěrečný stav 3c.2: **implementačně dokončena a lokálně otestována**. Verify bez DB: 271 testů, BUILD SUCCESS (běh Codexu). PostgreSQL integrační verify: BUILD SUCCESS (potvrzeno uživatelem). Postman složka 16: 6/6 asercí Passed (potvrzeno uživatelem). Skutečné Google/Apple přihlášení a pozitivní složka 17 nebyly ověřeny; čekají na schválené HTTPS testovací prostředí. Toto omezení zůstává před provozním zapnutím otevřené a nebrání uzavření implementačního rozsahu 3c.2.
+
+
+## Dokumentační revize 0.8.0 – D09/D10 (bez implementace)
+
+Dosavadních 271 unit/HTTP testů a uživatelem potvrzené PostgreSQL/Postman 3c.2 běhy jsou historické výsledky kódu do V9, nikoli ověření nových invariantů. Nové testy se nyní nepíší ani nespouštějí. V přepracované 3c.3 doplnit UNIQUE(account_id)/ACTIVE existenci a neměnnost včetně DELETE+INSERT, souběh, rollback, anonymizaci a přesný V10 guard. Testy podporující start LINK/REAUTH změnit na odmítnutí; zachovat bezpečnostní regrese, nikoli jejich původní produktový předpoklad. 5minutová čerstvá oprávnění již nejsou požadavkem. D10 testovat podle DB typu identity, bez externího auth_time/max_age: LOCAL heslo, externí výslovné potvrzení a platná relace, CSRF, audit, replay a zneplatnění relací.
+
+Postman kolekce při této revizi zůstává beze změny. Budoucí úpravy: opravit případné texty doporučující link, zachovat lokální 16 a připravenou 17, doplnit cancellation potvrzení; žádné link/unlink/LOCAL-add/reauth požadavky. Externí manuální cancellation vyžaduje skutečně přihlášený testovací účet v HTTPS prostředí; samotné potvrzení nezřizuje novou identitu ani relaci. Testy bezpečného Apple retry zůstávají v 3c.5. Podrobná matice dopadů a pořadí jsou v external-auth-3c.md.
+
+
+## 3c.3a – jediná neměnná identita (dokončena a lokálně ověřena)
+
+Codex spustil Maven Wrapper verify na Microsoft JDK 21.0.12.1: **BUILD SUCCESS, 274 testů, 0 failures/errors/skipped**. Všechny PostgreSQL IT včetně nového SingleIdentityIT jsou zkompilované, ale nebyly Codexem spuštěny. V jednom předchozím běhu selhal stávající AuditExportHttpTest.adminStreamsCsvWithDownloadHeadersAndAllFilters na ConcurrentModificationException při souběžném zápisu hlaviček do MockHttpServletResponse (Spring HeaderWriterFilter a asynchronní export). Bez změny tohoto testu či exportní implementace následující celý verify prošel. Tento jednorázový nesouvisející závod je evidované omezení testovacího prostředí, ne zamlčený úspěch prvního běhu.
+
+Nová V10 předem odmítá konfliktní identity i staré nepodporované kontexty bez jejich mazání. SingleIdentityIT obsahuje 15 scénářů, včetně pěti variant neúspěšného preflightu a úspěšného upgradu V9. Další testy pokrývají HTTP 400 pro LINK/UNLINK/REAUTHENTICATE, 404 neexistujících identitních endpointů pro přihlášeného uživatele, přesný guard V10/odmítnutí V11 a původní externí registraci/login/rušení. Podrobnosti a transakční důvody: [single-identity-3c3a.md](single-identity-3c3a.md).
+
+Uživatel spustí podle stávajících ochran `.\mvnw.cmd -Pit verify` pouze proti rallye_test. Po opravě úklidu uživatel potvrdil úspěšný integrační běh včetně V10, preflightu, rollbacku a souběhů. Codex nepoužil rallye_dev ani aplikační DB. Postman kolekce má po přidání negativní složky 18 celkem 103 požadavků a 168 syntakticky validních JS skriptů, validované schéma v2.1. Složku 18 spustit v cookie režimu proti lokálnímu backendu s vypnutými poskytovateli, očekávat šest úspěšných asercí. Kolekce nebyla Codexem spuštěna. Externí potvrzení rušení D10 není součástí 3c.3a.
+
+
+### Oprava testovacího úklidu po aplikaci V10
+
+Uživatelský PostgreSQL běh skončil 173 testy, 0 failures a 12 errors. Podrobné Failsafe reporty ukazují 11 chyb v IdentityIT.cleanupOnlyOwnFixtures a jednu v LocalMailboxIT finally: DELETE identity v autocommitu dokončil transakci před smazáním účtu. Trigger check_account_identity správně odmítl tento stav (identity_delete_requires_cancellation, SQLSTATE 23514). Nešlo o důvod ke změně produkčního triggeru.
+
+Oba testovací úklidy nyní v jedné TransactionTemplate transakci vyberou a zamknou účet podle přesného UUID e-mailu vytvořeného testem, zapamatují jeho interní UUID a cíleně smažou sessions, action tokeny, identitu a nakonec účet. Při commitu odložený trigger zjistí neexistujícího rodiče a dovolí legitimní odstranění. Neočekávaná FK závislost způsobí rollback celého úklidu; nevypínají se triggery ani se nemažou cizí závislosti. Auditní historie zůstává podle dosavadního modelu bez FK. Starší zbytky předchozího neúspěšného běhu se automaticky plošně nemažou.
+
+Revize všech 13 PostgreSQL IT tříd našla tento autocommit vzor pouze ve zmíněných dvou. Deset ostatních datových tříd uklízí vlastní náhodné schéma s existujícími kontrolami DB/role/jména; RallyeBackendApplicationIT nevytváří vlastní účtová data. Přímé DELETE v SingleIdentityIT jsou buď záměrné negativní testy, nebo součást celé cancellation transakce; perzistentní cancellation regrese už používají jednu transakci.
+
+SingleIdentityIT nově obsahuje 17 scénářů. Dvě nové regrese ověřují cílený úplný úklid s tokenem a session při zachování jiného účtu/identity a rollback odstranění účtu i identity při vložené chybě. Stávající test zákazu samostatného DELETE (SQLSTATE 23514) a testy DELETE+INSERT zůstávají zachovány.
+
+Po opravě Codex spustil verify na JDK 21: **BUILD SUCCESS, 274 testů, 0 failures/errors/skipped**, včetně kompilace všech IT. PostgreSQL testy Codex nespouštěl; opakované ověření `.\mvnw.cmd -Pit verify` proti rallye_test po opravě uživatel potvrdil jako BUILD SUCCESS. Počet testů opakovaného běhu nebyl uveden. Produkční Java kód ani V10 se v této opravě nezměnily a V11 nevznikla.
+
+
+Závěrečné integrační ověření opravy úklidu: uživatel potvrdil `.\mvnw.cmd -Pit verify` proti `rallye_test` s výsledkem **BUILD SUCCESS**. Jde o uživatelem potvrzený běh, nikoli běh Codexu; celkový počet testů nového běhu nebyl sdělen. Automatické ověření 3c.3a je dokončené. Uživatel následně potvrdil také manuální Postman složku 18: **6/6 Passed**. Skuteční poskytovatelé ani pozitivní složka 17 tím nejsou ověřeni. 3c.3b není zahájena; V10 se po aplikaci neměnila a V11 nevznikla.

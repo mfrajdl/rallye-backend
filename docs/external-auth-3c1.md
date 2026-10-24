@@ -1,5 +1,8 @@
 # 3c.1 – protokolový základ externí autentizace
 
+> Aktuální pravidla: [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md), D09 nahrazuje D04/D05 a D10 nahrazuje D03. Účet má jedinou neměnnou LOCAL/GOOGLE/APPLE identitu; link/unlink a dodatečný LOCAL jsou zakázané. LOCAL vlastní zrušení vyžaduje znovu heslo, externí zrušení platnou relaci a samostatné výslovné potvrzení, nikoli čerstvou reautentizaci. Níže uvedené dokončené etapy a výsledky zachycují tehdejší implementaci; DB omezení je nyní připravené v 3c.3a s uživatelem potvrzeným PostgreSQL ověřením BUILD SUCCESS; externí potvrzení 3c.3b ještě není implementované. Dopady a nový plán: [external-auth-3c.md](external-auth-3c.md).
+
+
 Stav: **3c.1 dokončena a automaticky otestována**. Verify prošlo s 250 testy; PostgreSQL ověření úspěšně potvrdil uživatel. Specifikace 0.7.0 a D01–D08 se nemění. Toto není dokončené přihlašování Google/Apple.
 
 Následující text zachovává rozsah a výsledky dokončené 3c.1. Aktuální obchodní zpracování webového callbacku přidává [3c.2](external-auth-3c2.md): 303 redirect, omezená registrace nebo vydání stávající webové session. Původní 204 protokolový callback popsaný níže je historický stav 3c.1.

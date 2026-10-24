@@ -4,7 +4,7 @@ Backend soukromé aplikace pro vícestupňové automobilové Rallye soutěže. J
 
 Etapy 2A a 3b jsou dokončené. Aktuální rozsah a navazující etapa 3c jsou v [backendovém plánu](docs/backend-plan.md); výsledky společné regrese a provozní omezení v [závěrečné kontrole 3b.6](docs/review-3b6.md). PostgreSQL automatické testy používají pouze rallye_test; uživatelem provedená ruční regrese běžela proti rallye_dev.
 
-Analýza externího přihlášení 3c je uzavřena rozhodnutími D01–D08; [technický návrh a plán 3c.1–3c.5](docs/external-auth-3c.md). Protokolový základ [3c.1](docs/external-auth-3c1.md) je dokončený a automaticky otestovaný, úspěšné PostgreSQL ověření potvrdil uživatel; skutečné ověření poskytovatelů dosud nebylo provedeno.
+Aktuální [specifikace 0.8.0](docs/Zavody_specifikace_v0.8.0.md) zavádí D09/D10, která nahrazují D04/D05 a D03: jediná neměnná identita, LOCAL zrušení s heslem, externí zrušení s platnou relací a výslovným potvrzením bez reautentizace. Nové DB omezení implementuje připravená [3c.3a](docs/single-identity-3c3a.md), jejíž PostgreSQL ověření potvrdil uživatel jako BUILD SUCCESS. Externí potvrzení 3c.3b zatím není implementované; [technický návrh a plán 3c.1–3c.5](docs/external-auth-3c.md). Protokolový základ [3c.1](docs/external-auth-3c1.md) je dokončený a automaticky otestovaný, úspěšné PostgreSQL ověření potvrdil uživatel; skutečné ověření poskytovatelů dosud nebylo provedeno.
 
 Webovou registraci a přihlášení přidává [3c.2](docs/external-auth-3c2.md); etapa je implementačně dokončená a lokálně otestovaná (verify 271 testů, uživatelem potvrzené PostgreSQL testy a 6/6 asercí Postman 16). Skutečný Google/Apple login a pozitivní Postman složka 17 zůstávají neověřené a vyžadují HTTPS testovací prostředí. Poskytovatelé jsou standardně vypnutí.
 
@@ -88,7 +88,8 @@ Přeskočení testů nepotvrzuje funkčnost aplikace ani připojení. Na Linuxu 
 - [Administrátorská oprávnění, audit a ruční SQL bootstrap – 3b.1](docs/administration-3b1.md)
 - [Posádky, soukromé fotografie a kapitánství – 3b.2](docs/crews-3b2.md)
 
-- [Specifikace 0.7.0](docs/Zavody_specifikace_v0.7.0.md)
+- [Závazná specifikace 0.8.0](docs/Zavody_specifikace_v0.8.0.md)
+- [Historická specifikace 0.7.0](docs/Zavody_specifikace_v0.7.0.md)
 - [Testovací prostředí](docs/testing.md)
 - [Příprava testovací PostgreSQL na OCI](docs/postgresql-test-setup.md)
 - [Pravidla pro Codex](AGENTS.md)
