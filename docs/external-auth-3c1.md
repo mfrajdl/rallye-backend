@@ -2,6 +2,8 @@
 
 Stav: **3c.1 dokončena a automaticky otestována**. Verify prošlo s 250 testy; PostgreSQL ověření úspěšně potvrdil uživatel. Specifikace 0.7.0 a D01–D08 se nemění. Toto není dokončené přihlašování Google/Apple.
 
+Následující text zachovává rozsah a výsledky dokončené 3c.1. Aktuální obchodní zpracování webového callbacku přidává [3c.2](external-auth-3c2.md): 303 redirect, omezená registrace nebo vydání stávající webové session. Původní 204 protokolový callback popsaný níže je historický stav 3c.1.
+
 ## Co je implementováno
 
 - Spring Security OAuth2 Client (verze spravovaná Boot parentem), knihovní výměna authorization code a Nimbus ověření RS256 ID tokenu. Pevné issuer/token/JWK/authorization endpointy Google a Apple; žádná discovery podle uživatelského URL.

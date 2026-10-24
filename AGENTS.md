@@ -14,6 +14,8 @@ Tato pravidla jsou závazná pro další práci Codexu v tomto repozitáři.
 
 Schválená analýza 3c-D01–D08 je ve specifikaci 0.7.0 a docs/external-auth-3c.md. Nejvýše jedna identita každého typu; žádné spojování podle e-mailu; účelové ověření 5 minut, OAuth stav 10 minut, mobilní předání 60 sekund s PKCE S256. Nezbytný Apple revokační prostředek šifrovat mimo ledger a zajistit retry i po zrušení účtu. 3c.1 přidává protokolový základ a V8 podle docs/external-auth-3c1.md; nevydává Rallye relace ani neprovádí propojení. Citlivé callbacky odmítá, dokud není doložena čerstvost; neobcházet neprokázanou čerstvost SSO. Skutečné externí ověření je oddělené od simulovaných testů a vyžaduje schválené prostředí.
 
+Schválená 3c.2 přidává webový login/registraci podle docs/external-auth-3c2.md, V9 a dokončovací kontext na 15 minut. Uživatel schválil minimální šifrované Apple úložiště již v 3c.2, včetně zachování pro revokaci po zrušení účtu. Volání revokace, worker a retry zůstávají v 3c.5; nepřidávat je bez zadání. Kolize adresy nepropojuje účty a dokončení má generické 202 bez session; vlastní aktivace má 24 hodin. Google/Apple smoke nelze odvozovat ze simulací.
+
 ## Implementace
 
 - Odděluj REST DTO a controllery, aplikační logiku a perzistenci. JPA entity nevystavuj v REST API.

@@ -26,7 +26,16 @@ public class AccountCancellationStore {
         },id);
         return rows.isEmpty()?null:rows.getFirst();
     }
-    public int deleteIdentities(UUID id) {lock(id);return jdbc.update("DELETE FROM user_identity WHERE account_id=?",id);}
+    public int deleteIdentities(UUID id) {
+        lock(id);
+        // Invalidate all unfinished proofs of identities about to be detached, including expired contexts.
+        jdbc.update("""
+            DELETE FROM external_registration r WHERE EXISTS(SELECT 1 FROM user_identity i
+              WHERE i.account_id=? AND i.provider=r.provider AND i.issuer=r.issuer AND i.subject=r.subject)
+              OR proposed_email=(SELECT normalized_email FROM user_account WHERE id=?)
+            """,id,id);
+        return jdbc.update("DELETE FROM user_identity WHERE account_id=?",id);
+    }
     public int deleteSessions(UUID id) {
         lock(id);
         // MOBILE grants need not reference a session; remove them explicitly also for anonymization.

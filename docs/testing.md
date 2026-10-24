@@ -515,3 +515,27 @@ Codex spustil Maven Wrapper verify s JDK 21.0.12.1: **BUILD SUCCESS, 250 testů,
 V8 a deset scénářů ExternalAuthIT jsou zkompilované a uživatel následně potvrdil `.\mvnw.cmd -Pit verify` proti rallye_test s výsledkem BUILD SUCCESS. PostgreSQL testy Codex nespouštěl; jde o uživatelem potvrzené ověření, celkový počet IT nebyl uveden. Integrační ověření 3c.1 je dokončené. Nová V8 je výslovně povolena adaptérem účastí, neznámé skripty a V9 se odmítají. Budoucí-migration fixture AccountCancellationServiceIT používá V9 místo nově podporované V8.
 
 Rozsah, konkrétní API a postup Postman bez credentials: [external-auth-3c1.md](external-auth-3c1.md). Callback ještě nevytváří přihlášení ani účty; LINK/REAUTH dokončení je bezpečně zablokované do doložení čerstvosti. Úspěch simulace není skutečné ověření Google/Apple, SameSite/form_post v browseru nebo mobilního klienta. Žádná infrastruktura nebyla zřízena a skutečné externí toky nebyly spuštěny.
+
+
+## 3c.2 – webová externí registrace a přihlášení (implementačně dokončena a lokálně otestována)
+
+Codex spustil Maven Wrapper verify s Microsoft JDK 21.0.12.1: **BUILD SUCCESS, 271 testů, 0 failures/errors/skipped**, sestavený JAR. Unit/HTTP testy bez sítě a DB pokrývají webové cookies/CSRF, doplnění profilu, generické dokončení při kolizi, předání validované identity, šifrování a chybné klíče. Regrese místní autentizace a 3b prošla.
+
+ExternalWebLoginIT má 14 nových připravených scénářů se skutečnými službami a V9 v izolovaném schématu, mockovaný je jen provider verifier a pro vybrané chyby spy zápisu. Pokrývá souběhy, ověření adresy a původní heslo při kolizi, zákaz Google/Apple auto-link, session/audit rollback, registrační rollback včetně neposlání mailu, Apple relay/šifrovaný prostředek a cancellation, přesnou expiraci, upgrade V8 -> V9 a guard neznámé migrace. Nové IT jsou zkompilované, ale Codex je nespouštěl. Uživatel po opravě mockování potvrdil `.\mvnw.cmd -Pit verify` proti rallye_test: **BUILD SUCCESS**; integrační ověření je dokončené. Starý úspěch 3c.1 se nepřenáší na V9.
+
+Postman kolekce validní jako JSON a Collection v2.1, 100 requestů/165 JS skriptů, původní requesty a nastavení zachované. Nová složka 16 je pro cookie režim; browser/Postman cookie jar nejsou sdílené. Skutečné HTTPS/provider/browser ověření nebylo provedeno. Dokumentace API, konfigurace klíčů, přesný manuální postup a omezení: [external-auth-3c2.md](external-auth-3c2.md).
+
+Uživatel výslovně schválil 15minutový dokončovací kontext a minimální šifrované Apple úložiště již v 3c.2. V1–V8 se nemění; V9 má přesný allowlist a future-migration fixture používá V10. Revokační worker/retry a externí čerstvé ověření/cancellation stále nejsou implementované, nelze tvrdit připravenost Apple k produkčnímu zapnutí.
+
+### Oprava integračního testu dokončení registrace
+
+Uživatelský PostgreSQL běh 3c.2: 157 testů, 0 failures, 2 errors. Stack trace prokázal chybu přípravy Mockito spy: nastavování `consume` přes transakční proxy `ExternalAccountStore` mimo transakci vyvolalo `IllegalTransactionStateException` kvůli `MANDATORY`, ještě před voláním služby. Nedokončený stubbing následně způsobil `UnfinishedStubbingException` při resetu mocků druhého testu; nešlo o samostatné selhání kontroly V9.
+
+Opravený test nastavuje i obnovuje skutečný spy za proxy pomocí `AopTestUtils`. Simulované selhání nastává až po skutečném zápisu `consume` v aktivní transakci. Test ověřuje kořenovou vloženou výjimku, rollback účtu, identity, spotřebování i údajů registračního kontextu, neposlání e-mailu a úspěšný retry. Produkční transakční hranice ani `Propagation.MANDATORY` se nemění. Po opravě uživatel potvrdil opakovaný běh `.\mvnw.cmd -Pit verify` proti `rallye_test` s výsledkem **BUILD SUCCESS**. Jde o uživatelem potvrzené integrační ověření, nikoli běh Codexu; počet testů opakovaného běhu nebyl uveden.
+
+### Postman 3c.2: oddělení lokálních a připravených scénářů
+
+Uživatel po restartu backendu potvrdil šest úspěšných a tři neúspěšné aserce původní složky 16. Pozitivní GET profilu (200) a POST dokončení (202 + prázdné tělo) byly spuštěny bez nutného registračního kontextu; 400 při chybějícím kontextu je správné zamítnutí. Kolekce nyní zachovává všechny požadavky i aserce, ale rozděluje je do složky **16 LOCAL disabled providers** (tři požadavky, šest asercí) a **17 PREPARED HTTPS registration only** (dva pozitivní požadavky). Lokálně spouštět pouze 16, v cookie režimu a bez RALLYE_EXTERNAL_REG. Podrobná příprava a očekávání jsou v [external-auth-3c2.md](external-auth-3c2.md). Uživatel následně potvrdil lokální opakování po reorganizaci: všech šest asercí složky 16 Passed. Úspěšné PostgreSQL ověření zůstává uživatelem potvrzené; skutečný provider/browser průchod je stále neověřený. Produkční kód ani migrace se při reorganizaci neměnily.
+
+
+Závěrečný stav 3c.2: **implementačně dokončena a lokálně otestována**. Verify bez DB: 271 testů, BUILD SUCCESS (běh Codexu). PostgreSQL integrační verify: BUILD SUCCESS (potvrzeno uživatelem). Postman složka 16: 6/6 asercí Passed (potvrzeno uživatelem). Skutečné Google/Apple přihlášení a pozitivní složka 17 nebyly ověřeny; čekají na schválené HTTPS testovací prostředí. Toto omezení zůstává před provozním zapnutím otevřené a nebrání uzavření implementačního rozsahu 3c.2.

@@ -54,6 +54,36 @@ public class ExternalFlowService {
         });
         // Intentionally no account creation, identity link, handoff or Rallye session in 3c.1.
     }
+    public String rejectWebCallback(ExternalProviders.Provider provider,String state,String correlation) {
+        if(!secret(state) || !secret(correlation))throw invalid();
+        return tx.execute(status->{
+            var flow=store.find(secrets.hash(state));check(flow,provider,correlation);
+            if(!flow.purpose().equals("LOGIN"))throw new AuthFailure(503,"EXTERNAL_FRESH_AUTH_UNAVAILABLE");
+            if(!store.consume(flow.id(),clock.instant()))throw invalid();
+            org.slf4j.LoggerFactory.getLogger(ExternalFlowService.class).info("External login rejected");
+            return flow.returnUri();
+        });
+    }
+    public record Verified(ExternalFlowStore.Flow flow,ExternalOidcVerifier.Identity identity,String state,String correlation) {
+        @Override public String toString(){return "VerifiedCallback[redacted]";}
+    }
+    public Verified verifyWebCallback(ExternalProviders.Provider provider,String state,String correlation,String code) {
+        if(!secret(state) || !secret(correlation) || code==null || code.isBlank() || code.length()>4096)throw invalid();
+        var flow=tx.execute(status->{var f=store.find(secrets.hash(state));check(f,provider,correlation);return f;});
+        if(!flow.purpose().equals("LOGIN"))throw new AuthFailure(503,"EXTERNAL_FRESH_AUTH_UNAVAILABLE");
+        if(flow.challenge()!=null)throw new AuthFailure(503,"EXTERNAL_MOBILE_UNAVAILABLE");
+        var client=providers.registration(provider);
+        if(!client.getRedirectUri().equals(flow.callbackUri()))throw invalid();
+        var proof=verifier.exchange(client,code,state,flow.nonceHash(),provider==ExternalProviders.Provider.GOOGLE?secrets.hash("rallye-oidc-pkce:"+correlation):null);
+        if(proof==null || !ExternalProviders.issuer(provider).equals(proof.issuer()) || proof.subject()==null || proof.subject().isBlank() || proof.subject().length()>255)throw invalid();
+        return new Verified(flow,proof,state,correlation);
+    }
+    @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void consumeVerified(Verified verified) {
+        var current=store.find(secrets.hash(verified.state()));
+        check(current,ExternalProviders.Provider.valueOf(verified.flow().provider()),verified.correlation());
+        if(!store.consume(current.id(),clock.instant()))throw invalid();
+    }
     private void check(ExternalFlowStore.Flow flow,ExternalProviders.Provider provider,String correlation) {
         if(flow==null || !flow.provider().equals(provider.name()) || !flow.expiresAt().isAfter(clock.instant())
             || !java.security.MessageDigest.isEqual(flow.correlationHash().getBytes(java.nio.charset.StandardCharsets.US_ASCII),secrets.hash(correlation).getBytes(java.nio.charset.StandardCharsets.US_ASCII)))throw invalid();

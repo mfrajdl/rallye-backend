@@ -4,7 +4,9 @@ Backend soukromé aplikace pro vícestupňové automobilové Rallye soutěže. J
 
 Etapy 2A a 3b jsou dokončené. Aktuální rozsah a navazující etapa 3c jsou v [backendovém plánu](docs/backend-plan.md); výsledky společné regrese a provozní omezení v [závěrečné kontrole 3b.6](docs/review-3b6.md). PostgreSQL automatické testy používají pouze rallye_test; uživatelem provedená ruční regrese běžela proti rallye_dev.
 
-Analýza externího přihlášení 3c je uzavřena rozhodnutími D01–D08; [technický návrh a plán 3c.1–3c.5](docs/external-auth-3c.md). Protokolový základ [3c.1](docs/external-auth-3c1.md) je dokončený a automaticky otestovaný, úspěšné PostgreSQL ověření potvrdil uživatel; skutečné externí přihlašování zatím není dostupné.
+Analýza externího přihlášení 3c je uzavřena rozhodnutími D01–D08; [technický návrh a plán 3c.1–3c.5](docs/external-auth-3c.md). Protokolový základ [3c.1](docs/external-auth-3c1.md) je dokončený a automaticky otestovaný, úspěšné PostgreSQL ověření potvrdil uživatel; skutečné ověření poskytovatelů dosud nebylo provedeno.
+
+Webovou registraci a přihlášení přidává [3c.2](docs/external-auth-3c2.md); etapa je implementačně dokončená a lokálně otestovaná (verify 271 testů, uživatelem potvrzené PostgreSQL testy a 6/6 asercí Postman 16). Skutečný Google/Apple login a pozitivní Postman složka 17 zůstávají neověřené a vyžadují HTTPS testovací prostředí. Poskytovatelé jsou standardně vypnutí.
 
 ## Požadavky
 

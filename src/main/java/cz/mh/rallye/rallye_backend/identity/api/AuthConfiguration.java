@@ -34,6 +34,7 @@ public class AuthConfiguration {
                 .formLogin(form -> form.disable()).httpBasic(basic -> basic.disable()).logout(logout -> logout.disable())
                 .csrf(config -> config.csrfTokenRepository(csrf).ignoringRequestMatchers(request -> {
                     if ("POST".equals(request.getMethod()) && request.getRequestURI().equals(request.getContextPath()+"/api/v1/auth/external/APPLE/callback")) return true;
+                    if(request.getRequestURI().startsWith(request.getContextPath()+"/api/v1/auth/external/registrations/")) return false;
                     // Non-browser clients must opt in via a non-safelisted header. Never exempt cookie authentication.
                     if (AuthCookies.present(request)) return false;
                     String header = request.getHeader("Authorization");
@@ -46,7 +47,8 @@ public class AuthConfiguration {
                                 "/api/v1/auth/login", "/api/v1/auth/password-reset-requests",
                                 "/api/v1/auth/password-resets").permitAll()
                         .requestMatchers("/api/v1/auth/external/GOOGLE/requests", "/api/v1/auth/external/APPLE/requests",
-                                "/api/v1/auth/external/GOOGLE/callback", "/api/v1/auth/external/APPLE/callback").permitAll()
+                                "/api/v1/auth/external/GOOGLE/callback", "/api/v1/auth/external/APPLE/callback",
+                                "/api/v1/auth/external/registrations/current", "/api/v1/auth/external/registrations/completions").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors

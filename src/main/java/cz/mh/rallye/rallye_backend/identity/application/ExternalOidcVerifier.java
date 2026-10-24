@@ -15,7 +15,10 @@ public class ExternalOidcVerifier {
     private final SecretTokens secrets;
     private final java.time.Clock clock;
     public ExternalOidcVerifier(SecretTokens secrets,java.time.Clock clock){this.secrets=secrets;this.clock=clock;}
-    public void exchange(ClientRegistration client,String code,String state,String nonceHash,String pkceVerifier) {
+    public record Identity(String issuer,String subject,String email,boolean emailVerified,String name,String refreshToken) {
+        @Override public String toString(){return "VerifiedExternalIdentity[redacted]";}
+    }
+    public Identity exchange(ClientRegistration client,String code,String state,String nonceHash,String pkceVerifier) {
         var request=OAuth2AuthorizationRequest.authorizationCode().authorizationUri(client.getProviderDetails().getAuthorizationUri())
             .clientId(client.getClientId()).redirectUri(client.getRedirectUri()).scopes(client.getScopes()).state(state)
             .attributes(a->{if(pkceVerifier!=null)a.put("code_verifier",pkceVerifier);}).build();
@@ -35,12 +38,16 @@ public class ExternalOidcVerifier {
             var decoder=NimbusJwtDecoder.withJwkSetUri(client.getProviderDetails().getJwkSetUri()).jwsAlgorithm(SignatureAlgorithm.RS256)
                 .restOperations(new org.springframework.web.client.RestTemplate(factory)).build();
             decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(client.getProviderDetails().getIssuerUri()));
-            decode(decoder,raw,client.getClientId(),nonceHash);
+            Jwt jwt=decode(decoder,raw,client.getClientId(),nonceHash);
+            Object verified=jwt.getClaims().get("email_verified");
+            return new Identity(jwt.getIssuer().toString(),jwt.getSubject(),jwt.getClaimAsString("email"),
+                Boolean.TRUE.equals(verified) || "true".equals(verified),jwt.getClaimAsString("name"),
+                tokens.getRefreshToken()==null?null:tokens.getRefreshToken().getTokenValue());
         } catch(AuthFailure failure){throw failure;}
         catch(RuntimeException failure){throw invalid();} // Provider responses may contain secrets: do not log/wrap them.
     }
-    public void decode(JwtDecoder decoder,String raw,String clientId,String nonceHash) {
-        try { validate(decoder.decode(raw),clientId,nonceHash); }
+    public Jwt decode(JwtDecoder decoder,String raw,String clientId,String nonceHash) {
+        try { Jwt jwt=decoder.decode(raw);validate(jwt,clientId,nonceHash);return jwt; }
         catch(RuntimeException e){throw invalid();}
     }
     public void validate(Jwt jwt,String clientId,String nonceHash) {

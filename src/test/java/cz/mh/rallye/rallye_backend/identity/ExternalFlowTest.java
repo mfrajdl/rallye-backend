@@ -66,6 +66,12 @@ class ExternalFlowTest {
         assertEquals("EXTERNAL_FRESH_AUTH_UNAVAILABLE",assertThrows(AuthFailure.class,()->service().callback(ExternalProviders.Provider.GOOGLE,state,correlation,"code")).code());
         verifyNoInteractions(verifier);verify(store,never()).consume(any(),any());
     }
+    @Test void providerDenialConsumesOnlyBoundStateWithoutTokenExchange() {
+        String state=secrets.create(),correlation=secrets.create();var f=flow("LOGIN",clock.instant().plusSeconds(10),correlation);
+        when(store.find(any())).thenReturn(f,null);when(store.consume(f.id(),clock.instant())).thenReturn(true);
+        var service=service();assertEquals(f.returnUri(),service.rejectWebCallback(ExternalProviders.Provider.GOOGLE,state,correlation));
+        assertThrows(AuthFailure.class,()->service.rejectWebCallback(ExternalProviders.Provider.GOOGLE,state,correlation));verifyNoInteractions(verifier);
+    }
     @Test void invalidChallengeOrUnknownReturnNeverPersists() {
         assertThrows(AuthFailure.class,()->service().start(ExternalProviders.Provider.GOOGLE,ExternalFlowService.Purpose.LOGIN,null,"web",false,"plain"));
         assertThrows(AuthFailure.class,()->service().start(ExternalProviders.Provider.GOOGLE,ExternalFlowService.Purpose.LOGIN,null,"untrusted",false,null));

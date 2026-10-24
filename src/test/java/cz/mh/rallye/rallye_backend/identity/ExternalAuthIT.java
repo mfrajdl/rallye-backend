@@ -66,11 +66,11 @@ class ExternalAuthIT {
         assertThrows(IllegalStateException.class,()->tx().executeWithoutResult(s->{assertTrue(store.consume(f.id(),now));throw new IllegalStateException("injected");}));
         assertEquals(Boolean.TRUE,tx().execute(s->store.consume(f.id(),now)));
     }
-    @Test void reviewedV8AcceptedButUnknownScriptAndV9Rejected() {
+    @Test void reviewedMigrationsAcceptedButUnknownScriptAndFutureRejected() {
         assertFalse(tx().execute(s->facts.forAccount(UUID.randomUUID())).historical());
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V8__unknown.sql' WHERE version='8'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
-        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='9' WHERE version='8'");
+        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='10' WHERE version='8'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
     }
     @Test void migrationUpgradesV7AndRejectsDuplicateProviderWithoutDeletingData() {

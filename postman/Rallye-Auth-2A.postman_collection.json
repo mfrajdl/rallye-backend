@@ -292,6 +292,26 @@
       "key": "regressionCancelledAcceptKey",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "externalReturnId",
+      "value": "web",
+      "type": "string"
+    },
+    {
+      "key": "externalRegistrationEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "externalRegistrationName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "externalProvidersConfigured",
+      "value": "false",
+      "type": "string"
     }
   ],
   "event": [
@@ -4339,6 +4359,211 @@
                 "exec": [
                   "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
                   "pm.test('Transfer remains closed', () => pm.expect(pm.response.json().code).to.eql('TRANSFER_NOT_PENDING'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "16 External web login 3c.2 - LOCAL disabled providers",
+      "description": "Run this folder with providers DISABLED, externalProvidersConfigured=false, regressionAuthMode=cookie, cookie jar enabled and no registration cookie. Exactly three requests / six assertions: GOOGLE and APPLE start -> 503 EXTERNAL_PROVIDER_DISABLED; missing registration cookie -> 400 EXTERNAL_REGISTRATION_INVALID. No login or provider account needed. Do not run folder 17 locally; see docs/external-auth-3c2.md.",
+      "item": [
+        {
+          "name": "3c2 Start GOOGLE web login",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"LOGIN\",\n  \"returnId\": \"{{externalReturnId}}\",\n  \"rememberMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.body.update(JSON.stringify({purpose:'LOGIN',returnId:pm.variables.get('externalReturnId'),rememberMe:false}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const configured = pm.collectionVariables.get('externalProvidersConfigured') === 'true';",
+                  "pm.test('Expected provider availability', () => pm.response.to.have.status(configured ? 200 : 503));",
+                  "if (!configured && pm.response.code === 503) pm.test('Explicitly disabled provider', () => pm.expect(pm.response.json().code).to.eql('EXTERNAL_PROVIDER_DISABLED'));",
+                  "if (configured && pm.response.code === 200) pm.test('Web flow only; no session token', () => {const r=pm.response.json();pm.expect(r.stage).to.eql('WEB_LOGIN');pm.expect(r.token).to.eql(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c2 Start APPLE web login",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/APPLE/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"LOGIN\",\n  \"returnId\": \"{{externalReturnId}}\",\n  \"rememberMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.body.update(JSON.stringify({purpose:'LOGIN',returnId:pm.variables.get('externalReturnId'),rememberMe:false}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const configured = pm.collectionVariables.get('externalProvidersConfigured') === 'true';",
+                  "pm.test('Expected provider availability', () => pm.response.to.have.status(configured ? 200 : 503));",
+                  "if (!configured && pm.response.code === 503) pm.test('Explicitly disabled provider', () => pm.expect(pm.response.json().code).to.eql('EXTERNAL_PROVIDER_DISABLED'));",
+                  "if (configured && pm.response.code === 200) pm.test('Web flow only; no session token', () => {const r=pm.response.json();pm.expect(r.stage).to.eql('WEB_LOGIN');pm.expect(r.token).to.eql(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c2 Invalid registration cookie returns 400",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/registrations/current",
+            "description": "Precondition: RALLYE_EXTERNAL_REG must be absent from the cookie jar. Remove only this cookie before the test; do not erase CSRF cookies. No login required."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400 when registration cookie absent or invalid', () => pm.response.to.have.status(400));",
+                  "pm.test('Safe error', () => pm.expect(pm.response.json().code).to.eql('EXTERNAL_REGISTRATION_INVALID')); "
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "17 External web login 3c.2 - PREPARED HTTPS registration only",
+      "description": "NOT a local disabled-provider suite. Both requests require a valid unexpired 15-minute RALLYE_EXTERNAL_REG cookie created by a verified new-identity OAuth callback, on the same HTTPS host and in the active cookie jar. Start OAuth in the browser that completes it; Postman and browser jars are separate. GET profile must run before POST completion. Use only an approved test account; completion can create an account and send verification mail. No synthetic DB context or fabricated provider callback. See docs/external-auth-3c2.md.",
+      "item": [
+        {
+          "name": "3c2 Current registration profile",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/registrations/current",
+            "description": "Requires the real registration cookie from a verified callback for a new external identity. No full Rallye login needed. Expected 200 is unchanged; without this precondition 400 is correct."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 with existing registration cookie', () => pm.response.to.have.status(200));",
+                  "if(pm.response.code===200) pm.test('No authentication token', () => pm.expect(pm.response.json().token).to.eql(undefined));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c2 Complete registration (generic 202)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/registrations/completions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{externalRegistrationEmail}}\",\n  \"displayName\": \"{{externalRegistrationName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Requires the same valid registration cookie, CSRF cookie/header, and locally filled externalRegistrationEmail / externalRegistrationName. Expected 202 and empty body are unchanged. Does not issue a full session."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const email=pm.variables.get('externalRegistrationEmail'), displayName=pm.variables.get('externalRegistrationName');",
+                  "if(!email || !displayName){pm.execution.skipRequest();throw new Error('Fill externalRegistrationEmail and externalRegistrationName locally.');}",
+                  "pm.request.body.update(JSON.stringify({email,displayName}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Generic HTTP 202', () => pm.response.to.have.status(202));",
+                  "pm.test('Empty response without credentials', () => pm.expect(pm.response.text()).to.eql(''));"
                 ]
               }
             }
