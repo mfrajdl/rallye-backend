@@ -2,7 +2,7 @@
   "info": {
     "name": "Rallye Auth 2A — web cookies + CSRF",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Manual local development tests matching AuthController. See docs/authentication-2a.md. Enable cookie jar; allowlist localhost for scripts. Collection variables have no real secrets. Fill password/newPassword/resetNewPassword locally. Activation/reset tokens must be copied from local mailbox; never commit/export populated secrets. Run requests individually in numbered order, pausing to fill tokens. No Authorization or mobile headers: web cookie flow. password is updated after successful password change/reset. Error folder is optional and state-dependent. Administration 3b.1 is in folder 05; manual SQL bootstrap is required first. See docs/administration-3b1.md. No actual credentials are included."
+    "description": "Manual local development tests matching AuthController. See docs/authentication-2a.md. Enable cookie jar; allowlist localhost for scripts. Collection variables have no real secrets. Fill password/newPassword/resetNewPassword locally. Activation/reset tokens must be copied from local mailbox; never commit/export populated secrets. Run requests individually in numbered order, pausing to fill tokens. No Authorization or mobile headers: web cookie flow. password is updated after successful password change/reset. Error folder is optional and state-dependent. Administration 3b.1 is in folder 05; manual SQL bootstrap is required first. See docs/administration-3b1.md. No actual credentials are included. Joint manual regression: docs/postman-3b6.md and folder 15. Default cookie mode is unchanged; isolated Bearer mode is opt-in per environment. Environment session tokens are never stored in collection variables."
   },
   "auth": {
     "type": "noauth"
@@ -287,6 +287,11 @@
       "key": "auditExportTargetAccountId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "regressionCancelledAcceptKey",
+      "value": "",
+      "type": "string"
     }
   ],
   "event": [
@@ -295,27 +300,45 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const base = pm.collectionVariables.get('baseUrl').replace(/[/]+$/, '');",
-          "if (!['GET', 'HEAD', 'OPTIONS'].includes(pm.request.method) && !pm.info.requestName.startsWith('403 ')) {",
-          "    pm.sendRequest({url: base + '/api/v1/auth/csrf', method: 'GET', auth: {type: 'noauth'}}, (error, response) => {",
-          "        if (error || response.code !== 200) {",
-          "            pm.execution.skipRequest();",
-          "            throw new Error('CSRF fetch failed. Check baseUrl and backend.');",
-          "        }",
-          "        const csrf = response.json();",
-          "        if (!csrf.headerName || !csrf.token) {",
-          "            pm.execution.skipRequest();",
-          "            throw new Error('Invalid CSRF response.');",
-          "        }",
-          "        pm.collectionVariables.set('csrfToken', csrf.token);",
-          "        pm.request.headers.upsert({key: csrf.headerName, value: csrf.token});",
-          "        pm.cookies.jar().get(base, 'XSRF-TOKEN', (cookieError, cookie) => {",
-          "            if (cookieError || !cookie) {",
+          "// Opt in per environment; the default cookie/CSRF flow remains unchanged.",
+          "const regressionMode = pm.environment.get('regressionAuthMode') || 'cookie';",
+          "const regressionLogin = pm.info.requestName === '3b6 Login isolated mobile session';",
+          "if (!['cookie', 'bearer'].includes(regressionMode) || (regressionLogin && regressionMode !== 'bearer')) {",
+          "    pm.execution.skipRequest(); throw new Error('Select an environment with regressionAuthMode=bearer for the isolated login.');",
+          "}",
+          "if (regressionMode === 'bearer') {",
+          "    // Disable cookie jar in Settings of every reused request. Environment switching alone does not isolate cookies.",
+          "    if (pm.request.headers.get('Cookie')) { pm.execution.skipRequest(); throw new Error('Remove explicit Cookie header and disable cookie jar for this Bearer request.'); }",
+          "    pm.request.headers.upsert({key: 'X-Rallye-Client', value: 'mobile'});",
+          "    if (regressionLogin) { pm.request.headers.remove('Authorization'); }",
+          "    else {",
+          "        const token = pm.environment.get('regressionSessionToken');",
+          "        if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) { pm.execution.skipRequest(); throw new Error('Login once in the selected environment; no token fallback is allowed.'); }",
+          "        pm.request.headers.upsert({key: 'Authorization', value: 'Bearer ' + token});",
+          "    }",
+          "} else {",
+          "    const base = pm.collectionVariables.get('baseUrl').replace(/[/]+$/, '');",
+          "    if (!['GET', 'HEAD', 'OPTIONS'].includes(pm.request.method) && !pm.info.requestName.startsWith('403 ')) {",
+          "        pm.sendRequest({url: base + '/api/v1/auth/csrf', method: 'GET', auth: {type: 'noauth'}}, (error, response) => {",
+          "            if (error || response.code !== 200) {",
           "                pm.execution.skipRequest();",
-          "                throw new Error('CSRF cookie unavailable. Enable cookie jar and allowlist baseUrl hostname.');",
+          "                throw new Error('CSRF fetch failed. Check baseUrl and backend.');",
           "            }",
+          "            const csrf = response.json();",
+          "            if (!csrf.headerName || !csrf.token) {",
+          "                pm.execution.skipRequest();",
+          "                throw new Error('Invalid CSRF response.');",
+          "            }",
+          "            pm.collectionVariables.set('csrfToken', csrf.token);",
+          "            pm.request.headers.upsert({key: csrf.headerName, value: csrf.token});",
+          "            pm.cookies.jar().get(base, 'XSRF-TOKEN', (cookieError, cookie) => {",
+          "                if (cookieError || !cookie) {",
+          "                    pm.execution.skipRequest();",
+          "                    throw new Error('CSRF cookie unavailable. Enable cookie jar and allowlist baseUrl hostname.');",
+          "                }",
+          "            });",
           "        });",
-          "    });",
+          "    }",
           "}"
         ]
       }
@@ -3551,7 +3574,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{$guid}'));"
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));"
                 ]
               }
             },
@@ -3654,7 +3677,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
                   "if(!pm.collectionVariables.get('cancellationPassword')){pm.execution.skipRequest();throw new Error('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
                 ]
               }
@@ -3709,7 +3732,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
                   "if(!pm.collectionVariables.get('cancellationPassword')){pm.execution.skipRequest();throw new Error('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
                 ]
               }
@@ -3765,7 +3788,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{$guid}'));"
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));"
                 ]
               }
             },
@@ -3804,7 +3827,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
                   "if(!pm.collectionVariables.get('accountCancellationTargetId')){pm.execution.skipRequest();throw new Error('Set accountCancellationTargetId to a disposable target account UUID.');}"
                 ]
               }
@@ -3844,7 +3867,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
                   "if(!pm.collectionVariables.get('adminAccountId')){pm.execution.skipRequest();throw new Error('Set adminAccountId to the currently logged-in ADMIN account UUID.');}"
                 ]
               }
@@ -3885,7 +3908,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
                   "if(!pm.collectionVariables.get('accountCancellationTargetId')){pm.execution.skipRequest();throw new Error('Set accountCancellationTargetId to a disposable target account UUID.');}"
                 ]
               }
@@ -3926,7 +3949,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
                   "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')){pm.execution.skipRequest();throw new Error('Run the successful ADMIN cancellation first; retain its key.');}"
                 ]
               }
@@ -3966,7 +3989,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{$guid}'));",
+                  "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
                   "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')||!pm.collectionVariables.get('accountCancellationConflictTargetId')||pm.collectionVariables.get('accountCancellationConflictTargetId')===pm.collectionVariables.get('accountCancellationOriginalTargetId')){pm.execution.skipRequest();throw new Error('Complete ADMIN cancellation and set a different UUID in accountCancellationConflictTargetId.');}"
                 ]
               }
@@ -4166,6 +4189,156 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 400\", function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "15 — Joint regression 3b.6 (isolated Bearer environments)",
+      "description": "Manual requests only; see docs/postman-3b6.md. Opt in via environment regressionAuthMode=bearer, keep each session token in its own local environment, disable cookie jar on all reused requests. No Runner. Existing folders contain the other requests; no duplicates were added.",
+      "item": [
+        {
+          "name": "3b6 Login isolated mobile session",
+          "protocolProfileBehavior": {
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Rallye-Client",
+                "value": "mobile"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{regressionEmail}}\",\n  \"password\": \"{{regressionPassword}}\",\n  \"rememberMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('regressionSessionToken')) { pm.execution.skipRequest(); throw new Error('This environment already has a session. Use a new environment for another session; never overwrite tokens during the regression.'); }",
+                  "const email = pm.environment.get('regressionEmail'), password = pm.environment.get('regressionPassword');",
+                  "if (!email || !password) { pm.execution.skipRequest(); throw new Error('Fill local environment regressionEmail and regressionPassword.'); }",
+                  "pm.request.body.update(JSON.stringify({email: email, password: password, rememberMe: false}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const result = pm.response.json();",
+                  "    const valid = result.tokenType === 'Bearer' && typeof result.token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(result.token);",
+                  "    pm.test('Valid mobile session response', () => pm.expect(valid).to.eql(true));",
+                  "    pm.test('Mobile login sets no session cookie', () => pm.expect(pm.response.headers.all().some(h => h.key.toLowerCase() === 'set-cookie' && /^RALLYE_SESSION=/.test(h.value))).to.eql(false));",
+                  "    if (valid) pm.environment.set('regressionSessionToken', result.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b6 Revoked ADMIN cannot read audit (403)",
+          "protocolProfileBehavior": {
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/admin/audit-events?page=0&size=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Safe access denial', () => pm.expect(['ACCESS_DENIED', 'ADMIN_REQUIRED']).to.include(pm.response.json().code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b6 Cancelled transfer cannot be accepted (409)",
+          "protocolProfileBehavior": {
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{regressionCancelledAcceptKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/crew-transfers/{{crewTransferId}}/accept",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{crewTransferToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;",
+                  "if (!uuid.test(pm.collectionVariables.get('crewTransferId') || '') || !/^[A-Za-z0-9_-]{43}$/.test(pm.collectionVariables.get('crewTransferToken') || '')) { pm.execution.skipRequest(); throw new Error('Set the cancelled transfer ID and its original token; use its target account.'); }",
+                  "if (!pm.collectionVariables.get('regressionCancelledAcceptKey')) pm.collectionVariables.set('regressionCancelledAcceptKey', pm.variables.replaceIn('{{$guid}}'));",
+                  "if (!uuid.test(pm.collectionVariables.get('regressionCancelledAcceptKey'))) { pm.execution.skipRequest(); throw new Error('regressionCancelledAcceptKey must be a UUID.'); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Transfer remains closed', () => pm.expect(pm.response.json().code).to.eql('TRANSFER_NOT_PENDING'));"
                 ]
               }
             }

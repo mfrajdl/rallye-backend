@@ -1,8 +1,14 @@
 # Backend: architektura a plán po etapě 2A a rozhodnutích 3b
 
-Aktuální funkční základ je [specifikace 0.6.0](Zavody_specifikace_v0.6.0.md), která doplňuje schválená pravidla etapy 3b. Vydání 0.5.0 a starší i rozpracovaná kopie Rallye_specifikace.md zůstávají beze změny. Potvrzené požadavky mají přednost před technickými návrhy. Etapa 2A je dokončena; etapa 3b.1 je dokončena a ověřena, etapa 3b.2 je dokončena; dostupné reporty potvrzují 118 testů bez DB a 39 IT bez chyb. Dokumentace sama nedává oprávnění k databázovým operacím či nasazení.
+Aktuální funkční základ je [specifikace 0.6.0](Zavody_specifikace_v0.6.0.md), která doplňuje schválená pravidla etapy 3b. Vydání 0.5.0 a starší i rozpracovaná kopie Rallye_specifikace.md zůstávají beze změny. Potvrzené požadavky mají přednost před technickými návrhy. Etapa 2A i celý blok 3b.1–3b.6 jsou dokončeny a ověřeny. Závěrečné ověření 24. 10. 2026: 234 testů bez DB; dostupné reporty uživatelem potvrzeného PostgreSQL běhu obsahují 133 IT bez chyb. Šest ručních scénářů 3b.6c potvrdil uživatel proti rallye_dev. Commit a push této etapy zatím nejsou schválené. Dokumentace sama nedává oprávnění k databázovým operacím či nasazení.
 
-## Stav projektu
+## Aktuální stav projektu
+
+Dokončené jsou lokální autentizace, ADMIN/bootstrap, správa posádek a fotografií, potvrzované převody, rušení účtů, auditní export a automatická retence. 3b.6 uzavírá jejich společnou regresi a dokumentaci bez nových endpointů či migrací. Přesné výsledky a omezení: [review-3b6.md](review-3b6.md), [matice pokrytí](coverage-3b6.md) a [ruční výsledky](postman-3b6.md#10-záznam-výsledků-a-omezení).
+
+Následuje samostatná etapa **3c – externí přihlášení**. Závodní moduly ani změna e-mailu nejsou implementované; SMTP doručování zbývá ověřit před nasazením.
+
+### Historické ověření 2A a 3b.1
 
 **Etapa 2A – lokální autentizace je dokončena.** Automatické testy bez databáze
 prošly (68 testů, `mvnw.cmd verify`, JDK 21). Uživatel potvrdil úspěšné integrační
@@ -15,7 +21,7 @@ skutečným poskytovatelem SMTP nebo e-mailovým API a ověřit reálné doručo
 Existující konfigurovatelný SMTP adaptér je připravený; lokální profil zůstává
 vývojovou pomůckou. Tento bod nebrání uzavření lokální autentizace.
 
-Java 21, Spring Boot 4.1.1, Maven Wrapper 3.10.0, Spring MVC, Validation, JPA, Flyway a PostgreSQL driver. Produkční kód nyní obsahuje vedle startovací aplikace a veřejného GET /api/hello také modul identity etapy 2A. Produkční konfigurace zůstává zachována: PostgreSQL přes `127.0.0.1:5433/rallye_dev`, heslo z prostředí, Hibernate `validate`, Open Session in View vypnuté, Flyway zapnuté. Implementované jsou uživatelské účty, LOCAL identita, e-mailové tokeny, databázové relace a migrace V1__user_accounts.sql; Google/Apple OAuth, posádky, závody, změna e-mailu a zrušení účtu zatím nejsou implementované.
+Java 21, Spring Boot 4.1.1, Maven Wrapper 3.10.0, Spring MVC, Validation, JPA, Flyway a PostgreSQL driver. Produkční kód obsahuje vedle veřejného GET /api/hello moduly identity, crews, administration a audit. Perzistentní operace jsou implementovány přes JDBC; Data JPA zůstává mezi závislostmi. Produkční konfigurace zůstává zachována: PostgreSQL přes `127.0.0.1:5433/rallye_dev`, heslo z prostředí, Hibernate `validate`, Open Session in View vypnuté, Flyway zapnuté. Implementované jsou účty/LOCAL identita, e-mailové tokeny a databázové relace, role ADMIN a bootstrap, posádky/fotografie, převody kapitána, rušení účtů a auditní export/retence. Schéma spravují migrace V1–V7. Google/Apple OAuth, závody a změna e-mailu zatím nejsou implementované.
 
 Etapa 3b.1 je dokončena a ověřena: V2 přidává ADMIN, společný
 zámek/bootstrap a DB ochrany posledního administrátora, auditní události a evidenci
@@ -115,7 +121,9 @@ Plánovaná/probíhající konání veřejně nenabízet; přihláška vyžaduje
 s odkazem, bez seznamu povolených e-mailů. Oddělit veřejná a interní DTO i dotazy,
 aby jména členů a interní důvody neunikly. Soukromé endpointy zůstávají autorizované.
 
-## Akceptační scénáře pro budoucí implementaci
+## Akceptační scénáře realizovaných i budoucích částí
+
+Konkrétní dosažené pokrytí 2A a 3b je v coverage-3b6.md; závodní scénáře níže zůstávají podklady pro budoucí implementaci.
 
 - Ověření adresy, reset do 30 minut a jediné použití; login i reset bez enumerace účtů; změna e-mailu zachová interní ID.
 - Více nezávislých souběžných relací, bez volby jen relace aplikace/prohlížeče, s volbou až 30 dní a prodlužování používáním; odhlášení odvolá danou relaci okamžitě, změna hesla ostatní, reset všechny.
@@ -159,7 +167,7 @@ Přesné obchodní error codes a status uzávěrky potvrdit spolu s API kontrakt
 
 Navržená tabulka audit_event: ID události, UTC čas, interní aktér nebo systém/provozní správce, typ operace, typ/ID zdroje, request ID a omezená strukturovaná metadata. Audit obchodních změn ukládat ve stejné transakci. Běžné operace události pouze přidávají; schválený automatický retenční úklid je výslovná výjimka, nikoli obecné API pro editaci historie.
 
-V etapě 3b auditovat změny posádek, převody, administrátorské zásahy včetně bootstrapu a správy rolí, úspěšná přihlášení, odhlášení, změny a resety hesel a rušení účtů. Neúspěšná přihlášení zatím pouze do provozních logů. V původní 2A transakční audit nebyl; 3b.1 jej již přidává do úspěšných bezpečnostních operací při zachování jejich funkčních pravidel a generických odpovědí. Audit posádek, převodů a rušení účtů vznikne současně s jejich operacemi v dalších krocích. Do žádného logu ani auditu nepatří hesla, tokeny nebo nadbytečné osobní údaje.
+V etapě 3b auditovat změny posádek, převody, administrátorské zásahy včetně bootstrapu a správy rolí, úspěšná přihlášení, odhlášení, změny a resety hesel a rušení účtů. Neúspěšná přihlášení zatím pouze do provozních logů. V původní 2A transakční audit nebyl; 3b.1 jej již přidává do úspěšných bezpečnostních operací při zachování jejich funkčních pravidel a generických odpovědí. Audit posádek, převodů a rušení účtů je implementován současně s jejich operacemi v dokončených krocích 3b.2–3b.4. Do žádného logu ani auditu nepatří hesla, tokeny nebo nadbytečné osobní údaje.
 
 CSV export používá read-only snapshot; po jeho dokončení zapíše AUDIT_EXPORT v samostatné transakci best effort. Selhání tohoto zápisu se bezpečně loguje.
 
@@ -171,13 +179,13 @@ CSV export je dostupný aktuálnímu ADMIN s platnou relací, bez omezení počt
 
 Úklid koordinuje PostgreSQL advisory lock. Úspěšný den se eviduje v audit_cleanup_control, neúspěch se trvale neeviduje. Bez automatického dohánění po restartu či opakovací smyčky. Backfill related_account_ids u všech existujících idempotentních záznamů včetně expirovaných předchází mazání auditní historie. Neznámý formát nebo neověřitelná vazba způsobí rollback celého úklidu. Výmaz, AUDIT_CLEANUP a evidence úspěchu jsou jedna transakce. V7 zachovává explicitní seznam podporovaných migrací adaptéru účastí; neznámé budoucí verze zůstávají zakázané.
 
-Fyzické smazání účtu nesmí kaskádově odstranit audit ani být znemožněno jeho FK. Návrh: oddělit pseudonymní identifikaci auditního aktéra od životního cyklu user_account a neuchovávat v auditu jeho e-mail/jméno. Totéž pro historické převody a evidenci idempotence: vyřešit odkazování a minimalizaci bez uchovávání smazaného přihlašovacího účtu. Změny schématu a anonymizace se teprve navrhnou a otestují; V1 se nepřepisuje.
+Fyzické smazání účtu nekaskáduje do auditu ani historických převodů: jejich pseudonymní UUID nemají blokující FK na účet. E-mail/jméno účtu se do auditu neukládají. 3b.4 zavedla anonymizaci a transakční úklid související idempotence včetně cizích aktérů a expirovaných záznamů. 3b.5 chrání tyto vazby před výmazem auditní historie; neověřitelný legacy CREW_CAPTAIN úklid zastaví. V1–V7 se při konsolidaci nepřepisují.
 
 ## Fotografie a HTML
 
 Pro první jednu instanci navržen privátní adresář na perzistentním Docker volume mimo webroot; v DB pouze náhodný neprůhledný identifikátor a bezpečná metadata. Žádná veřejná cesta podle názvu uploadu; stahování přes autorizovaný endpoint podle vlastnictví/administrativních oprávnění. Později lze přejít na privátní objektové úložiště bez změny veřejných ID. Fotografie zálohovat spolu s konzistentní DB evidencí, odděleně od image aplikace.
 
-Schválené fotografie vozidla jsou JPEG/PNG do 5 MiB (5 242 880 bajtů), maximálně 4096 × 4096 px, v soukromém souborovém úložišti. Technický návrh: ověřit skutečné dekódování, limit bajtů i každého rozměru, znovu zakódovat a odstranit EXIF/GPS. Nepovolovat SVG/HTML jako fotografii. Použít bezpečné dočasné soubory, atomický přesun a úklid osiřelých objektů po selhání DB transakce; klientovi nevracet cesty. Retence nahrazených/osiřelých souborů a konkrétní technický postup úklidu čekají na návrh; vstupní limity fotografií jsou již schválené. HTML instrukce sanitizovat na serveru podle malé allowlist s bezpečnými URL; správné kódy ani odpovědi nesmí být v klientském DTO, HTML ani logu.
+Implementované fotografie vozidla jsou JPEG/PNG do 5 MiB (5 242 880 bajtů), maximálně 4096 × 4096 px. 3b.2 ověřuje skutečné dekódování, bajty a rozměry, znovu zakóduje obsah bez původních metadat a ukládá jej soukromě. SVG/HTML se nepřijímají. Ukládání a rollback i ručně spouštěný úklid nereferencovaných souborů starších než 24 hodin s ochranným zámkem a opakovanou kontrolou referencí jsou v crews-3b2.md; nejde o plánovač retence auditu. Klientovi se nevracejí cesty. HTML instrukce budoucích závodních modulů bude třeba sanitizovat na serveru podle malé allowlist s bezpečnými URL; správné kódy ani odpovědi nesmí být v klientském DTO, HTML ani logu.
 
 ## Rizika a zbývající rozhodnutí
 
@@ -196,7 +204,7 @@ Schválené fotografie vozidla jsou JPEG/PNG do 5 MiB (5 242 880 bajtů), maxim�
 | --- | --- |
 | 2A – lokální autentizace (dokončena) | Účty, LOCAL identita, ověření e-mailu, obnova a změna hesla, databázové relace, cookies/Bearer a CSRF. Automatické i manuální ověření úspěšné; skutečné doručování zbývá před nasazením. |
 | 3a – infrastruktura testů (testovací připojení ověřeno) | Vyhrazená DB/role rallye_test je dostupná a uživatel potvrdil úspěšné IT včetně lokální schránky. Postup a read-only kontroly oprávnění zůstávají v ops/postgresql-test a postgresql-test-setup.md; úspěch IT sám nedokládá provedení všech administrátorských kontrol. Žádné další cloudové změny nespouštět automaticky. |
-| 3b – vlastnictví, posádky, administrace a audit | 3b.1–3b.4 dokončeny; 3b.5 implementována, původní PostgreSQL a ruční ověření potvrzeno uživatelem. Také cílená oprava P2 má uživatelem potvrzený úspěšný PostgreSQL běh. Následuje 3b.6, potom 3c. |
+| 3b – dokončeno a ověřeno | 3b.1–3b.6 dokončeny; 234 běžných testů bez chyb, 133 PostgreSQL IT podle uživatelem potvrzeného běhu a dostupných reportů, šest potvrzených ručních regresních scénářů. Následuje 3c; bez zahájení implementace. |
 | 3c – externí přihlášení | Google a Apple, minimální údaje, bezpečné propojení/konflikty identit a mobilní předání relace. Automatické testy validace tokenů/state/nonce a souběhu propojení; manuální smoke s oběma poskytovateli až po dodání konfigurace. |
 | 4 – šablony | GPS/CODE, časová pravidla, pořadí a statistické verze. Testy DTO validace, ms hranic bodování a rozsahu; žádné kvízy. |
 | 5 – konání a účasti | Kopie šablony, přihláška přes odkaz, historický název, text členů a počet dětí, maximum (výchozí 5), kopie i z nedokončené účasti a uzamčení. Testy počítání řádků, limitů, unikátnosti a souběhu oficiálního startu s úpravami. |
@@ -229,7 +237,7 @@ Zrušení posledního aktivního ADMIN se odmítne, dokud existuje jen tento adm
 | 3b.3 – dokončeno a ověřeno | Běžný převod na ID cíle do 7 dní, zrušení původním kapitánem, editace ano/smazání ne; administrativní změna bez potvrzení je již v 3b.2; 3b.3c doplňuje atomické zrušení čekající žádosti při změně/odebrání kapitána. Část 3b.3a je dokončená a ověřená: V4 a interní životní cyklus s povinnou vnější transakcí; 137 testů bez DB a 48 integračních testů bez chyb, integrační BUILD SUCCESS potvrdil uživatel. Část 3b.3b je dokončená a ověřená; přidává REST založení a resend, tokeny, SMTP/souborové doručení po commitu a stávající idempotenci; verify prošlo se 159 testy bez DB, 56 IT prošlo v uživatelem potvrzeném běhu. Část 3b.3c implementuje accept/reject/cancel, audit včetně REQUESTED, ochrany DELETE a ADMIN změn, V5 a oddělené otisky idempotence. 3b.3c dokončeno a ověřeno: verify 176 testů bez DB, 71 IT bez chyb v uživatelem potvrzeném běhu; Revize 3b.3d dokončila kontrolu převodů, opravila Postman replay a doplnila souběh resend/accept a 24h retenci; verify 176 testů prošlo, uživatel potvrdil nový integrační BUILD SUCCESS (73 IT, 0 chyb). Automatická revize je ověřená; uživatel potvrdil také ruční scénáře přístupu obou kapitánů provedené v 3b.3c. Převody 3b.3 jsou uzavřené. Viz [crew-transfers-3b3d.md](crew-transfers-3b3d.md). Uzavírá se pouze 3b.3, dále následují 3b.4 → 3b.5 → 3b.6 → 3c. Viz [crew-transfers-3b3c.md](crew-transfers-3b3c.md). Viz [crew-transfers-3b3b.md](crew-transfers-3b3b.md). Podrobnosti a rozdělení 3b.3a–d: [crew-transfers-3b3a.md](crew-transfers-3b3a.md). |
 | 3b.4 – dokončeno a ověřeno | Rušení účtu uživatelem i ADMIN: bez historické účasti smazat, jinak anonymizovat; během závodění odmítnout, pouhou přihlášku zachovat. Všechny čekající převody daného uživatele zrušit, posádky zachovat bez kapitána. Ověřit transakční rollback, FK, neměnnou historickou vazbu i po převodu a zákaz zrušení posledního ADMIN. |
 | 3b.5 – dokončeno a ověřeno | V7, streamovaný CSV export, best-effort AUDIT_EXPORT a automatická retence 365 dní (minimum 90), advisory lock a bezpečný legacy backfill. Po opravě P2 verify: 234 testů bez DB. Uživatel potvrdil původní PostgreSQL běh i ruční CSV export, filtry, AUDIT_EXPORT a zákaz běžného uživatele. Legacy CREW_CAPTAIN bez metadat nyní retenci konzervativně zastaví; uživatel potvrdil úspěšné `.\mvnw.cmd -Pit verify` i po opravě P2 včetně 17 scénářů AuditMaintenanceIT. Viz [audit-3b5.md](audit-3b5.md). |
-| 3b.6 | Regresní testy 2A, jednotkové/HTTP testy, chráněné PostgreSQL IT a Postman scénáře více vlastníků a administrátorů. Codex spouští testy bez DB, uživatel integrační běh a potvrzuje výsledek. Aktualizovat dokumentaci podle skutečné implementace. |
+| 3b.6 – dokončeno a ověřeno | 3b.6a: matice pokrytí; 3b.6b: čtyři společné IT a posílení testu bezpečných logů; 3b.6c: šest scénářů potvrdil uživatel proti rallye_dev; 3b.6d: dokumentace konsolidována a verify znovu prošlo s 234 testy. Dřívější PostgreSQL běh potvrdil uživatel; dostupné reporty 133/133 bez chyb. Produkční kód ani migrace se nemění. Viz [review-3b6.md](review-3b6.md). Commit a push čekají na schválení. |
 
 Převodní zprávy již mají samostatný účel a odkaz v SMTP i lokálním adaptéru přes sendTransfer; neprocházejí větví obnovy hesla. Zakládání, změna vlastníka, zrušení čekajícího převodu, audit a idempotentní výsledek musejí být konzistentní v jedné transakci. Administrátorské zásahy také neobcházejí zákaz mazání historické posádky. Fyzické rušení účtů neznamená mazání historie posádek ani auditu.
 
@@ -254,9 +262,10 @@ Nové POST endpointy jsou `/api/v1/auth/account-cancellations` a
 `/api/v1/admin/users/{accountId}/cancellations`; oba vyžadují UUID Idempotency-Key.
 ADMIN replay funguje i po odstranění cíle; vlastní cesta odstraní cookie a relace.
 
-Adaptér AccountParticipationFacts dovolí prázdná fakta jen pro přesné V1–V6,
-jinak odmítá 503. Závody ani OAuth se neimplementují. Audit využívá existující
-schéma bez V7; budoucí závodní migrace musí dodat skutečný adaptér účastí.
+Adaptér AccountParticipationFacts nyní dovolí prázdná fakta pouze pro přesné
+V1–V6 nebo výslovně schválenou posloupnost do V7__audit_export_and_retention.sql;
+neznámé budoucí schéma odmítá 503. Samotná 3b.4b V7 nepřidávala, následná 3b.5 ano.
+Závody ani OAuth se tím neimplementují; závodní migrace musí dodat skutečný adaptér účastí.
 Pořadí zámků autentizace je sjednoceno s rušením a ošetřuje zmizení účtu před
 zámkem. Připraveny jsou unit/HTTP testy, PostgreSQL souběhy/rollback a Postman.
 Viz [account-cancellation-3b4b.md](account-cancellation-3b4b.md).
@@ -272,7 +281,7 @@ BUILD SUCCESS. Produkční kód nebylo při review potřeba měnit.
 Uživatel následně potvrdil závěrečné `mvnw.cmd verify` – BUILD SUCCESS,
 217 testů, `mvnw.cmd -Pit verify` – BUILD SUCCESS ve svém prostředí a všechny
 plánované ruční scénáře. Předchozí překážka opakování IT je tím vyřešena;
-3b.4b i celá 3b.4 jsou uzavřeny. U 3b.5 uživatel potvrdil původní PostgreSQL běh a ruční CSV scénáře. Následná oprava P2 prošla verify bez DB i uživatelem potvrzeným PostgreSQL během; 3b.5 je dokončena a ověřena. 3b.6 a 3c zůstávají plánované.
+3b.4b i celá 3b.4 jsou uzavřeny. U 3b.5 uživatel potvrdil původní PostgreSQL běh a ruční CSV scénáře. Následná oprava P2 prošla verify bez DB i uživatelem potvrzeným PostgreSQL během; 3b.5 je dokončena a ověřena. Následná 3b.6 je nyní rovněž dokončena; plánovaná zůstává 3c.
 
 ## Zdroje technického návrhu
 

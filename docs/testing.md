@@ -1,5 +1,26 @@
 # Testování bez lokálního Dockeru
 
+## Aktuální závěrečný stav po 3b.6 (24. 10. 2026)
+
+Etapy 3b.6a–d a celý blok 3b jsou dokončené. Codex při závěrečné kontrole
+znovu spustil verify s JDK 21.0.12.1: BUILD SUCCESS, 234 testů, 0 failures,
+0 errors a 0 skipped; JAR sestaven. Dostupné reporty dřívějšího uživatelem
+potvrzeného `-Pit verify` uvádějí 133 PostgreSQL IT, 0 failures/errors/skipped,
+včetně čtyř Stage3bRegressionIT. Codex nyní nový PostgreSQL běh nespouštěl:
+podle AGENTS.md jej provádí uživatel proti rallye_test. Tento rozdíl se nesmí
+zaměnit za nynější úspěšné spuštění integrační sady Codexem.
+
+Uživatel 24. 10. 2026 potvrdil všech šest ručních scénářů v Postmanu proti
+rallye_dev. Přesný rozsah a odlišení nepotvrzených volitelných kroků je
+v [postman-3b6.md](postman-3b6.md#10-záznam-výsledků-a-omezení).
+Dočasné potíže s Cookie Jar, režimem cookie/bearer a starým tokenem byly
+vyřešeny konfigurací klienta; nejsou důkazem chyby backendu.
+
+Závěrečný report a omezení: [review-3b6.md](review-3b6.md).
+Níže jsou zachované historické výsledky jednotlivých etap; staré počty testů
+a tehdejší blokace nepopisují dnešní souhrnný stav. Commit ani push 3b.6
+zatím neproběhl, následuje samostatné schválení. Implementace 3c nezačala.
+
 ## 3b.4b – služba a API rušení účtů
 
 **Závěrečný stav: 3b.4b i celá 3b.4 dokončeny.** Uživatel po review potvrdil
@@ -359,7 +380,7 @@ Postman má 76 požadavků a 125 syntakticky ověřených skriptů, dva výslovn
 GET scénáře přístupu obou kapitánů a replay založení bez generování nového klíče.
 Uživatel potvrdil ruční scénáře přístupu nového a původního kapitána ověřené
 již v 3b.3c. Nejde o vlastní manuální běh Codexu. Revize 3b.3d a převody 3b.3
-jsou uzavřené; 3b.4, 3b.5, 3b.6 a 3c zůstávají plánované.
+jsou uzavřené; v okamžiku této revize zůstávaly 3b.4, 3b.5, 3b.6 a 3c plánované.
 [Revize 3b.3d](crew-transfers-3b3d.md).
 
 ## Ověření etapy 3b.5
@@ -392,4 +413,96 @@ Celkový počet integračních testů nebyl uveden. Integrační ověření opra
 je tím uzavřeno.
 Profil it vypíná časový plánovač, testy službu volají explicitně v izolovaném
 schématu. Všechny dosavadní ochrany připojení zůstávají zachovány.
-Podrobnosti: [audit-3b5.md](audit-3b5.md). 3b.6 a 3c zůstávají plánované.
+Podrobnosti: [audit-3b5.md](audit-3b5.md). V okamžiku uzavření 3b.5 byly 3b.6 a 3c plánované; aktuální stav je v souhrnu nahoře.
+
+## 3b.6a–b – matice pokrytí a doplnění regrese
+
+Codex spustil `mvnw.cmd verify` s JDK 21.0.12.1: BUILD SUCCESS,
+234 testů, 0 failures, 0 errors a 0 skipped; JAR sestaven. Nová
+Stage3bRegressionIT se zkompilovala, ale její čtyři testy se bez profilu it
+nespouštěly. Přechodné selhání během úpravy unit testu bylo způsobeno původním
+argumentem Mockito po změně testovacího hesla; opraven pouze test, finální
+celá sada prošla. Nešlo o zjištěnou produkční chybu.
+
+Přehled pravidel 2A a 3b.1–3b.5, konkrétních automatických kontrol a omezení je
+v [coverage-3b6.md](coverage-3b6.md). Rozšiřuje se pouze chybějící pokrytí:
+
+- Existující AuthServiceTest.missingAndWrongPasswordUseSameErrorAndPasswordWork
+  navíc kontroluje obecný provozní log neplatného loginu bez identit, hesel,
+  hashů a bez auditu. Počet běžných testů se tím nemění.
+- Nová Stage3bRegressionIT přidává čtyři PostgreSQL scénáře návazností:
+  skutečný grant/revoke a regrant se stejnou session, CSV a správou posádky;
+  přijatý převod → retence → zrušení původního kapitána;
+  ADMIN změna kapitána → retence → rollback rušení při chybě auditu a retry;
+  souběh retence s rušením původního kapitána.
+
+Testy používají skutečné služby, bootstrap ve vlastním schématu a produkční
+adaptér účastí pro schválenou V7. Zestárnou pouze auditní fixture, nikoli tokeny
+či sessions. Nemění se konfigurace testovacích ochran, produkční kód, migrace,
+endpointy ani Postman kolekce.
+
+Uživatel potvrdil úspěšné integrační ověření 3b.6b nad rallye_test, včetně
+čtyř nových scénářů Stage3bRegressionIT, následujícím příkazem:
+
+```powershell
+.\mvnw.cmd -Pit verify
+```
+
+Jde o nový uživatelem potvrzený úspěšný běh po změnách 3b.6b, nikoli o vlastní
+PostgreSQL běh Codexu. Celkový počet IT nebyl uveden. Integrační ověření
+3b.6b je dokončené. Tento integrační běh sám nepotvrzoval ruční průchod ani
+uzavření 3b; jejich následné výsledky jsou v aktuálním souhrnu nahoře.
+
+## 3b.6c – příprava a výsledky společného Postman průchodu
+
+Připraven [konkrétní postup šesti scénářů](postman-3b6.md): více posádek/vlastníků,
+převod ve stávajících relacích, zrušení čekajícího převodu administrátorem,
+odebrání ADMIN, zrušení účtu a nová identita stejného e-mailu. Obsahuje parametry,
+přesné existující requesty, očekávané statusy/hodnoty a volitelné SELECT kontroly.
+Codex ruční testy neprovedl, žádný účet ani databázová data neměnil.
+
+Kolekce má 95 požadavků a 157 syntakticky ověřených JavaScript skriptů.
+Nová složka 15 obsahuje pouze tři chybějící varianty: izolovaný mobilní login
+s uložením tokenu do vybraného environmentu, audit odmítnutý po odebrání ADMIN
+a accept zrušeného převodu. Ostatní requesty se znovu používají.
+
+Režim regressionAuthMode=bearer je výslovná volba v environmentu. Každá relace
+má vlastní lokální regressionSessionToken, bez fallbacku do kolekce a bez
+přepsání existujícího tokenu novým loginem. U všech znovu použitých requestů
+musí uživatel vypnout cookie jar; nové requesty již mají disableCookies=true.
+Samotné environments cookies neizolují. Výchozí cookie/CSRF režim zůstává
+zachovaný. Tento mobilní průchod nenahrazuje webové CSRF testy 2A.
+
+Opraveno devět skutečných chyb generování klíčů ve skriptech rušení účtu:
+nesprávné `{$guid}` nahrazeno Postman dynamickou proměnnou `{{$guid}}`.
+Jinak zůstaly všechny původní requesty, těla, proměnné a autentizační nastavení
+zachované; kolekční prerequest skript má navíc oddělenou opt-in Bearer větev.
+
+Ověření: Node.js JSON.parse a PowerShell ConvertFrom-Json, oficiální schéma
+Postman Collection v2.1, syntaxe všech 157 skriptů a platnost JSON requestů.
+Syntetické spuštění bez sítě ověřilo výchozí CSRF větev, oddělení tokenů A/B,
+odmítnutí chybějícího tokenu a explicitní Cookie hlavičky, serializaci loginu,
+uložení tokenu pouze do environmentu, zákaz jeho přepsání a devět UUID generátorů.
+Nejde o spuštění kolekce v Postmanu ani o nový backendový či PostgreSQL běh.
+Produkční kód, testy backendu a migrace se při přípravě 3b.6c neměnily.
+Uživatel následně potvrdil všech šest ručních scénářů proti rallye_dev.
+Příprava i uživatelské ověření 3b.6c jsou dokončené; následná konsolidace
+3b.6d je zaznamenaná v [review-3b6.md](review-3b6.md).
+
+## 3b.6d – závěrečná konsolidace
+
+- Verify opakováno s JDK 21: 234 úspěšných testů, žádné chyby ani přeskočení.
+- Failsafe souhrn a deset reportů tříd: 133 dokončených IT bez chyb či přeskočení;
+  Stage3bRegressionIT má čtyři úspěšné testy. Reporty dokládají dřívější běh
+  potvrzený uživatelem, ne nový běh této závěrečné kontroly.
+- Node.js JSON.parse a PowerShell ConvertFrom-Json, oficiální Collection v2.1
+  schema, 95 requestů a 157 JavaScript skriptů: validní. Syntetické kontroly
+  CSRF, Bearer izolace, zákazu přepsání tokenu a devíti UUID generátorů prošly
+  bez síťového spuštění kolekce.
+- Matice: ověřeno všech 75 konkrétních odkazů na testovací metody.
+- Ruční výsledky: všech šest scénářů PROŠEL podle uživatele; scope je
+  explicitně zaznamenán, neodvozují se další nehlášené kontroly.
+- Produkční Java, konfigurace ani V1–V7 se v 3b.6 neměnily. Žádná nová
+  prokázaná chyba backendu, žádné destruktivní databázové operace Codexu.
+- Zbylé provozní a budoucí funkční návaznosti jsou v review-3b6.md;
+  neblokují uzavření současného rozsahu. Commit a push čekají na schválení.

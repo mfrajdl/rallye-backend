@@ -1,8 +1,9 @@
 # 3b.4b – transakční služba a API rušení účtů
 
 Implementace navazuje na V6 a [perzistentní základ 3b.4a](account-cancellation-3b4a.md).
-Nevzniká V7: stávající audit dovoluje nové typy událostí. Migrace V1–V6,
-schválená specifikace a konfigurace databází se nemění.
+Samotná 3b.4b nevytvářela V7: stávající audit dovoloval nové typy událostí.
+Následná 3b.5 přidala V7 pro auditní metadata a retenci; viz [audit-3b5.md](audit-3b5.md).
+Migrace V1–V6 se nepřepisují a konfigurace databází zůstává zachovaná.
 Etapa 3b.4b i celá 3b.4 jsou dokončeny. Uživatel potvrdil závěrečné
 `mvnw.cmd verify` (217 testů), `mvnw.cmd -Pit verify` – BUILD SUCCESS ve svém
 prostředí a všechny plánované ruční scénáře. Review neodhalilo problém
@@ -77,11 +78,13 @@ e-mailu vytvoří nové UUID bez původních rolí, vlastnictví či historie.
 `AccountParticipationFacts` vrací historickou a běžící účast nezávisle na aktuálním
 vlastnictví posádky. Protože závody zatím neexistují, `PreRaceAccountParticipationFacts`
 dovoluje `(false,false)` pouze při přesné posloupnosti úspěšných SQL migrací
-V1–V6 v aktuálním schématu. Nová/chybějící/neúspěšná migrace, nepodporovaný typ
+V1–V6 nebo přesné posloupnosti V1–V7 s výslovně schváleným skriptem
+V7__audit_export_and_retention.sql v aktuálním schématu. Neznámá budoucí,
+chybějící či neúspěšná migrace, nepodporovaný typ
 nebo nedostupná Flyway historie vede k 503 před měnícími operacemi.
 Nesmí se jen zvýšit horní verze: budoucí závodní schéma vyžaduje skutečný adaptér.
 
-V produkčním schématu V1–V6 tedy zrušení vede k fyzickému odstranění.
+V podporovaném předzávodním schématu V1–V7 tedy zrušení vede k fyzickému odstranění.
 Anonymizaci a blokaci běžící účasti testy služby simulují pouze testovacím adaptérem;
 nejde o implementaci závodních účastí.
 

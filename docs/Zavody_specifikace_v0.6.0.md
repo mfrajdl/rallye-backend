@@ -486,7 +486,7 @@ Nová potvrzená rozhodnutí mají přednost: pouze registrace posádky do závo
 - Historická účast patří kapitánovi při skutečném zahájení závodu, nikoli pouhé přihlášce; převod ji nepřepisuje. Zrušení účtu ruší všechny jeho čekající převody, zachová přihlášku, během závodění se odmítne a po ukončení respektuje historickou vazbu.
 - Běžný uživatel zakládá vlastní posádku, administrátor může zakládat i bez kapitána a kapitána odebrat. Cíl každého převodu musí existovat, být aktivní a mít ověřený e-mail; převod na sebe sama je zakázán.
 
-### Zbývající otevřené otázky
+### Zbývající otázky a stav technických rozhodnutí
 
 1. **Kvízy:** typy otázek, vyhodnocení, dokončení a penalizace; zatím se neimplementují.
 2. **Účty:** lhůty jiných budoucích potvrzení e-mailu než registrace 2A zůstávají k určení. Historická vazba, rušení čekajících převodů a pravidla zrušení při přihlášce/běžící účasti jsou uzavřené v 2.1.
@@ -498,8 +498,8 @@ Nová potvrzená rozhodnutí mají přednost: pouze registrace posádky do závo
 8. **Okraje průběhu:** přípustnost oficiálního startu vůči end_at, řetězec zrušených závěrečných stanovišť a čas dokončení při zrušení posledního zbývajícího stanoviště ve vztahu k nezapočtení doby zrušeného stanoviště.
 
 9. **Auditní export a retence – uzavřeno schválením 3b.5:** streamovaný CSV snapshot, následný best-effort audit exportu a automatická denní retence dle 13.1 nahrazují původní ruční archivaci a dvoukrokové mazání.
-10. **Technika idempotence 3b:** přesné pokrytí endpointů a způsob fyzického úklidu evidence navrhnout před implementací; retence 24 hodin, shodný výsledek a konflikt HTTP 409 jsou již schválené. Speciální závodní idempotence se nemění.
-11. **Rušení účtu a uchování stop:** technicky dopracovat pseudonymizaci auditních aktérů a FK historických převodů při fyzickém smazání účtu; nejde o znovuotevření schválených pravidel zrušení a zachování historie.
+10. **Technika idempotence 3b – implementováno a ověřeno:** konkrétní pokrytí endpointů, společný prostor aktér/klíč, 24hodinová platnost a konflikt HTTP 409 jsou popsané v dokumentaci 3b.1–3b.5 a matici coverage-3b6.md. Fyzické odstranění je řešené při zrušení souvisejícího účtu a nahrazení expirovaného klíče; obecný periodický výmaz ledgeru není implementovaný ani požadovaný tímto uzavřením. Speciální závodní idempotence se nemění.
+11. **Rušení účtu a uchování stop – implementováno a ověřeno:** auditní aktéři a historické převody uchovávají pseudonymní UUID bez blokujících FK na rušený účet. Osobní údaje a související idempotentní záznamy se uklízejí transakčně podle 3b.4; retence chrání neověřitelné legacy vazby podle 3b.5. Jde o stav realizace schválených pravidel, nikoli jejich změnu. Historické účasti skutečných závodů nadále vyžadují budoucí závodní modul.
 
 Potvrzená hranice pro pokusy zůstává `received_at <= end_at`. Po uzávěrce se nový pokus odmítne, ale opakování dříve přijatého idempotentního požadavku vrátí původní výsledek bez nového zpracování. Technický návrh zůstává v backend-plan.md; návrhové entity a API výše nejsou implementací.
 

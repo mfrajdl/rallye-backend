@@ -88,14 +88,21 @@ class AuthServiceTest {
         order.verify(store).consume(id, "EMAIL_VERIFICATION", clock.instant());
         order.verify(store).activate(account, clock.instant());
     }
-    @Test void missingAndWrongPasswordUseSameErrorAndPasswordWork() {
-        var missing = assertThrows(AuthFailure.class, () -> service.login("missing@example.test", "bad", false));
-        verify(passwords).matches("bad", "argon-hash");
+    @Test
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    void missingAndWrongPasswordUseSameErrorAndPasswordWork(org.springframework.boot.test.system.CapturedOutput output) {
+        String attemptedPassword="private-rejected-password";
+        var missing = assertThrows(AuthFailure.class, () -> service.login("missing@example.test", attemptedPassword, false));
+        verify(passwords).matches(attemptedPassword, "argon-hash");
         when(store.byEmail(anyString())).thenReturn(active()); when(store.lockAccount(account)).thenReturn(active());
-        var wrong = assertThrows(AuthFailure.class, () -> service.login("crew@example.test", "bad", false));
+        var wrong = assertThrows(AuthFailure.class, () -> service.login("crew@example.test", attemptedPassword, false));
         assertEquals(missing.code(), wrong.code()); assertEquals(missing.status(), wrong.status());
         verify(store, never()).insertSession(any(), any(), anyBoolean(), any(), any());
         verifyNoInteractions(audit);
+        String log=output.getAll();
+        assertEquals(2,log.lines().filter(line->line.contains("Local login rejected")).count());
+        for(String sensitive:java.util.List.of("missing@example.test","crew@example.test",attemptedPassword,"argon-hash"))
+            assertFalse(log.contains(sensitive),"Rejected login must log no identity, password or hash");
     }
     @Test void unverifiedAccountCannotLoginEvenWithCorrectPassword() {
         var pending = new AccountStore.Account(account, "crew@example.test", "N", "PENDING_EMAIL", "argon-hash");

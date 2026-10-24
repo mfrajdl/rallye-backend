@@ -1,6 +1,6 @@
 # Etapa 3b.5 – export a automatická retence auditu
 
-Implementace nahrazuje původní ruční archivaci a mazání bezpečnostního auditu podle dodatečně schválených pravidel specifikace 0.6.0. Uživatel potvrdil původní PostgreSQL běh nad rallye_test i ruční CSV export, filtrování, vznik AUDIT_EXPORT a zamítnutí běžného uživatele. Následnou cílenou opravu P2 uživatel také ověřil úspěšným `.\mvnw.cmd -Pit verify` nad rallye_test; 3b.6 a 3c nezačaly.
+Implementace nahrazuje původní ruční archivaci a mazání bezpečnostního auditu podle dodatečně schválených pravidel specifikace 0.6.0. Uživatel potvrdil původní PostgreSQL běh nad rallye_test i ruční CSV export, filtrování, vznik AUDIT_EXPORT a zamítnutí běžného uživatele. Následnou cílenou opravu P2 uživatel také ověřil úspěšným `.\mvnw.cmd -Pit verify` nad rallye_test; následná 3b.6 je nyní uzavřena v [review-3b6.md](review-3b6.md), implementace 3c nezačala.
 
 ## CSV API
 

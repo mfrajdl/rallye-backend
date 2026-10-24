@@ -2,7 +2,9 @@
 
 Implementace navazuje na specifikaci 0.6.0 a dokončenou autentizaci 2A.
 Posádky, převody, rušení účtů, CSV export, archivace a mazání auditu nejsou součástí
-tohoto kroku. Export a úklid zůstávají v 3b.5; žádný automatický úklid auditu neběží.
+tohoto kroku. Následná dokončená 3b.5 přidává CSV export a automatický retenční
+úklid; aktuální pravidla jsou v [audit-3b5.md](audit-3b5.md). Ruční archivace
+ani dvoukrokové mazání se podle pozdějšího schválení neimplementují.
 
 ## Migrace a oprávnění
 

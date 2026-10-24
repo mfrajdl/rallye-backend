@@ -2,6 +2,8 @@
 
 Backend soukromé aplikace pro vícestupňové automobilové Rallye soutěže. Jedna Spring Boot aplikace, modulární monolit. Závazná funkční specifikace je [verze 0.6.0](docs/Zavody_specifikace_v0.6.0.md). Lokální autentizace je popsaná v [etapě 2A](docs/authentication-2a.md).
 
+Etapy 2A a 3b jsou dokončené. Aktuální rozsah a navazující etapa 3c jsou v [backendovém plánu](docs/backend-plan.md); výsledky společné regrese a provozní omezení v [závěrečné kontrole 3b.6](docs/review-3b6.md). PostgreSQL automatické testy používají pouze rallye_test; uživatelem provedená ruční regrese běžela proti rallye_dev.
+
 ## Požadavky
 
 - JDK 21 (včetně `javac`), nastavené `JAVA_HOME` a `PATH`.
