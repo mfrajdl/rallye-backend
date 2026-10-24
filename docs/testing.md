@@ -506,3 +506,12 @@ Příprava i uživatelské ověření 3b.6c jsou dokončené; následná konsoli
   prokázaná chyba backendu, žádné destruktivní databázové operace Codexu.
 - Zbylé provozní a budoucí funkční návaznosti jsou v review-3b6.md;
   neblokují uzavření současného rozsahu. Commit a push čekají na schválení.
+
+
+## 3c.1 – dokončena a otestována: protokolový základ externí autentizace
+
+Codex spustil Maven Wrapper verify s JDK 21.0.12.1: **BUILD SUCCESS, 250 testů, 0 failures/errors/skipped**, sestavený JAR. Protokolové unit/HTTP testy nepoužívají skutečné poskytovatele; JWT se podepisují testovacími RSA klíči. Existing 2A/3b regrese prošla bez DB.
+
+V8 a deset scénářů ExternalAuthIT jsou zkompilované a uživatel následně potvrdil `.\mvnw.cmd -Pit verify` proti rallye_test s výsledkem BUILD SUCCESS. PostgreSQL testy Codex nespouštěl; jde o uživatelem potvrzené ověření, celkový počet IT nebyl uveden. Integrační ověření 3c.1 je dokončené. Nová V8 je výslovně povolena adaptérem účastí, neznámé skripty a V9 se odmítají. Budoucí-migration fixture AccountCancellationServiceIT používá V9 místo nově podporované V8.
+
+Rozsah, konkrétní API a postup Postman bez credentials: [external-auth-3c1.md](external-auth-3c1.md). Callback ještě nevytváří přihlášení ani účty; LINK/REAUTH dokončení je bezpečně zablokované do doložení čerstvosti. Úspěch simulace není skutečné ověření Google/Apple, SameSite/form_post v browseru nebo mobilního klienta. Žádná infrastruktura nebyla zřízena a skutečné externí toky nebyly spuštěny.

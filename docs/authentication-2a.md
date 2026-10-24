@@ -1,5 +1,7 @@
 # Etapa 2A: účty a lokální autentizace
 
+Aktuální rozšíření: [schválená analýza 3c](external-auth-3c.md), rozhodnutí D01–D08 ve [specifikaci 0.7.0](Zavody_specifikace_v0.7.0.md). Následující text dokumentuje již implementovanou etapu; externí přihlášení, nové ověření a Apple revokace zatím implementované nejsou. D03 rozšíří vlastní rušení o účelový jednorázový důkaz na 5 minut; ADMIN cesta nadále ověřuje jednajícího administrátora. D06 vyžaduje trvalou bezpečnou revokační práci i po odstranění účtu, bez obnovy jeho práv.
+
 Implementace pod `cz.mh.rallye.rallye_backend.identity` vychází ze specifikace 0.5.0
 a schválených upřesnění etapy 2A. Neobsahuje Google/Apple OAuth, posádky, závody,
 změnu e-mailu ani zrušení účtu. Schéma pro další identity je připravené, ale samo

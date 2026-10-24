@@ -1,8 +1,10 @@
 # Rallye Backend
 
-Backend soukromé aplikace pro vícestupňové automobilové Rallye soutěže. Jedna Spring Boot aplikace, modulární monolit. Závazná funkční specifikace je [verze 0.6.0](docs/Zavody_specifikace_v0.6.0.md). Lokální autentizace je popsaná v [etapě 2A](docs/authentication-2a.md).
+Backend soukromé aplikace pro vícestupňové automobilové Rallye soutěže. Jedna Spring Boot aplikace, modulární monolit. Závazná funkční specifikace je [verze 0.7.0](docs/Zavody_specifikace_v0.7.0.md). Lokální autentizace je popsaná v [etapě 2A](docs/authentication-2a.md).
 
 Etapy 2A a 3b jsou dokončené. Aktuální rozsah a navazující etapa 3c jsou v [backendovém plánu](docs/backend-plan.md); výsledky společné regrese a provozní omezení v [závěrečné kontrole 3b.6](docs/review-3b6.md). PostgreSQL automatické testy používají pouze rallye_test; uživatelem provedená ruční regrese běžela proti rallye_dev.
+
+Analýza externího přihlášení 3c je uzavřena rozhodnutími D01–D08; [technický návrh a plán 3c.1–3c.5](docs/external-auth-3c.md). Protokolový základ [3c.1](docs/external-auth-3c1.md) je dokončený a automaticky otestovaný, úspěšné PostgreSQL ověření potvrdil uživatel; skutečné externí přihlašování zatím není dostupné.
 
 ## Požadavky
 
@@ -84,7 +86,7 @@ Přeskočení testů nepotvrzuje funkčnost aplikace ani připojení. Na Linuxu 
 - [Administrátorská oprávnění, audit a ruční SQL bootstrap – 3b.1](docs/administration-3b1.md)
 - [Posádky, soukromé fotografie a kapitánství – 3b.2](docs/crews-3b2.md)
 
-- [Specifikace 0.6.0](docs/Zavody_specifikace_v0.6.0.md)
+- [Specifikace 0.7.0](docs/Zavody_specifikace_v0.7.0.md)
 - [Testovací prostředí](docs/testing.md)
 - [Příprava testovací PostgreSQL na OCI](docs/postgresql-test-setup.md)
 - [Pravidla pro Codex](AGENTS.md)

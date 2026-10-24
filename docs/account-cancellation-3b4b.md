@@ -1,5 +1,7 @@
 # 3b.4b – transakční služba a API rušení účtů
 
+Aktuální rozšíření: [schválená analýza 3c](external-auth-3c.md), rozhodnutí D01–D08 ve [specifikaci 0.7.0](Zavody_specifikace_v0.7.0.md). Následující text dokumentuje již implementovanou etapu; externí přihlášení, nové ověření a Apple revokace zatím implementované nejsou. D03 rozšíří vlastní rušení o účelový jednorázový důkaz na 5 minut; ADMIN cesta nadále ověřuje jednajícího administrátora. D06 vyžaduje trvalou bezpečnou revokační práci i po odstranění účtu, bez obnovy jeho práv.
+
 Implementace navazuje na V6 a [perzistentní základ 3b.4a](account-cancellation-3b4a.md).
 Samotná 3b.4b nevytvářela V7: stávající audit dovoloval nové typy událostí.
 Následná 3b.5 přidala V7 pro auditní metadata a retenci; viz [audit-3b5.md](audit-3b5.md).

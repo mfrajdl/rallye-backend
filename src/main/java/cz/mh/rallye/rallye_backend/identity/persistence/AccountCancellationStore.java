@@ -27,7 +27,13 @@ public class AccountCancellationStore {
         return rows.isEmpty()?null:rows.getFirst();
     }
     public int deleteIdentities(UUID id) {lock(id);return jdbc.update("DELETE FROM user_identity WHERE account_id=?",id);}
-    public int deleteSessions(UUID id) {lock(id);return jdbc.update("DELETE FROM user_session WHERE account_id=?",id);}
+    public int deleteSessions(UUID id) {
+        lock(id);
+        // MOBILE grants need not reference a session; remove them explicitly also for anonymization.
+        jdbc.update("DELETE FROM external_auth_grant WHERE account_id=?",id);
+        jdbc.update("DELETE FROM external_auth_flow WHERE account_id=?",id);
+        return jdbc.update("DELETE FROM user_session WHERE account_id=?",id);
+    }
     public int deleteTokens(UUID id) {lock(id);return jdbc.update("DELETE FROM user_action_token WHERE account_id=?",id);}
     public int deleteRoles(UUID id) {lock(id);return jdbc.update("DELETE FROM user_account_role WHERE account_id=?",id);}
     public int deleteAccount(UUID id) {lock(id);return jdbc.update("DELETE FROM user_account WHERE id=?",id);}
