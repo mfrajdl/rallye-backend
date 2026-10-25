@@ -29,6 +29,7 @@ class AuthServiceTest {
         assertDoesNotThrow(()->service.requestVerification("crew@example.test"));
         verify(store,never()).insertAction(any(),any(),any(),any(),any());verifyNoInteractions(mail);
     }
+    cz.mh.rallye.rallye_backend.identity.persistence.AdminStore roles;
     AccountStore store;
     PasswordEncoder passwords;
     AccountMailSender mail;
@@ -42,8 +43,8 @@ class AuthServiceTest {
         when(passwords.encode(anyString())).thenReturn("argon-hash");
         clock = new MutableClock();
         audit = mock(cz.mh.rallye.rallye_backend.audit.application.AuditService.class);
-        service = new AuthService(store, new SecretTokens(), passwords, mail, clock, audit,
-                mock(cz.mh.rallye.rallye_backend.identity.persistence.AdminStore.class));
+        roles=mock(cz.mh.rallye.rallye_backend.identity.persistence.AdminStore.class);
+        service = new AuthService(store, new SecretTokens(), passwords, mail, clock, audit,roles);
     }
     AccountStore.Account active() { return new AccountStore.Account(account, "crew@example.test", "Name", "ACTIVE", "argon-hash"); }
     @Test void registerStoresHashAndSendsOnlyAfterCommit() {
@@ -164,4 +165,12 @@ class AuthServiceTest {
         service.requestReset("missing@example.test"); verifyNoInteractions(mail);
         verify(store, never()).insertAction(any(), any(), any(), any(), any());
     }
+    @Test void meReadsCurrentRolesForTheSameSessionAfterRoleChanges(){
+        var principal=new AuthService.Principal(account,session,false);when(store.account(account)).thenReturn(active());when(store.isActiveSession(session,account,clock.instant())).thenReturn(true);
+        when(roles.administrator(account)).thenReturn(false,true,false);
+        assertEquals(java.util.List.of("USER"),service.me(principal).roles());
+        assertEquals(java.util.List.of("USER","ADMIN"),service.me(principal).roles());
+        assertEquals(java.util.List.of("USER"),service.me(principal).roles());
+    }
+
 }

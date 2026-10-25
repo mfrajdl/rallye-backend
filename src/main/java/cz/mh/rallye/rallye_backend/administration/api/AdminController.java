@@ -14,6 +14,14 @@ import org.springframework.web.bind.annotation.*;
 public class AdminController {
     private final AdminService service;
     public AdminController(AdminService service) { this.service=service; }
+    @GetMapping("/users")
+    public AdminService.UserPage users(@AuthenticationPrincipal AuthService.Principal actor,
+            @RequestParam(required=false) String query,@RequestParam(defaultValue="false") boolean captainEligible,
+            @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="50") int size){
+        return service.users(actor,query,captainEligible,page,size);
+    }
+    @GetMapping("/users/{accountId}")
+    public AdminService.UserView user(@AuthenticationPrincipal AuthService.Principal actor,@PathVariable UUID accountId){return service.user(actor,accountId);}
     @PutMapping("/users/{accountId}/roles/ADMIN")
     public ResponseEntity<Void> grant(@AuthenticationPrincipal AuthService.Principal actor,
             @PathVariable UUID accountId, @RequestHeader("Idempotency-Key") UUID key) {

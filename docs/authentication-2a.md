@@ -307,3 +307,14 @@ Předchozí ověření před doplněním lokální schránky (historický zázna
 - `git diff --check` a whitespace kontroly nových Java/SQL/dokumentačních souborů prošly. Skutečné SMTP připojení zůstává neověřené; integrační testy používají testovací odesílač.
 - Maven nadále vypisuje metadata HTTP 401 z Flyway/Red Gate zdrojů a Mockito upozornění na dynamické připojení Java agenta; nebrání lokálnímu sestavení/testům.
 - Žádný commit, push, deployment, cloudová změna ani přístup Codexu k rallye_dev/rallye. Další integrační běhy provádí uživatel ručně příkazem `.\mvnw.cmd -Pit verify` se zachováním ochranných kontrol. Codex při potřebě nového ověření předá příkaz a počká na výsledek; vlastní přístup k PostgreSQL nezajišťuje. Kompilaci a testy bez databáze spouští Codex.
+
+
+### Role pro webový frontend
+
+`GET /api/v1/auth/me` a úspěšné webové `POST /api/v1/auth/login` vracejí
+shodný profil `id`, `email`, `displayName`, nově také `roles`: `["USER"]` nebo
+`["USER", "ADMIN"]`. Role vycházejí z aktuální databáze, nikoliv ze snímku při
+přihlášení. Odebrání ADMIN se projeví i ve stávající relaci. Frontend může podle
+rolí zobrazit nabídku, server nadále nezávisle kontroluje každý požadavek.
+Stávající mobilní tokenová odpověď se nemění; aktuální profil včetně rolí mobil
+získá přes `/auth/me` s Bearer tokenem. Žádné nové cookies ani relace se nezavádějí.

@@ -291,3 +291,48 @@ Omezení: všechny administrativní operace včetně čtení auditu nyní sdíle
 bootstrap není aplikační API a nezajišťuje samo audit každého ručního zásahu.
 Audit zatím nemá correlation ID ani payload, protože aktuální události obsahují
 jen bezpečná pevná pole. Posádky, rušení účtů a auditní úklid se nepředstírají jako hotové.
+
+
+## Čtecí API uživatelů pro webovou administraci
+
+`GET /api/v1/admin/users` je dostupné pouze aktuálnímu ADMIN. Parametry:
+
+- `page`: od 0, nejvýše 10000; výchozí 0.
+- `size`: 1–100; výchozí 50.
+- `query`: nepovinný text do 254 znaků, hledá část jména nebo e-mailu bez rozlišení velikosti písmen. Okrajové mezery se odstraní; `%`, `_` a `!` jsou obyčejné znaky, nikoliv vyhledávací operátory.
+- `captainEligible`: výchozí `false`; při `true` vrací jen aktivní účty s ověřeným e-mailem.
+
+Odpověď 200 obsahuje `items`, `page`, `size`, `hasMore`. Řazení je podle
+`created_at DESC, id DESC`; souběžné změny mohou mezi stránkami posunout výsledky.
+Detail `GET /api/v1/admin/users/{accountId}` vrací jeden stejný objekt:
+
+```json
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "displayName": "Testovací kapitán",
+  "email": "captain@example.test",
+  "roles": ["USER"],
+  "status": "ACTIVE",
+  "identityProvider": "LOCAL",
+  "captainEligible": true
+}
+```
+
+`identityProvider` je LOCAL/GOOGLE/APPLE, případně null, pokud účet dosud identitu
+nemá. USER je existující implicitní oprávnění přihlášeného uživatele; ADMIN se
+vrací podle aktuální databáze pro aktivní ověřený účet. Nezavádí se nová role.
+Seznam zahrnuje i nezrušené PENDING_EMAIL a DISABLED účty; anonymizované účty
+nevrací. Neexistující, fyzicky smazaný nebo anonymizovaný detail vrací
+404 ACCOUNT_NOT_FOUND. Neplatné parametry vrací 400 INVALID_REQUEST, chybějící
+přihlášení 401 a neadministrátor 403. Odpovědi mají Cache-Control: no-store.
+Neobsahují hesla, hashe, subject, tokeny ani revokační materiál.
+
+Pro výběr kapitána použij například
+`GET /api/v1/admin/users?query=kapitan&captainEligible=true&page=0&size=20`.
+Zvolené `items[].id` předávej existujícímu
+`PUT /api/v1/crews/{id}/captain` jako `captainAccountId` spolu s aktuální `version`
+posádky a novým UUID `Idempotency-Key` (a pro cookie relaci s CSRF).
+Čtecí GET požadavky Idempotency-Key nepotřebují. Změna kapitána znovu ověřuje
+aktuální dostupnost cíle; výsledek vyhledávání není oprávněním ani rezervací účtu.
+Stávající konflikty CAPTAIN_UNAVAILABLE, CREW_VERSION_CONFLICT a CAPTAIN_UNCHANGED
+zůstávají zachované. Nové přiřazovací API ani migrace nevznikají.

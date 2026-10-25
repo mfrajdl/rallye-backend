@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
+import java.util.List;
 import java.util.UUID;
 import cz.mh.rallye.rallye_backend.identity.persistence.AccountStore;
 import cz.mh.rallye.rallye_backend.identity.persistence.AdminStore;
@@ -19,7 +20,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Service
 public class AuthService {
     public record Principal(UUID accountId, UUID sessionId, boolean rememberMe) { }
-    public record UserView(UUID id, String email, String displayName) { }
+    public record UserView(UUID id, String email, String displayName,List<String> roles) {
+        public UserView{roles=List.copyOf(roles);}
+        public UserView(UUID id,String email,String displayName){this(id,email,displayName,currentRoles(false));}
+    }
+    // USER is the existing implicit ROLE_USER authority; ADMIN is read from the current database state.
+    static List<String> currentRoles(boolean administrator){return administrator?List.of("USER","ADMIN"):List.of("USER");}
     public record LoginSession(String secret, Principal principal) {
         @Override public String toString() { return "LoginSession[redacted]"; }
     }
@@ -155,7 +161,7 @@ public class AuthService {
         var account = store.account(principal.accountId());
         if (account == null || !"ACTIVE".equals(account.status())
                 || !store.isActiveSession(principal.sessionId(), principal.accountId(), now())) throw AuthFailure.credentials();
-        return new UserView(account.id(), account.email(), account.name());
+        return new UserView(account.id(), account.email(), account.name(),currentRoles(roles.administrator(account.id())));
     }
     private void issue(UUID account, String email, String purpose, Duration life, Instant now) {
         String secret = tokens.create();

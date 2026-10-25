@@ -115,4 +115,14 @@ class AuthHttpTest {
                 .content("{\"email\":\"person@example.test\",\"password\":\"password\",\"rememberMe\":true}"))
                 .andExpect(status().isOk()).andExpect(cookie().maxAge(AuthCookies.NAME, 2592000));
     }
+    @Test void webLoginAndMeExposeIdenticalCurrentRolesWithoutSensitiveFields()throws Exception{
+        var principal=new AuthService.Principal(UUID.randomUUID(),UUID.randomUUID(),false);String secret=new SecretTokens().create();
+        var view=new AuthService.UserView(principal.accountId(),"admin@example.test","Admin",java.util.List.of("USER","ADMIN"));
+        when(service.login(any(),any(),eq(false))).thenReturn(new AuthService.LoginSession(secret,principal));when(service.me(principal)).thenReturn(view);when(service.authenticate(secret)).thenReturn(principal);
+        String login=mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType("application/json").content("{\"email\":\"admin@example.test\",\"password\":\"test-password\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.roles[0]").value("USER")).andExpect(jsonPath("$.roles[1]").value("ADMIN"))
+            .andExpect(jsonPath("$.token").doesNotExist()).andReturn().getResponse().getContentAsString();
+        mvc.perform(get("/api/v1/auth/me").header("Authorization","Bearer "+secret)).andExpect(status().isOk()).andExpect(content().json(login)).andExpect(jsonPath("$.passwordHash").doesNotExist());
+    }
+
 }

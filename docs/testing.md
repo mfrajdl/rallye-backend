@@ -725,3 +725,32 @@ Uživatel následně potvrdil tento závěrečný PostgreSQL běh jako BUILD SUC
 ### Uzavření 3c.5
 
 Uživatelem potvrzené `.\mvnw.cmd -Pit verify` proti rallye_test: **BUILD SUCCESS** po dokončení celé implementace V15. Codex: verify bez DB **386 testů, BUILD SUCCESS**, git diff --check prošel. Starší průběžné poznámky o čekajícím ověření popisují stav před tímto potvrzením. Skutečné HTTPS/Apple ověření stále neproběhlo; etapa je implementačně a automatickými testy dokončená. Při závěrečném Git uzavření se testy znovu nespouštěly a implementace ani migrace se neměnily.
+
+
+## Čtecí administrativní API uživatelů a role profilu
+
+Unit/HTTP testy pokrývají ADMIN versus nepřihlášeného/neadministrátora,
+validaci filtrů, DTO bez autentizačních tajemství, detail 404, stránkovací obálku
+a aktuální role v `/auth/me` i konzistenci webového přihlášení.
+`AdministrationIT` doplňuje skutečné SQL stránkování, vyhledávání jména/e-mailu
+bez rozlišení velikosti písmen, literální wildcard znaky, filtr vhodného kapitána,
+stavy účtů a skrytí anonymizovaného účtu. Existující test změny rolí nově ověřuje
+profil a přístup k seznamu ve stejné Bearer relaci před/při/po přidělení ADMIN.
+Uživatel potvrdil závěrečné PostgreSQL ověření všech doplnění příkazem
+`.\mvnw.cmd -Pit verify` proti `rallye_test`: **BUILD SUCCESS**, včetně opravy
+přípravy `AdministrationIT` popsané níže. Codex PostgreSQL sadu nespouštěl.
+API a ruční vyhledání kapitána popisuje `administration-3b1.md`.
+
+Ověření Codexem: Maven Wrapper `verify` na JDK 21 – BUILD SUCCESS,
+395 testů, 0 failures, 0 errors, 0 skipped; PostgreSQL IT se tímto během
+nespouštěly. `git diff --check` prošel.
+
+Oprava testovací přípravy po uživatelském PostgreSQL běhu (271 testů, 2 errors):
+`AdministrationIT` po souběžném odebrání rolí znovu vybírá skutečně zbývajícího
+administrátora, pokud původní `root` již ADMIN není. Dříve následný úklid zkoušel
+odstranit posledního ADMIN a trigger jej správně odmítl (P0001). Souběžný test
+nyní tuto obnovu přípravy ověřuje i s deterministicky zastaralým `root`.
+Produkční trigger ani chování API se nemění. Cílené opakování uživatelem:
+`.\mvnw.cmd -Pit -Dit.test=AdministrationIT verify`. Následné úplné PostgreSQL
+ověření po opravě uživatel potvrdil jako **BUILD SUCCESS**. Při závěrečném
+Git uzavření se testy znovu nespouštěly.

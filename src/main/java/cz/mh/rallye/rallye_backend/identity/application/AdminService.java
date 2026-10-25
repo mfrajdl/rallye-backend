@@ -32,6 +32,22 @@ public class AdminService {
         if (actor == null || !roles.administrator(actor.accountId())) throw new AuthFailure(403, "ADMIN_REQUIRED");
         if (!accounts.isActiveSession(actor.sessionId(), actor.accountId(), clock.instant())) throw AuthFailure.credentials();
     }
+    public record UserView(UUID id,String displayName,String email,List<String> roles,String status,String identityProvider,boolean captainEligible) {}
+    public record UserPage(List<UserView> items,int page,int size,boolean hasMore) {}
+    @Transactional
+    public UserPage users(AuthService.Principal actor,String query,boolean captainEligible,int page,int size){
+        authorize(actor);
+        if(page<0 || page>10000 || size<1 || size>100 || query!=null && query.codePointCount(0,query.length())>254)throw new AuthFailure(400,"INVALID_REQUEST");
+        var rows=roles.users(query==null?null:query.strip(),captainEligible,page,size);
+        return new UserPage(rows.stream().limit(size).map(AdminService::view).toList(),page,size,rows.size()>size);
+    }
+    @Transactional
+    public UserView user(AuthService.Principal actor,UUID target){
+        authorize(actor);var user=roles.user(target);
+        if(user==null)throw new AuthFailure(404,"ACCOUNT_NOT_FOUND");
+        return view(user);
+    }
+    private static UserView view(AdminStore.User user){return new UserView(user.id(),user.displayName(),user.email(),AuthService.currentRoles(user.administrator()),user.status(),user.identityProvider(),user.captainEligible());}
     @Transactional
     public void changeRole(AuthService.Principal actor, UUID target, boolean grant, UUID key) {
         authorize(actor);

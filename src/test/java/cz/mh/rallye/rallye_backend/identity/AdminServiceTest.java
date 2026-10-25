@@ -92,4 +92,27 @@ class AdminServiceTest {
         verify(roles,never()).saveCommand(any(),any(),any(),anyBoolean(),any());
         verify(roles,never()).activeVerified(any());
     }
+    @Test void userListNormalizesQueryPaginatesAndReturnsExistingRoles(){
+        var first=new AdminStore.User(target,"Target","target@example.test","ACTIVE","LOCAL",true,true);
+        var extra=new AdminStore.User(UUID.randomUUID(),"Extra","extra@example.test","ACTIVE","GOOGLE",false,true);
+        when(roles.users("Target",true,2,1)).thenReturn(List.of(first,extra));
+        var page=service.users(principal," Target ",true,2,1);assertEquals(2,page.page());assertEquals(1,page.size());assertTrue(page.hasMore());assertEquals(1,page.items().size());
+        assertEquals(List.of("USER","ADMIN"),page.items().getFirst().roles());assertEquals("LOCAL",page.items().getFirst().identityProvider());assertTrue(page.items().getFirst().captainEligible());
+    }
+    @Test void userReadRequiresCurrentAdminAndActiveSession(){
+        when(roles.administrator(actor)).thenReturn(false);assertEquals("ADMIN_REQUIRED",assertThrows(AuthFailure.class,()->service.users(principal,null,false,0,50)).code());
+        assertThrows(AuthFailure.class,()->service.user(principal,target));verify(roles,never()).users(any(),anyBoolean(),anyInt(),anyInt());verify(roles,never()).user(any());
+        when(roles.administrator(actor)).thenReturn(true);when(accounts.isActiveSession(session,actor,clock.instant())).thenReturn(false);
+        assertEquals(401,assertThrows(AuthFailure.class,()->service.user(principal,target)).status());
+    }
+    @Test void invalidUserFiltersNeverReachSearch(){
+        for(int[] page:List.of(new int[]{-1,50},new int[]{10001,50},new int[]{0,0},new int[]{0,101}))assertEquals(400,assertThrows(AuthFailure.class,()->service.users(principal,null,false,page[0],page[1])).status());
+        assertThrows(AuthFailure.class,()->service.users(principal,"x".repeat(255),false,0,50));verify(roles,never()).users(any(),anyBoolean(),anyInt(),anyInt());
+    }
+    @Test void missingUserIs404AndOrdinaryUserHasOnlyImplicitUserRole(){
+        assertEquals("ACCOUNT_NOT_FOUND",assertThrows(AuthFailure.class,()->service.user(principal,target)).code());
+        when(roles.user(target)).thenReturn(new AdminStore.User(target,"Pending","pending@example.test","PENDING_EMAIL","LOCAL",false,false));
+        var user=service.user(principal,target);assertEquals(List.of("USER"),user.roles());assertFalse(user.captainEligible());
+    }
+
 }

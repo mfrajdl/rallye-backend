@@ -93,4 +93,27 @@ class AdminHttpTest {
         }
         verify(admin,times(2)).changeRole(principal,target,false,key);
     }
+    @Test void userReadsRejectAnonymousAndOrdinaryUsersBeforeService()throws Exception{
+        for(String path:List.of("/api/v1/admin/users","/api/v1/admin/users/"+UUID.randomUUID())){
+            mvc.perform(get(path)).andExpect(status().isUnauthorized());authenticated(false);
+            mvc.perform(get(path).header("Authorization","Bearer "+secret)).andExpect(status().isForbidden());
+        }verifyNoInteractions(admin);
+    }
+    @Test void adminUsersExposeOnlySafeProfileAndRoleFields()throws Exception{
+        authenticated(true);UUID id=UUID.randomUUID();var user=new AdminService.UserView(id,"Name","name@example.test",List.of("USER","ADMIN"),"ACTIVE","GOOGLE",true);
+        when(admin.users(principal,"Name",true,0,50)).thenReturn(new AdminService.UserPage(List.of(user),0,50,false));when(admin.user(principal,id)).thenReturn(user);
+        mvc.perform(get("/api/v1/admin/users").param("query","Name").param("captainEligible","true").header("Authorization","Bearer "+secret))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.hasMore").value(false)).andExpect(jsonPath("$.items[0].id").value(id.toString()))
+            .andExpect(jsonPath("$.items[0].roles[1]").value("ADMIN")).andExpect(jsonPath("$.items[0].identityProvider").value("GOOGLE"))
+            .andExpect(jsonPath("$.items[0].passwordHash").doesNotExist()).andExpect(jsonPath("$.items[0].token").doesNotExist()).andExpect(header().string("Cache-Control","no-store"));
+        mvc.perform(get("/api/v1/admin/users/"+id).header("Authorization","Bearer "+secret)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.captainEligible").value(true)).andExpect(jsonPath("$.password").doesNotExist()).andExpect(jsonPath("$.subject").doesNotExist());
+    }
+    @Test void malformedAndMissingUserDetailsUseExistingErrors()throws Exception{
+        authenticated(true);mvc.perform(get("/api/v1/admin/users/not-uuid").header("Authorization","Bearer "+secret)).andExpect(status().isBadRequest());
+        UUID id=UUID.randomUUID();when(admin.user(principal,id)).thenThrow(new AuthFailure(404,"ACCOUNT_NOT_FOUND"));
+        mvc.perform(get("/api/v1/admin/users/"+id).header("Authorization","Bearer "+secret)).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ACCOUNT_NOT_FOUND"));
+        mvc.perform(get("/api/v1/admin/users").param("page","no-number").header("Authorization","Bearer "+secret)).andExpect(status().isBadRequest());
+    }
+
 }

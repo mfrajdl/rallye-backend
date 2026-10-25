@@ -89,9 +89,15 @@ class AdministrationIT {
     }
     @BeforeEach void prepare(TestInfo info) {
         if (info.getTestMethod().orElseThrow().getName().equals("concurrentBootstrapCreatesExactlyOneFirstAdministrator")) return;
+        prepareAdministrator();
+    }
+    void prepareAdministrator() {
         var administrators=jdbc.queryForList("SELECT account_id FROM user_account_role WHERE role='ADMIN'",UUID.class);
         if (administrators.isEmpty()) { root=account(); bootstrap(root); }
-        else if (root==null) root=administrators.getFirst();
+        else if (root==null || !administrators.contains(root)) root=administrators.getFirst();
+        // The preceding mutual-revocation race may legitimately remove the old root's role.
+        // Preserve the surviving administrator rather than trying to delete that last role.
+        assertTrue(roleStore.administrator(root), "Fixture cleanup must retain a current active administrator");
         // This is strictly test-owned schema fixture cleanup, never the shared application schema.
         jdbc.update("DELETE FROM user_account_role WHERE account_id<>?",root);
         rootEmail=email(root);
@@ -189,16 +195,21 @@ class AdministrationIT {
     @Test @Order(3) void existingSessionGainsAndLosesAdminAndRequestsAreIdempotent() throws Exception {
         UUID target=account(); var login=auth.login(email(target),password,false);
         mvc.perform(get("/api/v1/admin/audit-events").header("Authorization","Bearer "+login.secret())).andExpect(status().isForbidden());
+        assertEquals(List.of("USER"),auth.me(login.principal()).roles());
         UUID key=UUID.randomUUID();
         admin.changeRole(rootLogin.principal(),target,true,key);
         admin.changeRole(rootLogin.principal(),target,true,key);
         assertEquals(1,count("ADMIN_GRANTED",target));
+        assertEquals(List.of("USER","ADMIN"),auth.me(login.principal()).roles());
+        mvc.perform(get("/api/v1/admin/users").header("Authorization","Bearer "+login.secret())).andExpect(status().isOk());
         assertEquals(409,assertThrows(AuthFailure.class,()->admin.changeRole(rootLogin.principal(),target,false,key)).status());
         mvc.perform(get("/api/v1/admin/audit-events").header("Authorization","Bearer "+login.secret())).andExpect(status().isOk());
         admin.changeRole(rootLogin.principal(),target,false,UUID.randomUUID());
         assertEquals(1,count("ADMIN_REVOKED",target));
         mvc.perform(get("/api/v1/admin/audit-events").header("Authorization","Bearer "+login.secret())).andExpect(status().isForbidden());
         assertNotNull(auth.authenticate(login.secret()));
+        assertEquals(List.of("USER"),auth.me(login.principal()).roles());
+        mvc.perform(get("/api/v1/admin/users").header("Authorization","Bearer "+login.secret())).andExpect(status().isForbidden());
     }
     @Test @Order(2) void bootstrapRejectsInconsistentFlagWithoutChangingRolesOrAudit() {
         long events=count("ADMIN_BOOTSTRAPPED",root);
@@ -309,6 +320,12 @@ class AdministrationIT {
         var outcomes=race(()->tryRevoke(rootLogin.principal(),other),()->tryRevoke(otherLogin.principal(),root));
         assertEquals(1,outcomes.stream().filter(Boolean::booleanValue).count());
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM user_account_role",Long.class));
+        // Exercise prepare deterministically with a stale cached root, regardless of the race winner.
+        UUID survivor=jdbc.queryForObject("SELECT account_id FROM user_account_role",UUID.class);
+        root=survivor.equals(root)?other:root;
+        prepareAdministrator();
+        assertEquals(survivor,root);
+        assertTrue(roleStore.administrator(root));
     }
     @AfterAll void removeOnlyThisRunsPrivateSchema() {
         assertTrue(SCHEMA.matches("it_admin_[0-9a-f]{32}"));
@@ -316,4 +333,49 @@ class AdministrationIT {
         assertEquals("rallye_test",jdbc.queryForObject("SELECT current_user",String.class));
         jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");
     }
+
+    @Test @Order(11) void userSearchPagesAndEscapesLiteralWildcards() {
+        String marker="lookup-"+UUID.randomUUID();
+        UUID first=account(),second=account(),third=account();
+        for(UUID id:List.of(first,second,third)) jdbc.update("UPDATE user_account SET display_name=? WHERE id=?",marker,id);
+        var page=admin.users(rootLogin.principal(),marker.toUpperCase(),false,0,2);
+        assertEquals(2,page.items().size()); assertTrue(page.hasMore());
+        assertEquals(page,admin.users(rootLogin.principal(),marker,false,0,2));
+        var last=admin.users(rootLogin.principal(),marker,false,1,2);
+        assertEquals(1,last.items().size()); assertFalse(last.hasMore());
+        assertFalse(page.items().stream().anyMatch(u->u.id().equals(last.items().getFirst().id())));
+        assertTrue(admin.users(rootLogin.principal(),marker,false,2,2).items().isEmpty());
+        assertEquals(first,admin.users(rootLogin.principal(),email(first).toUpperCase(),false,0,10).items().getFirst().id());
+        jdbc.update("UPDATE user_account SET display_name=? WHERE id=?",marker+"%!_",first);
+        assertEquals(List.of(first),admin.users(rootLogin.principal(),marker+"%!_",false,0,10).items().stream().map(AdminService.UserView::id).toList());
+        assertTrue(admin.users(rootLogin.principal(),"' OR 1=1 --",false,0,10).items().isEmpty());
+    }
+    @Test @Order(12) void userEligibilityMatchesCaptainRulesAndCancelledProfilesAreHidden() throws Exception {
+        String marker="eligible-"+UUID.randomUUID();
+        UUID active=account(),disabled=account();
+        String pendingEmail=UUID.randomUUID()+"@example.test";
+        auth.register(pendingEmail,password,marker);
+        UUID pending=jdbc.queryForObject("SELECT id FROM user_account WHERE normalized_email=?",UUID.class,pendingEmail);
+        jdbc.update("UPDATE user_account SET display_name=? WHERE id IN (?,?)",marker,active,disabled);
+        jdbc.update("UPDATE user_account SET status='DISABLED' WHERE id=?",disabled);
+        assertEquals(3,admin.users(rootLogin.principal(),marker,false,0,10).items().size());
+        assertEquals(List.of(active),admin.users(rootLogin.principal(),marker,true,0,10).items().stream().map(AdminService.UserView::id).toList());
+        assertFalse(admin.user(rootLogin.principal(),pending).captainEligible());
+        assertFalse(admin.user(rootLogin.principal(),disabled).captainEligible());
+        var profile=admin.user(rootLogin.principal(),active);
+        assertEquals("LOCAL",profile.identityProvider()); assertEquals(List.of("USER"),profile.roles());
+        mvc.perform(get("/api/v1/admin/users/"+active).header("Authorization","Bearer "+rootLogin.secret()))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(active.toString()))
+            .andExpect(jsonPath("$.passwordHash").doesNotExist()).andExpect(jsonPath("$.subject").doesNotExist())
+            .andExpect(jsonPath("$.token").doesNotExist());
+        new TransactionTemplate(transactions).executeWithoutResult(tx->{
+            jdbc.update("DELETE FROM user_identity WHERE account_id=?",active);
+            jdbc.update("UPDATE user_account SET status='ANONYMIZED',email=NULL,normalized_email=NULL,display_name=NULL,email_verified_at=NULL,cancelled_at=CURRENT_TIMESTAMP WHERE id=?",active);
+        });
+        assertEquals(404,assertThrows(AuthFailure.class,()->admin.user(rootLogin.principal(),active)).status());
+        assertFalse(admin.users(rootLogin.principal(),marker,false,0,10).items().stream().anyMatch(u->u.id().equals(active)));
+        mvc.perform(get("/api/v1/admin/users/"+UUID.randomUUID()).header("Authorization","Bearer "+rootLogin.secret()))
+            .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ACCOUNT_NOT_FOUND"));
+    }
+
 }
