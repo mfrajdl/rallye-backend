@@ -156,11 +156,37 @@ class SingleIdentityIT {
         }
         assertEquals("GOOGLE",jdbc.queryForObject("SELECT provider FROM user_identity WHERE account_id=?",String.class,id));
     }
+    record GrantFixture(UUID account,UUID session,UUID attempt,String challenge) {}
+    GrantFixture grantFixture(){
+        UUID account=valid("LOCAL"),session=UUID.randomUUID(),attempt=UUID.randomUUID();
+        var secrets=new SecretTokens();String challenge="A".repeat(43);
+        jdbc.update("INSERT INTO user_session(id,account_id,token_hash,remember_me,created_at,last_used_at,expires_at) VALUES (?,?,?,false,now(),now(),now()+interval '24 hours')",session,account,secrets.hash(UUID.randomUUID().toString()));
+        jdbc.update("INSERT INTO mobile_login_attempt(id,provider,pkce_challenge,remember_me,return_id,return_uri,profile_uri,fallback_uri,ticket_hash,created_at,expires_at) VALUES (?,'GOOGLE',?,false,'android','https://example.test/mobile','https://example.test/profile','https://example.test/fallback',?,now(),now()+interval '10 minutes')",attempt,challenge,secrets.hash(UUID.randomUUID().toString()));
+        return new GrantFixture(account,session,attempt,challenge);
+    }
+    void insertGrant(GrantFixture fixture,UUID attempt,String kind,String purpose){
+        boolean mobile=kind.equals("MOBILE");
+        jdbc.update("INSERT INTO external_auth_grant(id,account_id,session_id,attempt_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,now(),now()+(? * interval '1 second'))",
+            UUID.randomUUID(),fixture.account(),mobile?null:fixture.session(),attempt,kind,purpose,new SecretTokens().hash(UUID.randomUUID().toString()),mobile?fixture.challenge():null,mobile?60:300);
+    }
     @Test void removedContextsAndReauthGrantsCannotBeInserted(){
-        UUID id=valid("LOCAL");
-        violation("23514",()->jdbc.update("INSERT INTO external_auth_grant(id,account_id,session_id,kind,purpose,token_hash,created_at,expires_at) VALUES (?,?,?,'REAUTH','LINK',?,now(),now()+interval '5 minutes')",UUID.randomUUID(),id,UUID.randomUUID(),new SecretTokens().hash("synthetic")));
-        // The grant CHECK fails before FK validation; no sensitive grant survives.
-        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_auth_grant WHERE account_id=?",Integer.class,id));
+        var fixture=grantFixture();
+        // All parent rows and the original V8 shape are valid: only V10's prohibition fails.
+        violation("23514",()->insertGrant(fixture,fixture.attempt(),"REAUTH","LOGIN"));
+        violation("23514",()->insertGrant(fixture,fixture.attempt(),"MOBILE","LINK"));
+        violation("23514",()->insertGrant(fixture,fixture.attempt(),"REAUTH","LINK"));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_auth_grant WHERE account_id=?",Integer.class,fixture.account()));
+        // The same fixture permits the supported grant, proving no unrelated constraint masks V10.
+        insertGrant(fixture,fixture.attempt(),"MOBILE","LOGIN");
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM external_auth_grant WHERE account_id=?",Integer.class,fixture.account()));
+    }
+    @Test void mobileGrantRequiresExistingAttempt(){
+        var fixture=grantFixture();
+        violation("23502",()->insertGrant(fixture,null,"MOBILE","LOGIN"));
+        violation("23503",()->insertGrant(fixture,UUID.randomUUID(),"MOBILE","LOGIN"));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_auth_grant WHERE account_id=?",Integer.class,fixture.account()));
+        insertGrant(fixture,fixture.attempt(),"MOBILE","LOGIN");
+        assertEquals(fixture.attempt(),jdbc.queryForObject("SELECT attempt_id FROM external_auth_grant WHERE account_id=?",UUID.class,fixture.account()));
     }
     @Test void v10MigrationPreflightPreservesConflictingData(){
         for(String conflict:List.of("MULTIPLE","MISSING","ANONYMIZED","FLOW","GRANT"))upgrade(conflict);

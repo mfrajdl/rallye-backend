@@ -627,3 +627,18 @@ Postman 21: šest lokálních negativních požadavků bez účtu a bez provider
 ### Bezpečnostní revize ticketu 3c.4a.1
 
 Uživatel potvrdil Postman 21 (všechny testy prošly) a PostgreSQL verify před revizí. Následná oprava privacy hlaviček pro chyby před controllerem a redakce request/access logů má nový Codex verify bez DB: **BUILD SUCCESS, 306 testů, 0 failures/errors/skipped**. Obsahuje skutečný izolovaný embedded Tomcat access log test, MVC TRACE s request details a bezpečnou diagnostiku výjimek. PostgreSQL testy se nyní neopakovaly; migrace/služby zůstaly touto opravou beze změny. Uživatel následně potvrdil opakování celé Postman 21: All Passed včetně nových no-store/no-referrer asercí. HTTPS 22 až ve zvlášť připraveném prostředí. Skutečná absence Referer v browserovém provider požadavku a proxy logy nejsou lokálním HTTP testem prokázány. [Report a provozní podmínky](review-launch-privacy-3c4a1.md).
+
+
+## 3c.4a.2 – callback a jednorázový handoff grant
+
+Codex verify bez DB: BUILD SUCCESS, **317 testů, 0 failures/errors/skipped**, Microsoft JDK 21.0.12.1. PostgreSQL IT zkompilované, nikoli spuštěné. Nové MobileCallbackIT má **15 scénářů** včetně Google/Apple, replay/souběhu, rollbacku, cancellation/DELETE/anonymizace, kolize e-mailu a V12 preflight/guard. Uživatelský `.\mvnw.cmd -Pit verify` proti rallye_test po opravě přípravy SingleIdentityIT skončil BUILD SUCCESS (potvrzeno 2026-10-25); nejde o běh Codexu.
+
+Postman 23: sedm lokálních negativních callbacků bez providerů a bez destruktivních operací, kontrola chyb/privacy hlaviček. Postman složku 23 uživatel potvrdil jako All Passed; Codex ji nespouštěl. HTTP testy ověřily redakci provider code/state/cookie a handoff kódu v Location při MVC TRACE. Skutečná browserová absence Referer a proxy logy zůstávají neověřené. Pozitivní grant nelze zatím vyměnit za Bearer, protože exchange patří až 3c.4a.3. [Detailní postup a omezení](mobile-callback-3c4a2.md).
+
+### Oprava integrační přípravy po V12
+
+Uživatelský PostgreSQL běh: 209 testů, jedna chyba aserce v `SingleIdentityIT` (očekáváno SQLSTATE `23514`, skutečnost `23502`). Starý INSERT nevyplňoval nové povinné `attempt_id`. Test nyní vytváří existující relaci a mobilní pokus, samostatně ověřuje zákaz REAUTH a LINK (`23514`) a kontrolním platným MOBILE/LOGIN insertem potvrzuje platnost přípravy. Nová regrese ověřuje chybějící (`23502`) a neexistující (`23503`) pokus. Produkční kód ani V1–V12 se kvůli této opravě nemění. Opravený PostgreSQL běh `.\mvnw.cmd -Pit verify` proti `rallye_test` uživatel následně potvrdil jako BUILD SUCCESS (2026-10-25). Jde o uživatelský běh, nikoli běh Codexu; počet testů opakovaného běhu nebyl sdělen.
+
+Po opravě přípravy: vlastní běh `verify` bez PostgreSQL – BUILD SUCCESS, 317 testů, 0 failures/errors/skipped; PostgreSQL testy byly zkompilovány, nikoli spuštěny.
+
+Uzavření 3c.4a.2 (2026-10-25): implementačně dokončena a lokálně ověřena. Codex verify bez DB: 317 testů, BUILD SUCCESS. Uživatel potvrdil PostgreSQL verify včetně opravy SingleIdentityIT (BUILD SUCCESS) a Postman složku 23 (All Passed). Skutečné Google/Apple přihlášení přes HTTPS, browser/proxy a profilová stránka zůstávají neověřené. Exchange a mobilní Bearer relace patří až do nezahájené 3c.4a.3.

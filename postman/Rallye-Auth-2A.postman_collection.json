@@ -371,7 +371,7 @@
         "type": "text/javascript",
         "exec": [
           "// Bootstrap tests are anonymous protocol requests, never a Bearer regression session.",
-          "if (pm.info.requestName.startsWith('3c4a1 ')) {",
+          "if ((pm.info.requestName.startsWith('3c4a1 ') || pm.info.requestName.startsWith('3c4a2 '))) {",
           "    pm.request.headers.remove('Authorization'); pm.request.headers.remove('Cookie'); pm.request.headers.remove('X-XSRF-TOKEN');",
           "    pm.request.headers.upsert({key:'X-Rallye-Client',value:'mobile'});",
           "} else {",
@@ -5560,6 +5560,245 @@
                   "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
                   "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_MOBILE_REQUEST_INVALID'));",
                   "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "23 Mobile callback 3c.4a.2 - LOCAL invalid proofs only",
+      "description": "Seven anonymous negative requests, no real provider, no accounts, no DB writes, no callbacks with valid state. Cookie Jar and redirect following disabled. Does not simulate a successful grant. See docs/mobile-callback-3c4a2.md.",
+      "item": [
+        {
+          "name": "3c4a2 Unknown GOOGLE state",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/callback?state=invalid&code=invalid"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_STATE_INVALID'));",
+                  "pm.test('Callback privacy headers',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
+                  "pm.test('No redirect or Rallye session',()=>{pm.expect(pm.response.headers.get('Location')).to.equal(undefined);pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').some(h=>h.value.startsWith('RALLYE_SESSION='))).to.eql(false);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a2 Missing callback state",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/callback?code=invalid"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Callback privacy headers',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
+                  "pm.test('No redirect or Rallye session',()=>{pm.expect(pm.response.headers.get('Location')).to.equal(undefined);pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').some(h=>h.value.startsWith('RALLYE_SESSION='))).to.eql(false);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a2 Duplicate state rejected",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/callback?state=a&state=b&code=c"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_STATE_INVALID'));",
+                  "pm.test('Callback privacy headers',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
+                  "pm.test('No redirect or Rallye session',()=>{pm.expect(pm.response.headers.get('Location')).to.equal(undefined);pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').some(h=>h.value.startsWith('RALLYE_SESSION='))).to.eql(false);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a2 Both code and error rejected",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/callback?state=a&code=b&error=c"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_STATE_INVALID'));",
+                  "pm.test('Callback privacy headers',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
+                  "pm.test('No redirect or Rallye session',()=>{pm.expect(pm.response.headers.get('Location')).to.equal(undefined);pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').some(h=>h.value.startsWith('RALLYE_SESSION='))).to.eql(false);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a2 APPLE malformed user rejected",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/APPLE/callback",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "state",
+                  "value": "invalid",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "invalid",
+                  "type": "text"
+                },
+                {
+                  "key": "user",
+                  "value": "not-json",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_PROFILE_INVALID'));",
+                  "pm.test('Callback privacy headers',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
+                  "pm.test('No redirect or Rallye session',()=>{pm.expect(pm.response.headers.get('Location')).to.equal(undefined);pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').some(h=>h.value.startsWith('RALLYE_SESSION='))).to.eql(false);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a2 APPLE missing state",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/APPLE/callback",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "code",
+                  "value": "invalid",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Callback privacy headers',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
+                  "pm.test('No redirect or Rallye session',()=>{pm.expect(pm.response.headers.get('Location')).to.equal(undefined);pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').some(h=>h.value.startsWith('RALLYE_SESSION='))).to.eql(false);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a2 APPLE wrong callback method",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/APPLE/callback?state=a&code=b"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_CALLBACK_INVALID'));",
+                  "pm.test('Callback privacy headers',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
+                  "pm.test('No redirect or Rallye session',()=>{pm.expect(pm.response.headers.get('Location')).to.equal(undefined);pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').some(h=>h.value.startsWith('RALLYE_SESSION='))).to.eql(false);});"
                 ]
               }
             }

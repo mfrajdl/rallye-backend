@@ -13,41 +13,55 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ExternalLoginService {
     public static final Duration COMPLETION_LIFE=Duration.ofMinutes(15);
-    public record Outcome(String returnUri,AuthService.LoginSession session,String registrationSecret) {
+    public record Outcome(String returnUri,AuthService.LoginSession session,String registrationSecret,String handoffCode,UUID requestId) {
+        public Outcome(String returnUri,AuthService.LoginSession session,String registrationSecret){this(returnUri,session,registrationSecret,null,null);}
         @Override public String toString(){return "ExternalLoginOutcome[redacted]";}
     }
     public record Profile(String email,String displayName,boolean emailVerified,Instant expiresAt) {}
     private final ExternalFlowService flows;private final ExternalAccountStore external;private final AccountStore accounts;
     private final AuthService auth;private final SecretTokens secrets;private final Clock clock;private final AuditService audit;
     private final jakarta.validation.Validator validator;
+    private final MobileCallbackService mobile;
     private final AppleTokenVault vault;private final ExternalProviders providers;private final TransactionTemplate tx;
     public ExternalLoginService(ExternalFlowService flows,ExternalAccountStore external,AccountStore accounts,AuthService auth,
-        SecretTokens secrets,Clock clock,AuditService audit,AppleTokenVault vault,ExternalProviders providers,PlatformTransactionManager manager,jakarta.validation.Validator validator) {
+        SecretTokens secrets,Clock clock,AuditService audit,AppleTokenVault vault,ExternalProviders providers,PlatformTransactionManager manager,jakarta.validation.Validator validator,MobileCallbackService mobile) {
         this.flows=flows;this.external=external;this.accounts=accounts;this.auth=auth;this.secrets=secrets;this.clock=clock;
-        this.audit=audit;this.validator=validator;this.vault=vault;this.providers=providers;this.tx=new TransactionTemplate(manager);
+        this.audit=audit;this.validator=validator;this.mobile=mobile;this.vault=vault;this.providers=providers;this.tx=new TransactionTemplate(manager);
     }
     public Outcome callback(ExternalProviders.Provider provider,String state,String correlation,String code,String appleName) {
         if(provider==ExternalProviders.Provider.APPLE)vault.requireReady();
-        var verified=flows.verifyWebCallback(provider,state,correlation,code);
+        var verified=flows.verifyCallback(provider,state,correlation,code);
         var proof=verified.identity();
         String name=validName(provider==ExternalProviders.Provider.APPLE?appleName:proof.name());
         String email=validEmail(proof.email());
         return tx.execute(status->{
-            external.lock();flows.consumeVerified(verified);
+            external.lock();var mobileContext=mobile.context(verified.flow());flows.consumeVerified(verified);
             Instant now=now();external.purgeExpired(now);UUID account=external.account(provider.name(),proof.issuer(),proof.subject());
             if(account!=null) {
                 var current=accounts.lockAccount(account);
                 if(current==null || !"ACTIVE".equals(current.status()))throw AuthFailure.credentials();
                 preserveApple(provider,proof,account,null,now);
+                if(mobileContext!=null) {
+                    String handoff=mobile.issue(account,mobileContext);
+                    return new Outcome(mobileContext.returnUri(),null,null,handoff,mobileContext.id());
+                }
                 String secret=secrets.create();UUID session=accounts.insertSession(account,secrets.hash(secret),verified.flow().rememberMe(),now,now.plus(AuthService.idle(verified.flow().rememberMe())));
                 audit.record(account,AuditService.Event.LOGIN_SUCCEEDED,account);
                 return new Outcome(verified.flow().returnUri(),new AuthService.LoginSession(secret,new AuthService.Principal(account,session,verified.flow().rememberMe())),null);
             }
+            String target=mobileContext==null?verified.flow().returnUri():mobileContext.profileUri();
             UUID registration=UUID.randomUUID();String secret=secrets.create();
             external.registration(new ExternalAccountStore.Registration(registration,provider.name(),proof.issuer(),proof.subject(),email,
-                email!=null && proof.emailVerified(),name,verified.flow().rememberMe(),verified.flow().returnUri(),now.plus(COMPLETION_LIFE),null),secrets.hash(secret),now);
+                email!=null && proof.emailVerified(),name,verified.flow().rememberMe(),target,now.plus(COMPLETION_LIFE),null),secrets.hash(secret),now);
             preserveApple(provider,proof,null,registration,now);
-            return new Outcome(verified.flow().returnUri(),null,secret);
+            return new Outcome(target,null,secret,null,mobileContext==null?null:mobileContext.id());
+        });
+    }
+    public record Rejected(String returnUri,UUID requestId) {}
+    public Rejected rejectCallback(ExternalProviders.Provider provider,String state,String correlation) {
+        return tx.execute(status->{
+            external.lock();var flow=flows.rejectFlow(provider,state,correlation);var attempt=mobile.context(flow);
+            return new Rejected(attempt==null?flow.returnUri():attempt.returnUri(),attempt==null?null:attempt.id());
         });
     }
     @Transactional

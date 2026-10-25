@@ -106,11 +106,11 @@ class ExternalAuthHttpTest {
         verifyNoInteractions(login);
     }
     @Test void providerDenialRedirectsOnlyToValidatedReturnWithoutReflectingError() throws Exception {
-        when(flows.rejectWebCallback(any(),any(),any())).thenReturn("https://app.example.test/complete");
+        when(login.rejectCallback(any(),any(),any())).thenReturn(new ExternalLoginService.Rejected("https://app.example.test/complete",null));
         mvc.perform(get("/api/v1/auth/external/GOOGLE/callback").param("state","s").param("error","arbitrary-sensitive-provider-text")
             .cookie(new Cookie("RALLYE_OIDC_GOOGLE","correlation"))).andExpect(status().isSeeOther())
             .andExpect(header().string("Location","https://app.example.test/complete?external=failed")).andExpect(cookie().doesNotExist(AuthCookies.NAME));
-        verifyNoInteractions(login);
+        verify(login).rejectCallback(ExternalProviders.Provider.GOOGLE,"s","correlation");
     }
     @Test void unknownProviderNeverReachesProtocolService() throws Exception {
         mvc.perform(post("/api/v1/auth/external/ATTACKER/requests").with(csrf()).contentType("application/json").content("{}"))
@@ -207,6 +207,41 @@ class ExternalAuthHttpTest {
                 .andExpect(status().isBadRequest());
             org.junit.jupiter.api.Assertions.assertFalse(output.toString().contains(ticket));
         } finally {logger.setLevel(before);mvc.getDispatcherServlet().setEnableLoggingRequestDetails(false);}
+    }
+
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    @Test void mobileGrantRedirectHasOnlyCodeAndTrustedRequestIdAndTraceNeverLogsSecrets(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        String handoff="synthetic-private-handoff",state="synthetic-private-state",providerCode="synthetic-provider-code";var requestId=java.util.UUID.randomUUID();
+        when(login.callback(any(),any(),any(),any(),any())).thenReturn(new ExternalLoginService.Outcome("https://app.example.test/mobile",null,null,handoff,requestId));
+        var logger=(ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger(mvc.getDispatcherServlet().getClass());
+        var before=logger.getLevel();mvc.getDispatcherServlet().setEnableLoggingRequestDetails(true);logger.setLevel(ch.qos.logback.classic.Level.TRACE);
+        try {
+            mvc.perform(get("/api/v1/auth/external/GOOGLE/callback").queryParam("state",state).queryParam("code",providerCode).queryParam("requestId","untrusted-client-id")
+                .cookie(new Cookie("RALLYE_OIDC_GOOGLE","synthetic-correlation")))
+                .andExpect(status().isSeeOther()).andExpect(header().string("Location","https://app.example.test/mobile?code="+handoff+"&requestId="+requestId))
+                .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("Referrer-Policy","no-referrer"))
+                .andExpect(cookie().doesNotExist(AuthCookies.NAME)).andExpect(cookie().doesNotExist(ExternalAuthController.REGISTRATION_COOKIE));
+            for(String secret:java.util.List.of(handoff,state,providerCode,"synthetic-correlation"))org.junit.jupiter.api.Assertions.assertFalse(output.toString().contains(secret));
+            verify(login).callback(ExternalProviders.Provider.GOOGLE,state,"synthetic-correlation",providerCode,null);
+        } finally {logger.setLevel(before);mvc.getDispatcherServlet().setEnableLoggingRequestDetails(false);}
+    }
+    @Test void callbackErrorsBeforeControllerAndFromServiceKeepPrivacyHeaders() throws Exception {
+        String path="/api/v1/auth/external/GOOGLE/callback";
+        mvc.perform(get(path)).andExpect(status().isBadRequest()).andExpect(header().string("Referrer-Policy","no-referrer"));
+        mvc.perform(get(path).param("state","s").param("code","c").header("Authorization","Bearer invalid"))
+            .andExpect(status().isUnauthorized()).andExpect(header().string("Referrer-Policy","no-referrer"));
+        doThrow(new AuthFailure(400,"EXTERNAL_STATE_INVALID")).when(login).callback(any(),any(),any(),any(),any());
+        mvc.perform(get(path).queryParam("state","private-state").queryParam("code","private-code"))
+            .andExpect(status().isBadRequest()).andExpect(header().string("Cache-Control","no-store"))
+            .andExpect(header().string("Referrer-Policy","no-referrer"))
+            .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private-code"))))
+            .andExpect(header().doesNotExist("Location"));
+    }
+    @Test void mobileProviderDenialCarriesOnlyStoredCorrelationAndNoGrant() throws Exception {
+        var requestId=java.util.UUID.randomUUID();when(login.rejectCallback(any(),any(),any())).thenReturn(new ExternalLoginService.Rejected("https://app.example.test/mobile",requestId));
+        mvc.perform(get("/api/v1/auth/external/GOOGLE/callback").param("state","state").param("error","private-provider-description"))
+            .andExpect(status().isSeeOther()).andExpect(header().string("Location","https://app.example.test/mobile?external=failed&requestId="+requestId))
+            .andExpect(header().string("Referrer-Policy","no-referrer")).andExpect(cookie().doesNotExist(AuthCookies.NAME));
     }
 
 }

@@ -70,7 +70,7 @@ class ExternalAuthIT {
         assertFalse(tx().execute(s->facts.forAccount(UUID.randomUUID())).historical());
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V8__unknown.sql' WHERE version='8'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
-        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='12' WHERE version='8'");
+        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='13' WHERE version='8'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
     }
     @Test void migrationUpgradesV7AndRejectsDuplicateProviderWithoutDeletingData() {
@@ -108,12 +108,23 @@ class ExternalAuthIT {
             assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM "+upgrade+".external_auth_flow",Integer.class));
         } finally {guard();assertTrue(upgrade.matches("it_external_[0-9a-f]{32}_clean_upgrade"));jdbc.execute("DROP SCHEMA IF EXISTS \""+upgrade+"\" CASCADE");}
     }
+    UUID grantAttempt() {
+        var f=insert(Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS));UUID id=UUID.randomUUID();String challenge=secrets.create();
+        jdbc.update("UPDATE external_auth_flow SET mobile_challenge=? WHERE id=?",challenge,f.id());
+        jdbc.update("""
+            INSERT INTO mobile_login_attempt(id,provider,pkce_challenge,remember_me,return_id,return_uri,profile_uri,fallback_uri,
+                ticket_hash,created_at,expires_at,launch_consumed_at,flow_id)
+            VALUES (?,'GOOGLE',?,false,'android',?,?,?, ?,?,?,?,?)
+            """,id,challenge,f.returnUri(),"https://example.test/profile","https://example.test/fallback",secrets.hash(id.toString()),
+            java.sql.Timestamp.from(f.expiresAt().minusSeconds(600)),java.sql.Timestamp.from(f.expiresAt()),java.sql.Timestamp.from(f.expiresAt().minusSeconds(600)),f.id());
+        return id;
+    }
     @Test void cancellingAccountDeletesBoundContextAndGrantsWithoutChangingAuditPolicy() {
         String email=UUID.randomUUID()+"@example.test";
         auth.register(email,"test-password","A");auth.verifyEmail(mail.token(email,"EMAIL_VERIFICATION"));
         var login=auth.login(email,"test-password",false);
-        jdbc.update("INSERT INTO external_auth_grant(id,account_id,session_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at) VALUES (?,?,?,'MOBILE','LOGIN',?,?,now(),now()+interval '60 seconds')",
-            UUID.randomUUID(),login.principal().accountId(),login.principal().sessionId(),secrets.hash(UUID.randomUUID().toString()),secrets.create());
+        jdbc.update("INSERT INTO external_auth_grant(id,account_id,session_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at,attempt_id) VALUES (?,?,?,'MOBILE','LOGIN',?,?,now(),now()+interval '60 seconds',?)",
+            UUID.randomUUID(),login.principal().accountId(),login.principal().sessionId(),secrets.hash(UUID.randomUUID().toString()),secrets.create(),grantAttempt());
         cancellation.self(login.principal(),"test-password",UUID.randomUUID());
         for(String table:List.of("external_auth_flow","external_auth_grant"))
             assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE account_id=?",Integer.class,login.principal().accountId()));
@@ -123,7 +134,7 @@ class ExternalAuthIT {
         String email=UUID.randomUUID()+"@example.test";
         auth.register(email,"test-password","A");auth.verifyEmail(mail.token(email,"EMAIL_VERIFICATION"));
         var login=auth.login(email,"test-password",false);UUID account=login.principal().accountId();
-        jdbc.update("INSERT INTO external_auth_grant(id,account_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at) VALUES (?,?,'MOBILE','LOGIN',?,?,now(),now()+interval '60 seconds')",UUID.randomUUID(),account,secrets.hash(UUID.randomUUID().toString()),secrets.create());
+        jdbc.update("INSERT INTO external_auth_grant(id,account_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at,attempt_id) VALUES (?,?,'MOBILE','LOGIN',?,?,now(),now()+interval '60 seconds',?)",UUID.randomUUID(),account,secrets.hash(UUID.randomUUID().toString()),secrets.create(),grantAttempt());
         tx().executeWithoutResult(status->{cancellationStore.deleteIdentities(account);cancellationStore.deleteSessions(account);
             cancellationStore.deleteTokens(account);cancellationStore.deleteRoles(account);cancellationStore.anonymize(account,Instant.now());});
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_auth_grant WHERE account_id=?",Integer.class,account));
@@ -149,7 +160,8 @@ class ExternalAuthIT {
         try {
             assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("INSERT INTO user_identity(id,account_id,provider,issuer,subject,created_at) VALUES (?,?,'GOOGLE','https://accounts.google.com','one',now())",UUID.randomUUID(),account));
             assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("INSERT INTO user_identity(id,account_id,provider,issuer,subject,created_at) VALUES (?,?,'GOOGLE','https://accounts.google.com','two',now())",UUID.randomUUID(),account));
-            assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("INSERT INTO external_auth_grant(id,account_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at) VALUES (?,?,'MOBILE','LOGIN',?,?,now(),now()+interval '61 seconds')",UUID.randomUUID(),account,secrets.hash("token"),secrets.create()));
+            UUID attempt=grantAttempt();
+            assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("INSERT INTO external_auth_grant(id,account_id,kind,purpose,token_hash,pkce_challenge,created_at,expires_at,attempt_id) VALUES (?,?,'MOBILE','LOGIN',?,?,now(),now()+interval '61 seconds',?)",UUID.randomUUID(),account,secrets.hash("token"),secrets.create(),attempt));
         } finally {cancellation.self(login.principal(),"test-password",UUID.randomUUID());}
     }
     @AfterAll void cleanup(){guard();assertTrue(SCHEMA.matches("it_external_[0-9a-f]{32}"));jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");}

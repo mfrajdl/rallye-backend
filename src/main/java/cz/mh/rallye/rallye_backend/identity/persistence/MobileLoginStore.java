@@ -30,6 +30,13 @@ public class MobileLoginStore {
             r.getString("fallback_uri"),r.getTimestamp("created_at").toInstant(),r.getTimestamp("expires_at").toInstant()),hash,Timestamp.from(now));
         return rows.isEmpty()?null:rows.getFirst();
     }
+    public Attempt byFlow(UUID flow) {
+        var rows=jdbc.query("SELECT * FROM mobile_login_attempt WHERE flow_id=? AND launch_consumed_at IS NOT NULL",
+            (r,n)->new Attempt(r.getObject("id",UUID.class),r.getString("provider"),r.getString("pkce_challenge"),
+                r.getBoolean("remember_me"),r.getString("return_id"),r.getString("return_uri"),r.getString("profile_uri"),
+                r.getString("fallback_uri"),r.getTimestamp("created_at").toInstant(),r.getTimestamp("expires_at").toInstant()),flow);
+        return rows.isEmpty()?null:rows.getFirst();
+    }
     public boolean consume(UUID id,UUID flow,Instant now) {
         return jdbc.update("""
             UPDATE mobile_login_attempt SET launch_consumed_at=?,flow_id=?

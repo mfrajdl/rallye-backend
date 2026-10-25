@@ -75,9 +75,15 @@ public class ExternalFlowService {
         @Override public String toString(){return "VerifiedCallback[redacted]";}
     }
     public Verified verifyWebCallback(ExternalProviders.Provider provider,String state,String correlation,String code) {
+        return verifyCallback(provider,state,correlation,code,false);
+    }
+    public Verified verifyCallback(ExternalProviders.Provider provider,String state,String correlation,String code) {
+        return verifyCallback(provider,state,correlation,code,true);
+    }
+    private Verified verifyCallback(ExternalProviders.Provider provider,String state,String correlation,String code,boolean allowMobile) {
         if(!secret(state) || !secret(correlation) || code==null || code.isBlank() || code.length()>4096)throw invalid();
         var flow=tx.execute(status->{var f=store.find(secrets.hash(state));check(f,provider,correlation);return f;});
-        if(flow.challenge()!=null)throw new AuthFailure(503,"EXTERNAL_MOBILE_UNAVAILABLE");
+        if(!allowMobile && flow.challenge()!=null)throw new AuthFailure(503,"EXTERNAL_MOBILE_UNAVAILABLE");
         var client=providers.registration(provider);
         if(!client.getRedirectUri().equals(flow.callbackUri()))throw invalid();
         var proof=verifier.exchange(client,code,state,flow.nonceHash(),provider==ExternalProviders.Provider.GOOGLE?secrets.hash("rallye-oidc-pkce:"+correlation):null);
@@ -89,6 +95,12 @@ public class ExternalFlowService {
         var current=store.find(secrets.hash(verified.state()));
         check(current,ExternalProviders.Provider.valueOf(verified.flow().provider()),verified.correlation());
         if(!store.consume(current.id(),clock.instant()))throw invalid();
+    }
+    @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public ExternalFlowStore.Flow rejectFlow(ExternalProviders.Provider provider,String state,String correlation) {
+        if(!secret(state)||!secret(correlation))throw invalid();
+        var flow=store.find(secrets.hash(state));check(flow,provider,correlation);
+        if(!store.consume(flow.id(),clock.instant()))throw invalid();return flow;
     }
     private void check(ExternalFlowStore.Flow flow,ExternalProviders.Provider provider,String correlation) {
         if(flow==null || !"LOGIN".equals(flow.purpose()) || flow.account()!=null || flow.session()!=null || !flow.provider().equals(provider.name()) || !flow.expiresAt().isAfter(clock.instant())

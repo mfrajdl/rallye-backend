@@ -13,7 +13,8 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 class ExternalLoginServiceTest {
-    ExternalFlowService flows=mock(ExternalFlowService.class);ExternalAccountStore external=mock(ExternalAccountStore.class);
+    ExternalFlowService flows=mock(ExternalFlowService.class);
+    MobileCallbackService mobile=mock(MobileCallbackService.class);ExternalAccountStore external=mock(ExternalAccountStore.class);
     AccountStore accounts=mock(AccountStore.class);AuthService auth=mock(AuthService.class);AuditService audit=mock(AuditService.class);
     SecretTokens secrets=new SecretTokens();Clock clock=Clock.fixed(Instant.parse("2026-10-24T12:00:00Z"),ZoneOffset.UTC);
     AppleTokenVault vault=new AppleTokenVault(new AppleTokenVault.Settings("test",Map.of("test",Base64.getEncoder().encodeToString(new byte[32]))));
@@ -21,11 +22,11 @@ class ExternalLoginServiceTest {
     ExternalLoginService service() {
         when(manager.getTransaction(any())).thenAnswer(c->new SimpleTransactionStatus());
         return new ExternalLoginService(flows,external,accounts,auth,secrets,clock,audit,vault,providers,manager,
-            jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator());
+            jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator(),mobile);
     }
     void callback(ExternalProviders.Provider provider,String email,boolean verified,String name) {
         var f=new ExternalFlowStore.Flow(UUID.randomUUID(),provider.name(),"LOGIN",null,null,"nonce","correlation","https://example.test/callback","https://example.test/return",true,null,clock.instant().plusSeconds(60));
-        when(flows.verifyWebCallback(any(),any(),any(),any())).thenReturn(new ExternalFlowService.Verified(f,new ExternalOidcVerifier.Identity(ExternalProviders.issuer(provider),"subject",email,verified,name,null),"state","cookie"));
+        when(flows.verifyCallback(any(),any(),any(),any())).thenReturn(new ExternalFlowService.Verified(f,new ExternalOidcVerifier.Identity(ExternalProviders.issuer(provider),"subject",email,verified,name,null),"state","cookie"));
     }
     ExternalAccountStore.Registration registration(boolean verified) {
         return new ExternalAccountStore.Registration(UUID.randomUUID(),"GOOGLE","https://accounts.google.com","subject","a@example.test",verified,"Name",true,"https://example.test/return",clock.instant().plusSeconds(900),null);
@@ -95,5 +96,24 @@ class ExternalLoginServiceTest {
         doThrow(new IllegalStateException("injected")).when(audit).record(any(),any(),any());
         assertThrows(IllegalStateException.class,()->service().callback(ExternalProviders.Provider.GOOGLE,"s","c","code",null));
         verify(manager).rollback(any());
+    }    @Test void knownMobileIdentityIssuesOnlyBoundGrantWithoutSessionOrLoginAudit() {
+        callback(ExternalProviders.Provider.GOOGLE,"a@example.test",true,"A");UUID account=UUID.randomUUID();
+        var attempt=new MobileLoginStore.Attempt(UUID.randomUUID(),"GOOGLE",secrets.create(),true,"android","https://app.example.test/mobile","https://web.example.test/profile","https://web.example.test/fallback",clock.instant(),clock.instant().plusSeconds(600));
+        when(mobile.context(any())).thenReturn(attempt);when(mobile.issue(account,attempt)).thenReturn("synthetic-handoff");
+        when(external.account(any(),any(),any())).thenReturn(account);when(accounts.lockAccount(account)).thenReturn(new AccountStore.Account(account,"a@example.test","A","ACTIVE",null));
+        var out=service().callback(ExternalProviders.Provider.GOOGLE,"s","c","code",null);
+        assertEquals("synthetic-handoff",out.handoffCode());assertEquals(attempt.id(),out.requestId());assertNull(out.session());assertNull(out.registrationSecret());
+        verify(accounts,never()).insertSession(any(),any(),anyBoolean(),any(),any());verifyNoInteractions(auth,audit);
+        assertFalse(out.toString().contains(out.handoffCode()));
     }
+    @Test void unknownMobileIdentityUsesBrowserProfileContextAndNeverIssuesGrant() {
+        callback(ExternalProviders.Provider.GOOGLE,"same@example.test",true,null);
+        var attempt=new MobileLoginStore.Attempt(UUID.randomUUID(),"GOOGLE",secrets.create(),false,"android","https://app.example.test/mobile","https://web.example.test/profile","https://web.example.test/fallback",clock.instant(),clock.instant().plusSeconds(600));
+        when(mobile.context(any())).thenReturn(attempt);
+        var out=service().callback(ExternalProviders.Provider.GOOGLE,"s","c","code",null);
+        assertEquals(attempt.profileUri(),out.returnUri());assertNotNull(out.registrationSecret());assertNull(out.handoffCode());assertNull(out.session());
+        verify(mobile,never()).issue(any(),any());verify(external).registration(argThat(r->r.returnUri().equals(attempt.profileUri())),any(),any());
+        verifyNoInteractions(accounts,auth,audit);
+    }
+
 }

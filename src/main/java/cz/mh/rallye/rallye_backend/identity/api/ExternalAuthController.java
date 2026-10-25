@@ -48,9 +48,12 @@ public class ExternalAuthController {
         return ResponseEntity.status(303).location(java.net.URI.create(flow.authorizationUrl())).build();
     }
     @RequestMapping(value="/{provider}/callback",method={RequestMethod.GET,RequestMethod.POST})
-    public ResponseEntity<Void> callback(@PathVariable ExternalProviders.Provider provider,@RequestParam String state,@RequestParam(required=false) String code,
-        @RequestParam(required=false) String error,
+    public ResponseEntity<Void> callback(@PathVariable ExternalProviders.Provider provider,
         HttpServletRequest request,HttpServletResponse response) {
+        String state=LaunchTicketPrivacyFilter.parameter(request,"state");
+        String code=LaunchTicketPrivacyFilter.parameter(request,"code");
+        String error=LaunchTicketPrivacyFilter.parameter(request,"error");
+        if(state==null)throw new AuthFailure(400,"INVALID_REQUEST");
         if((provider==ExternalProviders.Provider.APPLE)!=request.getMethod().equals("POST"))throw new AuthFailure(400,"EXTERNAL_CALLBACK_INVALID");
         throttle.check("external-callback","",request.getRemoteAddr());
         String correlation=null;
@@ -60,10 +63,17 @@ public class ExternalAuthController {
         if(request.getParameterValues("state").length!=1 || (code!=null && request.getParameterValues("code").length!=1)
             || (error!=null && request.getParameterValues("error").length!=1) || (code==null)==(error==null))throw new AuthFailure(400,"EXTERNAL_STATE_INVALID");
         if(error!=null) {
-            String target=service.rejectWebCallback(provider,state,correlation);
-            return ResponseEntity.status(303).location(org.springframework.web.util.UriComponentsBuilder.fromUriString(target).queryParam("external","failed").build().encode().toUri()).build();
+            var rejected=login.rejectCallback(provider,state,correlation);
+            var redirect=org.springframework.web.util.UriComponentsBuilder.fromUriString(rejected.returnUri()).queryParam("external","failed");
+            if(rejected.requestId()!=null)redirect.queryParam("requestId",rejected.requestId());
+            return ResponseEntity.status(303).location(redirect.build().encode().toUri()).build();
         }
-        var outcome=login.callback(provider,state,correlation,code,appleName(provider,request.getParameter("user")));
+        var outcome=login.callback(provider,state,correlation,code,appleName(provider,LaunchTicketPrivacyFilter.parameter(request,"user")));
+        if(outcome.handoffCode()!=null) {
+            clearCorrelation(provider,response);
+            return ResponseEntity.status(303).location(org.springframework.web.util.UriComponentsBuilder.fromUriString(outcome.returnUri())
+                .queryParam("code",outcome.handoffCode()).queryParam("requestId",outcome.requestId()).build().encode().toUri()).build();
+        }
         if(outcome.session()!=null)cookies.set(response,outcome.session().secret(),outcome.session().principal().rememberMe());
         if(outcome.registrationSecret()!=null)response.addHeader("Set-Cookie",registrationCookie(outcome.registrationSecret(),ExternalLoginService.COMPLETION_LIFE.getSeconds()).toString());
         response.addHeader("Set-Cookie",ResponseCookie.from(cookie(provider),"").secure(true).httpOnly(true).sameSite("None")
@@ -71,6 +81,10 @@ public class ExternalAuthController {
         String result=outcome.session()!=null?"signed-in":"complete-profile";
         return ResponseEntity.status(303).location(org.springframework.web.util.UriComponentsBuilder.fromUriString(outcome.returnUri())
             .queryParam("external",result).build().encode().toUri()).build();
+    }
+    private static void clearCorrelation(ExternalProviders.Provider provider,HttpServletResponse response) {
+        response.addHeader("Set-Cookie",ResponseCookie.from(cookie(provider),"").secure(true).httpOnly(true).sameSite("None")
+            .path("/api/v1/auth/external/"+provider.name()+"/callback").maxAge(0).build().toString());
     }
     public record Completion(@NotBlank @jakarta.validation.constraints.Email @Size(max=254) String email,@NotBlank @Size(max=200) String displayName) {}
     @GetMapping("/registrations/current")

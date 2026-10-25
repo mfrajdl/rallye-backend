@@ -96,7 +96,7 @@ class MobileLoginIT {
         assertNull(jdbc.queryForObject("SELECT launch_consumed_at FROM mobile_login_attempt WHERE id=?",java.sql.Timestamp.class,started.requestId()));
         mobile.launch(ticket(started));assertEquals(1,flowCount(started.requestId()));
     }
-    @Test void appleLaunchKeepsFormPostAndMobileCallbackRemainsUnavailableBeforeExchange() {
+    @Test void appleLaunchKeepsFormPostAndWebOnlyVerifierRejectsMobileFlow() {
         var started=mobile.start(ExternalProviders.Provider.APPLE,ExternalFlowService.Purpose.LOGIN,"android",false,secrets.create());
         var launched=mobile.launch(ticket(started));assertTrue(launched.flow().authorizationUrl().contains("response_mode=form_post"));
         String state=org.springframework.web.util.UriComponentsBuilder.fromUriString(launched.flow().authorizationUrl()).build().getQueryParams().getFirst("state");
@@ -106,7 +106,7 @@ class MobileLoginIT {
     @Test void reviewedV11AndUnknownNameOrFutureVersionFailClosed() {
         assertFalse(tx().execute(s->facts.forAccount(UUID.randomUUID())).historical());
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V11__unknown.sql' WHERE version='11'");assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
-        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='12' WHERE version='11'");assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
+        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='13' WHERE version='11'");assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
     }
     @Test void databaseRejectsWrongLifetimeAndHalfConsumedAttempt() {
         var started=start();

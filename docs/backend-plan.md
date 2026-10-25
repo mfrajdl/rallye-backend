@@ -404,3 +404,14 @@ Bezpečnostní revize 3c.4a.1: [ticket privacy report](review-launch-privacy-3c4
 
 
 Uzavření 3c.4a.1: implementačně dokončena a lokálně ověřena v popsaném rozsahu, včetně uživatelem potvrzené Postman 21 s privacy kontrolami. Zbytek 3c.4a (včetně 3c.4a.2), skutečná mobilní integrace 3c.4b a Apple revokace 3c.5 zůstávají plánované.
+
+
+### Realizace 3c.4a.2 – mobilní callback / handoff (implementačně dokončeno a lokálně ověřeno)
+
+[Kontrakt a testy](mobile-callback-3c4a2.md): stávající Google/Apple callback sdílí validaci důkazu a browserovou registraci. Pro známou ACTIVE identitu uloží pouze hash 60s MOBILE grantu, vázaného na konkrétní spuštěný pokus/flow/challenge a účet. Nová V12 přidává povinné UNIQUE attempt_id do existující tabulky grantů; legacy nepřiřazená data se bezpečně odmítnou, nemigrují odhadem ani nemažou. V1–V11 beze změny, přesný guard přijímá očekávanou V12, budoucí fixture používají V13.
+
+Consume state, kontrola účtu, Apple materiál a grant jsou atomické pod společným control lockem; session ani LOGIN_SUCCEEDED se nevydávají. Callback 303 obsahuje jen code/requestId, nová identita pouze omezený browserový profilový proces a vyžaduje nový LOGIN po dokončení. Privacy filtr nyní chrání oba callbacky, parametry a diagnostické Location/Set-Cookie. Cancellation grant odstraní i při anonymizaci; nepřeváže jej na nový účet.
+
+Verify bez DB: BUILD SUCCESS, 317 testů. Nové MobileCallbackIT má 15 připravených PostgreSQL scénářů, opravený PostgreSQL běh uživatel potvrdil jako BUILD SUCCESS (2026-10-25); Codex jej nespouštěl. Nová Postman 23 je lokální negativní sada bez providerů, uživatel potvrdil All Passed. HTTPS/provider/browser/registrační stránka zůstávají integrační závislosti 3c.4b; exchange/Bearer a 3c.4a.3 nejsou implementovány. Předchozí odstavce o neimplementované 3c.4a.2 zachycují uzavření 3c.4a.1, aktuální stav je tento oddíl.
+
+Uzavření 3c.4a.2 (2026-10-25): implementačně dokončena a lokálně ověřena. Codex verify bez DB: 317 testů, BUILD SUCCESS. Uživatel potvrdil PostgreSQL verify včetně opravy SingleIdentityIT (BUILD SUCCESS) a Postman složku 23 (All Passed). Skutečné Google/Apple přihlášení přes HTTPS, browser/proxy a profilová stránka zůstávají neověřené. Exchange a mobilní Bearer relace patří až do nezahájené 3c.4a.3.

@@ -35,8 +35,12 @@ class PreRaceAccountParticipationFactsTest {
         when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(List.of("1","2","3","4","5","6","7","8","9","10","11"));
         assertFalse(facts.forAccount(UUID.randomUUID()).historical());
     }
+    @Test void reviewedV12SequenceIsAccepted() {
+        when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(List.of("1","2","3","4","5","6","7","8","9","10","11","12"));
+        assertFalse(facts.forAccount(UUID.randomUUID()).historical());
+    }
     @Test void futureMissingFailedAndRepeatableVersionsAreRejected() {
-        for(var versions:List.of(List.of("1","2","3","4","5","6","7","8","9","10","11","12"),List.of("1","2","3","4","5"),List.of("1","2","3","4","5","unsupported"),List.<String>of())) {
+        for(var versions:List.of(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13"),List.of("1","2","3","4","5"),List.of("1","2","3","4","5","unsupported"),List.<String>of())) {
             when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(versions);
             var error=assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));assertEquals(503,error.status());assertEquals("PARTICIPATION_CHECK_UNAVAILABLE",error.code());
         }
