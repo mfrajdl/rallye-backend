@@ -208,7 +208,7 @@ class AccountCancellationServiceIT {
     }
     @Test void unknownSchemaVersionFailsClosedBeforeChanges() {
         int rank=jdbc.queryForObject("SELECT max(installed_rank)+1 FROM flyway_schema_history",Integer.class);
-        jdbc.update("INSERT INTO flyway_schema_history(installed_rank,version,description,type,script,installed_by,execution_time,success) VALUES (?,'13','Future test migration','SQL','V13__future.sql',current_user,0,true)",rank);
+        jdbc.update("INSERT INTO flyway_schema_history(installed_rank,version,description,type,script,installed_by,execution_time,success) VALUES (?,'14','Future test migration','SQL','V14__future.sql',current_user,0,true)",rank);
         try {
             assertEquals("PARTICIPATION_CHECK_UNAVAILABLE",error(()->service.self(owner.principal(),"test-password",UUID.randomUUID()),503));
             assertTrue(exists(owner.id()));assertNotNull(auth.authenticate(owner.session().secret()));assertEquals(0,cancellations(owner.id()));

@@ -656,3 +656,21 @@ Uživatel po dokončení implementace potvrdil `.\mvnw.cmd -Pit verify` proti `r
 ### Uzavření 3c.4a.3
 
 Etapa je implementačně dokončena a lokálně ověřena. Codex: verify bez DB BUILD SUCCESS, 335 testů, validní Postman Collection v2.1/222 skriptů a git diff --check. Uživatel: PostgreSQL verify BUILD SUCCESS včetně MobileExchangeIT a Postman složka 24 All Passed. Skutečné Google/Apple přihlášení přes HTTPS a pozitivní Postman složka 25 dosud ověřeny nejsou; nevyvozují se ze simulovaných providerů. 3c.4b ani 3c.5 se nezahajují. Starší záznamy o čekajících testech popisují průběh před tímto potvrzením.
+
+## 3c.5a.1 – přechodný perzistentní základ Apple revokace
+
+Codex `verify` bez PostgreSQL na Microsoft JDK 21.0.12.1: **BUILD SUCCESS, 349 testů, 0 failures/errors/skipped**, JAR sestaven. Nové unit testy ověřují interní validaci a úplné vazby, redakci, AES/AAD předání, pořadí operací, duplicitní enqueue a CAS/lease vstupy. Přesný guard přidává pouze V13, ne libovolnou budoucí migraci.
+
+AppleRevocationIT má **19 připravených PostgreSQL scénářů**, vlastní náhodné schéma a TestDatabaseInitializer/rallye_test guard. Pokrývá SQL invarianty a vlastníky, ochranu šifrovaného materiálu, odložené kontroly a rollback, idempotentní/souběžné enqueue, souběžné claim, due hranici a takeover lease, stale výsledky, BLOCKED retry, zakázané SQL dokončení, V13 migration guard a kompatibilní syntetický upgrade V12. Tyto testy Codex nespouštěl, pouze zkompiloval. Úspěch předchozí 3c.4a.3 se na V13 nepřenáší.
+
+Uživatel spustí podle stávajících bezpečnostních pravidel proti rallye_test:
+
+```powershell
+.\mvnw.cmd -Pit verify
+```
+
+Žádný Postman request nebo veřejné API nepřibylo. Původní writer credential/associate/purge zůstává nezměněný; globální NOT NULL case vazba přijde až s napojením procesů ve V14/3c.5a.2. **3c.5a.1 se nesmí samostatně nasadit se skutečně povolenými Apple autorizacemi.** [Rozsah, model a omezení](apple-revocation-3c5.md).
+
+Poznámka k běhům: jeden meziběh se 349 testy měl jediné selhání existujícího AuditExportHttpTest.adminStreamsCsvWithDownloadHeadersAndAllFilters (500; ConcurrentModificationException při souběžném zápisu hlaviček MockHttpServletResponse). Nové testy prošly. Beze změny kódu auditu byl celý verify zopakován: **BUILD SUCCESS, 349 testů, 0 failures/errors/skipped**. Tím se nedokládá oprava tohoto ojedinělého testového souběhu; zůstává odděleným pozorováním.
+
+Uzavření 3c.5a.1: uživatel potvrdil `.\mvnw.cmd -Pit verify` proti `rallye_test` jako **BUILD SUCCESS**, včetně nových AppleRevocationIT. Jde o uživatelské ověření, nikoli běh Codexu. Skutečné Apple/HTTPS ověření nebylo provedeno; zákaz samostatného nasazení před 3c.5a.2/V14 zůstává platný.

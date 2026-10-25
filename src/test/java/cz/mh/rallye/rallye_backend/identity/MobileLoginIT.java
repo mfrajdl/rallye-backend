@@ -106,7 +106,7 @@ class MobileLoginIT {
     @Test void reviewedV11AndUnknownNameOrFutureVersionFailClosed() {
         assertFalse(tx().execute(s->facts.forAccount(UUID.randomUUID())).historical());
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V11__unknown.sql' WHERE version='11'");assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
-        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='13' WHERE version='11'");assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
+        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='14' WHERE version='11'");assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
     }
     @Test void databaseRejectsWrongLifetimeAndHalfConsumedAttempt() {
         var started=start();

@@ -70,7 +70,7 @@ class ExternalAuthIT {
         assertFalse(tx().execute(s->facts.forAccount(UUID.randomUUID())).historical());
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V8__unknown.sql' WHERE version='8'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
-        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='13' WHERE version='8'");
+        tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET version='14' WHERE version='8'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
     }
     @Test void migrationUpgradesV7AndRejectsDuplicateProviderWithoutDeletingData() {
