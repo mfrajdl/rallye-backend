@@ -20,12 +20,14 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                             && (!"8".equals(rs.getString("version")) || "V8__external_auth_foundation.sql".equals(rs.getString("script")))
                             && (!"9".equals(rs.getString("version")) || "V9__external_web_registration.sql".equals(rs.getString("script")))
                             && (!"10".equals(rs.getString("version")) || "V10__single_immutable_identity.sql".equals(rs.getString("script")))
+                            && (!"11".equals(rs.getString("version")) || "V11__external_mobile_login.sql".equals(rs.getString("script")))
                             ?rs.getString("version"):"unsupported");
             if(!versions.equals(List.of("1","2","3","4","5","6"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9"))
-                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10")))throw unavailable();
+                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10"))
+                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11")))throw unavailable();
             return new Facts(false,false);
         } catch(org.springframework.dao.DataAccessException failure) {throw new AuthFailure(503,"PARTICIPATION_CHECK_UNAVAILABLE",failure);}
     }

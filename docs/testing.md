@@ -615,3 +615,15 @@ Uživatel potvrdil složku 19: 35 Passed / 0 Failed. Složka 13 s No response za
 Etapa 3c.3b je implementačně dokončená a lokálně otestovaná. Dřívější verify Codexu: BUILD SUCCESS, 284 testů. PostgreSQL verify: uživatelem potvrzené BUILD SUCCESS (Codex jej nespouštěl). Postman složka 19: uživatelem potvrzeno 35 Passed / 0 Failed. Samostatný `3b4b Self cancellation - DELETE TEST ACCOUNT (204)`: skutečné 204 No Content, prázdné tělo, následné zneplatnění relace a odmítnutí loginu původními údaji. Jednorázové ochranné povolení se vrátilo na false. Dřívější No response ani historická selhání nebyla započítána jako úspěch; nahradilo je toto potvrzené opakování.
 
 Skutečné GOOGLE/APPLE zrušení a pozitivní externí scénáře složky 20 zůstávají manuálně neověřené a vyžadují HTTPS testovací prostředí. Apple revokace patří do 3c.5. Při uzavření byly upraveny pouze dokumentační výsledky; automatické testy se znovu neopakovaly.
+
+
+## 3c.4a.1 – mobilní autorizační pokus / browser launch
+
+Cílené unit/HTTP testy: BUILD SUCCESS, 41 testů. Celé verify Codexu na Microsoft JDK 21.0.12.1: BUILD SUCCESS, 296 testů, 0 failures/errors/skipped; PostgreSQL IT pouze zkompilované. Připraveno 10 nových MobileLoginIT scénářů ve vlastním náhodném schématu přes TestDatabaseInitializer. Nový PostgreSQL běh uživatel následně potvrdil: `.\mvnw.cmd -Pit verify` proti rallye_test – **BUILD SUCCESS**. Codex jej nespouštěl; celkový počet testů tohoto běhu nebyl sdělen. Deset nových MobileLoginIT scénářů včetně upgradu V10 → V11, expirace, souběhu a rollbacku je součástí potvrzeného ověření. Nejde o převzetí úspěchu předchozí etapy.
+
+Postman 21: šest lokálních negativních požadavků bez účtu a bez providerů. Postman 22: samostatný připravený HTTPS start/launch/replay s vypnutým následováním redirectů. Žádné destruktivní operace ani Bearer exchange; složku 21 následně uživatel skutečně ověřil, včetně nových privacy asercí (All Passed). Složka 22 zatím spuštěna nebyla. Přesné předpoklady: [mobile-bootstrap-3c4a1.md](mobile-bootstrap-3c4a1.md). V11 zachovává V1–V10 a upravuje přesný guard; navazující handoff zůstává mimo rozsah.
+
+
+### Bezpečnostní revize ticketu 3c.4a.1
+
+Uživatel potvrdil Postman 21 (všechny testy prošly) a PostgreSQL verify před revizí. Následná oprava privacy hlaviček pro chyby před controllerem a redakce request/access logů má nový Codex verify bez DB: **BUILD SUCCESS, 306 testů, 0 failures/errors/skipped**. Obsahuje skutečný izolovaný embedded Tomcat access log test, MVC TRACE s request details a bezpečnou diagnostiku výjimek. PostgreSQL testy se nyní neopakovaly; migrace/služby zůstaly touto opravou beze změny. Uživatel následně potvrdil opakování celé Postman 21: All Passed včetně nových no-store/no-referrer asercí. HTTPS 22 až ve zvlášť připraveném prostředí. Skutečná absence Referer v browserovém provider požadavku a proxy logy nejsou lokálním HTTP testem prokázány. [Report a provozní podmínky](review-launch-privacy-3c4a1.md).

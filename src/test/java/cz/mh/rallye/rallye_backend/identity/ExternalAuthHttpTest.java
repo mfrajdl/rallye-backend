@@ -17,12 +17,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 @WebMvcTest(ExternalAuthController.class)
-@Import({AuthConfiguration.class,AuthCookies.class,ApiErrors.class})
+@Import({AuthConfiguration.class,AuthCookies.class,ApiErrors.class,LaunchTicketPrivacyFilter.class})
 class ExternalAuthHttpTest {
     @Autowired MockMvc mvc;
     @MockitoBean AuthService auth;
     @MockitoBean LoginThrottle throttle;
     @MockitoBean ExternalFlowService flows;
+    @MockitoBean MobileLoginService mobile;
     @MockitoBean ExternalLoginService login;
     String start="/api/v1/auth/external/GOOGLE/requests";
     @Test void removedPurposesAreRejectedBeforeAnyFlowStarts() throws Exception {
@@ -116,4 +117,96 @@ class ExternalAuthHttpTest {
             .andExpect(status().isUnauthorized());
         verifyNoInteractions(flows);
     }
+    @Test void mobileStartIsPublicButDoesNotSetBrowserOrSessionCookies() throws Exception {
+        when(mobile.start(any(),any(),any(),anyBoolean(),any())).thenReturn(new MobileLoginService.Started(java.util.UUID.randomUUID(),"https://backend.example.test/api/v1/auth/external/mobile/launch?ticket=opaque",Instant.now().plusSeconds(600),"MOBILE_BOOTSTRAP"));
+        mvc.perform(post(start).header("X-Rallye-Client","mobile").contentType("application/json")
+            .content("{\"purpose\":\"LOGIN\",\"returnId\":\"android\",\"mobileChallenge\":\""+"a".repeat(43)+"\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.stage").value("MOBILE_BOOTSTRAP"))
+            .andExpect(jsonPath("$.requestId").exists()).andExpect(jsonPath("$.browserStartUrl").exists())
+            .andExpect(jsonPath("$.token").doesNotExist()).andExpect(cookie().doesNotExist(AuthCookies.NAME))
+            .andExpect(cookie().doesNotExist("RALLYE_OIDC_GOOGLE")).andExpect(header().string("Cache-Control","no-store"))
+            .andExpect(header().string("Referrer-Policy","no-referrer"));
+        verifyNoInteractions(flows,login);
+    }
+    @Test void mobileChallengeCannotBeSentThroughTheWebBranchAndLongChallengeIsInvalid() throws Exception {
+        for(String challenge:java.util.List.of("a".repeat(43),"a".repeat(44)))
+            mvc.perform(post(start).with(csrf()).contentType("application/json").content("{\"purpose\":\"LOGIN\",\"returnId\":\"web\",\"mobileChallenge\":\""+challenge+"\"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(flows,mobile,login);
+    }
+    @Test void mobileStartCannotUseCookieAuthenticationToBypassCsrf() throws Exception {
+        mvc.perform(post(start).header("X-Rallye-Client","mobile").cookie(new Cookie(AuthCookies.NAME,new SecretTokens().create()))
+            .contentType("application/json").content("{\"purpose\":\"LOGIN\",\"returnId\":\"android\"}"))
+            .andExpect(status().isForbidden());
+        mvc.perform(post(start).with(csrf()).header("X-Rallye-Client","mobile").cookie(new Cookie(AuthCookies.NAME,new SecretTokens().create()))
+            .contentType("application/json").content("{\"purpose\":\"LOGIN\",\"returnId\":\"android\"}"))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("AMBIGUOUS_CREDENTIALS"));
+        verifyNoInteractions(mobile);
+    }
+    @Test void launchIsPublicAndSetsOnlySecureBrowserCorrelationAfterServiceSuccess() throws Exception {
+        String ticket=new SecretTokens().create();
+        var flow=new ExternalFlowService.Started("https://accounts.google.com/example?state=opaque","correlation",Instant.now().plusSeconds(300));
+        when(mobile.launch(ticket)).thenReturn(new MobileLoginService.Launched(ExternalProviders.Provider.GOOGLE,flow));
+        mvc.perform(get("/api/v1/auth/external/mobile/launch").param("ticket",ticket))
+            .andExpect(status().isSeeOther()).andExpect(header().string("Location",flow.authorizationUrl()))
+            .andExpect(header().string("Referrer-Policy","no-referrer")).andExpect(header().string("Cache-Control","no-store"))
+            .andExpect(cookie().secure("RALLYE_OIDC_GOOGLE",true)).andExpect(cookie().httpOnly("RALLYE_OIDC_GOOGLE",true))
+            .andExpect(cookie().sameSite("RALLYE_OIDC_GOOGLE","None")).andExpect(cookie().path("RALLYE_OIDC_GOOGLE","/api/v1/auth/external/GOOGLE/callback"))
+            .andExpect(cookie().doesNotExist(AuthCookies.NAME));
+        verifyNoInteractions(login,flows);
+    }
+    @Test void invalidAndDuplicateTicketsAndRedirectInjectionNeverSetCookies() throws Exception {
+        when(mobile.launch(any())).thenThrow(new AuthFailure(400,"EXTERNAL_MOBILE_REQUEST_INVALID"));
+        mvc.perform(get("/api/v1/auth/external/mobile/launch").param("ticket","bad"))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("EXTERNAL_MOBILE_REQUEST_INVALID"))
+            .andExpect(header().doesNotExist("Set-Cookie"));
+        clearInvocations(mobile);
+        mvc.perform(get("/api/v1/auth/external/mobile/launch").param("ticket","a","b")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/auth/external/mobile/launch").param("ticket","a").param("redirect_uri","https://attacker.test"))
+            .andExpect(status().isBadRequest());
+        verifyNoInteractions(mobile);
+    }
+
+    @Test void allLaunchErrorsHavePrivacyHeadersBeforeControllerOrSecurity() throws Exception {
+        String path="/api/v1/auth/external/mobile/launch";
+        mvc.perform(get(path)).andExpect(status().isBadRequest())
+            .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("Referrer-Policy","no-referrer"));
+        mvc.perform(get(path).param("ticket","x").header("Authorization","Bearer invalid"))
+            .andExpect(status().isUnauthorized()).andExpect(header().string("Cache-Control","no-store"))
+            .andExpect(header().string("Referrer-Policy","no-referrer"));
+        mvc.perform(post(path).param("ticket","x")).andExpect(status().isForbidden())
+            .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("Referrer-Policy","no-referrer"));
+        for(int status:java.util.List.of(400,429,503)) {
+            doThrow(new AuthFailure(status,"SAFE_ERROR")).when(mobile).launch(any());
+            mvc.perform(get(path).param("ticket","sensitive-fixture")).andExpect(status().is(status))
+                .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("Referrer-Policy","no-referrer"))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("sensitive-fixture"))))
+                .andExpect(header().doesNotExist("Location"));
+        }
+    }
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    @Test void unexpectedFailureKeepsSafeDiagnosticsAndNeverReflectsTicket(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        when(mobile.launch(any())).thenThrow(new IllegalStateException("synthetic-launch-ticket-must-not-leak"));
+        mvc.perform(get("/api/v1/auth/external/mobile/launch").param("ticket","synthetic-launch-ticket-must-not-leak"))
+            .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+            .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("Referrer-Policy","no-referrer"))
+            .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("synthetic-launch-ticket-must-not-leak"))))
+            .andExpect(header().doesNotExist("Location"));
+        org.junit.jupiter.api.Assertions.assertTrue(output.toString().contains("java.lang.IllegalStateException"));
+        org.junit.jupiter.api.Assertions.assertFalse(output.toString().contains("synthetic-launch-ticket-must-not-leak"));
+    }
+
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    @Test void mvcTraceWithRequestDetailsDoesNotLogTicket(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        String ticket="synthetic-mvc-private-ticket";
+        var logger=(ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger(mvc.getDispatcherServlet().getClass());
+        var before=logger.getLevel();mvc.getDispatcherServlet().setEnableLoggingRequestDetails(true);logger.setLevel(ch.qos.logback.classic.Level.TRACE);
+        try {
+            doThrow(new AuthFailure(400,"EXTERNAL_MOBILE_REQUEST_INVALID")).when(mobile).launch(ticket);
+            mvc.perform(get("/api/v1/auth/external/mobile/launch").queryParam("ticket",ticket))
+                .andExpect(status().isBadRequest());
+            org.junit.jupiter.api.Assertions.assertFalse(output.toString().contains(ticket));
+        } finally {logger.setLevel(before);mvc.getDispatcherServlet().setEnableLoggingRequestDetails(false);}
+    }
+
 }

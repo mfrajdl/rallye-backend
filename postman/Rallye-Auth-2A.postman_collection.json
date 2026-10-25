@@ -347,6 +347,21 @@
       "key": "selfCancellationSucceededAccountId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "mobileProvider",
+      "value": "GOOGLE",
+      "type": "string"
+    },
+    {
+      "key": "mobileReturnId",
+      "value": "android",
+      "type": "string"
+    },
+    {
+      "key": "mobileBootstrapPrepared",
+      "value": "false",
+      "type": "string"
     }
   ],
   "event": [
@@ -355,6 +370,11 @@
       "script": {
         "type": "text/javascript",
         "exec": [
+          "// Bootstrap tests are anonymous protocol requests, never a Bearer regression session.",
+          "if (pm.info.requestName.startsWith('3c4a1 ')) {",
+          "    pm.request.headers.remove('Authorization'); pm.request.headers.remove('Cookie'); pm.request.headers.remove('X-XSRF-TOKEN');",
+          "    pm.request.headers.upsert({key:'X-Rallye-Client',value:'mobile'});",
+          "} else {",
           "// Opt in per environment; the default cookie/CSRF flow remains unchanged.",
           "const regressionMode = pm.environment.get('regressionAuthMode') || 'cookie';",
           "const regressionLogin = pm.info.requestName === '3b6 Login isolated mobile session';",
@@ -394,6 +414,7 @@
           "            });",
           "        });",
           "    }",
+          "}",
           "}"
         ]
       }
@@ -5186,6 +5207,359 @@
                 "exec": [
                   "pm.test('HTTP 204',()=>pm.response.to.have.status(204));",
                   "pm.test('No response credentials',()=>pm.expect(pm.response.text()).to.eql(''));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "21 Mobile bootstrap 3c.4a.1 - LOCAL disabled providers",
+      "description": "Run only with providers disabled. Anonymous requests, Cookie Jar disabled, no session or real provider calls. Does not create accounts or sessions. See docs/mobile-bootstrap-3c4a1.md.",
+      "item": [
+        {
+          "name": "3c4a1 Disabled GOOGLE mobile start",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"LOGIN\",\n  \"returnId\": \"android\",\n  \"rememberMe\": false,\n  \"mobileChallenge\": \"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 503',()=>pm.response.to.have.status(503));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_PROVIDER_DISABLED'));",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a1 Disabled APPLE mobile start",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/APPLE/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"LOGIN\",\n  \"returnId\": \"android\",\n  \"rememberMe\": false,\n  \"mobileChallenge\": \"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 503',()=>pm.response.to.have.status(503));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_PROVIDER_DISABLED'));",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a1 Invalid launch ticket",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/launch?ticket=invalid"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_MOBILE_REQUEST_INVALID'));",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a1 Missing launch ticket",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/launch"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a1 Duplicate launch ticket",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/launch?ticket=a&ticket=b"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a1 Missing mobile challenge",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/GOOGLE/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"LOGIN\",\n  \"returnId\": \"android\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "22 Mobile bootstrap 3c.4a.1 - PREPARED HTTPS no provider navigation",
+      "description": "Requires explicitly configured HTTPS provider and mobile allowlist. Not a LOCAL disabled-provider runner. No redirects followed: launch returns provider URL but no provider account or token exchange is used. Run start -> launch -> replay. Uses a public RFC7636 fixture challenge; no handoff or Bearer exchange. Runtime launch URL includes a secret; never export environment.",
+      "item": [
+        {
+          "name": "3c4a1 Prepared mobile start",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/{{mobileProvider}}/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"LOGIN\",\n  \"returnId\": \"{{mobileReturnId}}\",\n  \"rememberMe\": false,\n  \"mobileChallenge\": \"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.unset('mobileBrowserStartUrl'); pm.environment.unset('mobileRequestId');",
+                  "if(String(pm.variables.get('mobileBootstrapPrepared'))!=='true'||!['GOOGLE','APPLE'].includes(pm.variables.get('mobileProvider'))){pm.test('Prepared HTTPS configuration explicitly selected',()=>{throw new Error('Set mobileBootstrapPrepared=true and mobileProvider=GOOGLE or APPLE only after configuring HTTPS mobile targets/provider.');});pm.execution.skipRequest();throw new Error('Prepared configuration required');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "pm.test('Mobile bootstrap only',()=>{const b=pm.response.json();pm.expect(b.stage).to.eql('MOBILE_BOOTSTRAP');pm.expect(b.requestId).to.match(/^[0-9a-f-]{36}$/);pm.expect(b.token).to.equal(undefined);});",
+                  "if(pm.response.code===200){const b=pm.response.json();pm.environment.set('mobileBrowserStartUrl',b.browserStartUrl);pm.environment.set('mobileRequestId',b.requestId);}",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a1 Prepared launch without following provider",
+          "protocolProfileBehavior": {
+            "disableCookies": false,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{mobileBrowserStartUrl}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const url=pm.environment.get('mobileBrowserStartUrl');const base=pm.variables.get('baseUrl').replace(/[/]+$/,'');",
+                  "if(!url||!base.startsWith('https://')||!url.startsWith(base+'/api/v1/auth/external/mobile/launch?ticket=')){pm.test('Start has supplied the expected HTTPS launch URL',()=>{throw new Error('Run prepared mobile start first; baseUrl must match configured HTTPS launch origin.');});pm.execution.skipRequest();throw new Error('Valid launch URL required');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 303',()=>pm.response.to.have.status(303));",
+                  "pm.test('Only secure browser correlation, no Rallye session',()=>{const h=pm.response.headers.all().filter(x=>x.key.toLowerCase()==='set-cookie').map(x=>x.value).join(';');pm.expect(h).to.include('RALLYE_OIDC_');pm.expect(h).to.include('Secure');pm.expect(h).to.include('HttpOnly');pm.expect(h).not.to.include('RALLYE_SESSION=');});",
+                  "pm.test('Redirect is provider authorization only',()=>pm.expect(pm.response.headers.get('Location')).to.match(/^https:\\/\\/(accounts\\.google\\.com\\/o\\/oauth2\\/v2\\/auth|appleid\\.apple\\.com\\/auth\\/authorize)\\?/));",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
+                  "pm.test('Launch ticket is absent from provider Location',()=>{const ticket=pm.environment.get('mobileBrowserStartUrl').split('ticket=')[1];pm.expect(pm.response.headers.get('Location')).not.to.include(ticket);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a1 Prepared replay launch rejected",
+          "protocolProfileBehavior": {
+            "disableCookies": false,
+            "followRedirects": false
+          },
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{mobileBrowserStartUrl}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const url=pm.environment.get('mobileBrowserStartUrl');const base=pm.variables.get('baseUrl').replace(/[/]+$/,'');",
+                  "if(!url||!base.startsWith('https://')||!url.startsWith(base+'/api/v1/auth/external/mobile/launch?ticket=')){pm.test('Start has supplied the expected HTTPS launch URL',()=>{throw new Error('Run prepared mobile start first; baseUrl must match configured HTTPS launch origin.');});pm.execution.skipRequest();throw new Error('Valid launch URL required');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_MOBILE_REQUEST_INVALID'));",
+                  "pm.test('Privacy headers prevent caching and referrer leakage',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});"
                 ]
               }
             }

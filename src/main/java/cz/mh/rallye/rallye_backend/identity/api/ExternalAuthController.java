@@ -17,15 +17,35 @@ public class ExternalAuthController {
     public static final String REGISTRATION_COOKIE="RALLYE_EXTERNAL_REG";
     private final ExternalFlowService service; private final LoginThrottle throttle;
     private final ExternalLoginService login;private final AuthCookies cookies;
-    public ExternalAuthController(ExternalFlowService service,LoginThrottle throttle,ExternalLoginService login,AuthCookies cookies){this.service=service;this.throttle=throttle;this.login=login;this.cookies=cookies;}
+    private final MobileLoginService mobile;private final java.time.Clock clock;
+    public ExternalAuthController(ExternalFlowService service,LoginThrottle throttle,ExternalLoginService login,AuthCookies cookies,MobileLoginService mobile,java.time.Clock clock){this.service=service;this.throttle=throttle;this.login=login;this.cookies=cookies;this.mobile=mobile;this.clock=clock;}
     @PostMapping("/{provider}/requests")
-    public Map<String,Object> start(@PathVariable ExternalProviders.Provider provider,@Valid @RequestBody Start input,
+    public Object start(@PathVariable ExternalProviders.Provider provider,@Valid @RequestBody Start input,
         @AuthenticationPrincipal AuthService.Principal actor,HttpServletRequest request,HttpServletResponse response) {
         throttle.check("external-start",actor==null?"":actor.accountId().toString(),request.getRemoteAddr());
+        response.setHeader("Referrer-Policy","no-referrer");
+        if("mobile".equals(request.getHeader("X-Rallye-Client"))) {
+            if(AuthCookies.present(request) || request.getHeader("Authorization")!=null)throw new AuthFailure(400,"AMBIGUOUS_CREDENTIALS");
+            return mobile.start(provider,input.purpose(),input.returnId(),Boolean.TRUE.equals(input.rememberMe()),input.mobileChallenge());
+        }
+        if(input.mobileChallenge()!=null)throw new AuthFailure(400,"INVALID_REQUEST");
         var flow=service.start(provider,input.purpose(),actor,input.returnId(),Boolean.TRUE.equals(input.rememberMe()),input.mobileChallenge());
         response.addHeader("Set-Cookie",ResponseCookie.from(cookie(provider),flow.correlation()).secure(true).httpOnly(true).sameSite("None")
             .path("/api/v1/auth/external/"+provider.name()+"/callback").maxAge(ExternalFlowService.FLOW_LIFE).build().toString());
         return Map.of("authorizationUrl",flow.authorizationUrl(),"expiresAt",flow.expiresAt(),"stage","WEB_LOGIN");
+    }
+    @GetMapping("/mobile/launch")
+    public ResponseEntity<Void> launch(HttpServletRequest request,HttpServletResponse response) {
+        response.setHeader("Referrer-Policy","no-referrer");
+        String ticket=LaunchTicketPrivacyFilter.ticket(request);
+        if(request.getParameterMap().size()!=1 || request.getParameterValues("ticket").length!=1)
+            throw new AuthFailure(400,"INVALID_REQUEST");
+        throttle.check("external-mobile-launch","",request.getRemoteAddr());
+        var launched=mobile.launch(ticket);var flow=launched.flow();
+        response.addHeader("Set-Cookie",ResponseCookie.from(cookie(launched.provider()),flow.correlation()).secure(true).httpOnly(true).sameSite("None")
+            .path("/api/v1/auth/external/"+launched.provider().name()+"/callback")
+            .maxAge(java.time.Duration.between(clock.instant(),flow.expiresAt())).build().toString());
+        return ResponseEntity.status(303).location(java.net.URI.create(flow.authorizationUrl())).build();
     }
     @RequestMapping(value="/{provider}/callback",method={RequestMethod.GET,RequestMethod.POST})
     public ResponseEntity<Void> callback(@PathVariable ExternalProviders.Provider provider,@RequestParam String state,@RequestParam(required=false) String code,

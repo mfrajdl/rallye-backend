@@ -9,7 +9,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.core.*;
 
 @Configuration
-@EnableConfigurationProperties(ExternalProviders.Settings.class)
+@EnableConfigurationProperties({ExternalProviders.Settings.class,MobileAuthSettings.class})
 public class ExternalProviders {
     public enum Provider { GOOGLE, APPLE }
     @ConfigurationProperties("rallye.auth.external")

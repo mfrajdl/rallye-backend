@@ -25,11 +25,22 @@ public class ExternalFlowService {
     public Started start(ExternalProviders.Provider provider,Purpose purpose,AuthService.Principal actor,String returnId,boolean remember,String challenge) {
         if(purpose!=Purpose.LOGIN)throw invalid();
         if(challenge!=null && !challenge.matches("[A-Za-z0-9_-]{43}"))throw invalid();
-        var client=providers.registration(provider);String target=providers.returnUri(returnId);
+        providers.registration(provider);
+        String target=providers.returnUri(returnId);
+        return create(provider,UUID.randomUUID(),target,remember,challenge,clock.instant().truncatedTo(ChronoUnit.MILLIS));
+    }
+    @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public Started startMobile(ExternalProviders.Provider provider,UUID id,String target,boolean remember,String challenge,Instant created) {
+        if(challenge==null || !challenge.matches("[A-Za-z0-9_-]{43}") || !created.plus(FLOW_LIFE).isAfter(clock.instant()))
+            throw new AuthFailure(400,"EXTERNAL_MOBILE_REQUEST_INVALID");
+        return create(provider,id,target,remember,challenge,created);
+    }
+    private Started create(ExternalProviders.Provider provider,UUID id,String target,boolean remember,String challenge,Instant now) {
+        var client=providers.registration(provider);
         String state=secrets.create(),nonce=secrets.create(),correlation=secrets.create();
-        Instant now=clock.instant().truncatedTo(ChronoUnit.MILLIS),expires=now.plus(FLOW_LIFE);
+        Instant expires=now.plus(FLOW_LIFE);
         tx.executeWithoutResult(status->{
-            store.insert(new ExternalFlowStore.Flow(UUID.randomUUID(),provider.name(),purpose.name(),null,
+            store.insert(new ExternalFlowStore.Flow(id,provider.name(),Purpose.LOGIN.name(),null,
                 null,secrets.hash(nonce),secrets.hash(correlation),client.getRedirectUri(),target,remember,challenge,expires),secrets.hash(state),now);
         });
         var url=UriComponentsBuilder.fromUriString(client.getProviderDetails().getAuthorizationUri()).queryParam("response_type","code")

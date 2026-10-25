@@ -42,6 +42,7 @@ public class AuthConfiguration {
                             || "mobile".equals(request.getHeader("X-Rallye-Client"));
                 }))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/api/v1/auth/external/mobile/launch").permitAll()
                         .requestMatchers("/api/hello", "/api/v1/auth/csrf", "/api/v1/auth/register",
                                 "/api/v1/auth/email-verifications", "/api/v1/auth/email-verification-requests",
                                 "/api/v1/auth/login", "/api/v1/auth/password-reset-requests",
