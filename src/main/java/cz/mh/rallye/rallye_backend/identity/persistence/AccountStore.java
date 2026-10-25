@@ -23,6 +23,12 @@ public class AccountStore {
                 rs.getString("status"), rs.getString("password_hash"));
     }
     private static <T> T first(List<T> values) { return values.isEmpty() ? null : values.getFirst(); }
+    public String identityProvider(UUID account) {
+        var providers=jdbc.queryForList("SELECT provider FROM user_identity WHERE account_id=?",String.class,account);
+        if(providers.size()!=1 || !List.of("LOCAL","GOOGLE","APPLE").contains(providers.getFirst()))
+            throw new cz.mh.rallye.rallye_backend.identity.application.AuthFailure(503,"ACCOUNT_IDENTITY_UNAVAILABLE");
+        return providers.getFirst();
+    }
     public Account byEmail(String normalizedEmail) {
         return first(jdbc.query("""
                 SELECT a.*, i.password_hash FROM user_account a

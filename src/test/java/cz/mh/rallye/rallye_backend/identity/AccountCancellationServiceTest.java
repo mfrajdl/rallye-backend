@@ -34,6 +34,7 @@ class AccountCancellationServiceTest {
         factory.addAdvice(new TransactionInterceptor(transactions,new AnnotationTransactionAttributeSource()));
         service=(AccountCancellationService)factory.getProxy();
         when(accounts.lockAccount(actor.accountId())).thenReturn(current);
+        when(accounts.identityProvider(any())).thenReturn("LOCAL");
         when(accounts.isActiveSession(actor.sessionId(),actor.accountId(),clock.instant())).thenReturn(true);
         when(roles.administrator(actor.accountId())).thenReturn(true);
         when(roles.count()).thenReturn(2L);
@@ -49,6 +50,36 @@ class AccountCancellationServiceTest {
         verify(audit).record(actor.accountId(),AuditService.Event.ACCOUNT_DELETED,actor.accountId());
         verify(commands,never()).save(any(),any(),any(),any(),any(),any(),any());
         assertEquals(1,transactions.commits);
+    }
+    @Test void externalConfirmationIsRequiredAndDoesNotVerifyPassword() {
+        for(String provider:java.util.List.of("GOOGLE","APPLE")) {
+            when(accounts.identityProvider(any())).thenReturn(provider);
+            assertEquals("ACCOUNT_CANCELLATION_CONFIRMATION_REQUIRED",error(()->service.self(actor,null,false,key),403));
+        }
+        verifyNoInteractions(identity,store,facts,cleanup,audit,commands);
+    }
+    @Test void googleConfirmedCancellationUsesServerIdentityAndExistingTransaction() {
+        when(accounts.identityProvider(any())).thenReturn("GOOGLE");
+        service.self(actor,null,true,key);
+        verifyNoInteractions(identity);verify(store).deleteAccount(actor.accountId());assertEquals(1,transactions.commits);
+    }
+    @Test void confirmationCannotReplaceLocalPassword() {
+        doThrow(AuthFailure.credentials()).when(identity).verify(current,null);
+        assertEquals("INVALID_CREDENTIALS",error(()->service.self(actor,null,true,key),401));
+        verifyNoInteractions(store,facts,cleanup,audit,commands);
+    }
+    @Test void appleMaterialCheckRunsBeforeAnyDeletionAndAppliesToAdminToo() {
+        when(accounts.identityProvider(any())).thenReturn("APPLE");
+        doThrow(new AuthFailure(503,"APPLE_REVOCATION_MATERIAL_UNAVAILABLE")).when(store).requireAppleRevocationMaterial(any());
+        assertEquals("APPLE_REVOCATION_MATERIAL_UNAVAILABLE",error(()->service.self(actor,null,true,key),503));
+        assertEquals("APPLE_REVOCATION_MATERIAL_UNAVAILABLE",error(()->service.administrator(actor,target,key),503));
+        verify(store,never()).deleteIdentities(any());verifyNoInteractions(audit,cleanup);
+    }
+    @Test void confirmedAppleCancellationRetainsExistingCredentialInfrastructure() {
+        when(accounts.identityProvider(any())).thenReturn("APPLE");
+        service.self(actor,null,true,key);
+        verify(store).requireAppleRevocationMaterial(actor.accountId());verify(store).deleteAccount(actor.accountId());
+        verifyNoInteractions(identity);assertEquals(1,transactions.commits);
     }
     @Test void wrongPasswordPreventsAllPersistentChanges() {
         doThrow(AuthFailure.credentials()).when(identity).verify(any(),any());

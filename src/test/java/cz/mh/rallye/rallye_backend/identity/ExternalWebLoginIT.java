@@ -25,7 +25,7 @@ import static org.mockito.ArgumentMatchers.*;
 @SpringBootTest
 @ActiveProfiles("it")
 @ContextConfiguration(initializers=TestDatabaseInitializer.class)
-@Import(IdentityIT.Fixtures.class)
+@Import({IdentityIT.Fixtures.class,AccountCancellationServiceIT.Fixtures.class})
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ExternalWebLoginIT {
@@ -50,6 +50,7 @@ class ExternalWebLoginIT {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager manager;
     @Autowired AppleTokenVault vault;
+    @Autowired AccountCancellationServiceIT.ControlledFacts participation;
     @MockitoBean ExternalOidcVerifier verifier;
     @MockitoSpyBean AuditStore audit;
     @MockitoSpyBean ExternalAccountStore external;
@@ -230,6 +231,107 @@ class ExternalWebLoginIT {
         new TransactionTemplate(manager).executeWithoutResult(s->{assertFalse(facts.forAccount(UUID.randomUUID()).historical());
             jdbc.update("UPDATE flyway_schema_history SET script='V10__unknown.sql' WHERE version='10'");
             assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
+    }
+    List<Map<String,Object>> material(UUID account) {
+        return jdbc.queryForList("SELECT * FROM apple_revocation_credential WHERE account_id=? ORDER BY id",account);
+    }
+    void assertMaterialUnchanged(List<Map<String,Object>> before,UUID account) {
+        var after=material(account);assertEquals(before.size(),after.size());assertFalse(before.isEmpty());
+        for(int i=0;i<before.size();i++)for(String column:before.get(i).keySet()) {
+            Object expected=before.get(i).get(column),actual=after.get(i).get(column);
+            if(expected instanceof byte[] bytes)assertArrayEquals(bytes,(byte[])actual);
+            else assertEquals(expected,actual,column);
+        }
+    }
+    AuthService.LoginSession externalAccount(ExternalProviders.Provider provider) {
+        String subject=UUID.randomUUID().toString(),email=email();
+        var registration=finish(context(provider,subject,email,true,"D10",false),"D10");
+        login.complete(registration.registrationSecret(),email,"D10");
+        return finish(context(provider,subject,email,true,null,false),null).session();
+    }
+    @Test void googleD10CancellationRevokesAllSessionsAndAuditsOnce() {
+        var session=externalAccount(ExternalProviders.Provider.GOOGLE);UUID id=session.principal().accountId();
+        String subject=jdbc.queryForObject("SELECT subject FROM user_identity WHERE account_id=?",String.class,id);
+        var other=finish(context(ExternalProviders.Provider.GOOGLE,subject,null,false,null,false),null).session();
+        cancellation.self(session.principal(),null,true,UUID.randomUUID());
+        assertNull(auth.authenticate(session.secret()));assertNull(auth.authenticate(other.secret()));
+        for(String table:List.of("user_session","user_identity","user_action_token"))assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE account_id=?",Integer.class,id));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM user_account WHERE id=?",Integer.class,id));
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE event_type='ACCOUNT_DELETED' AND actor_id=?",Integer.class,id));
+    }
+    @Test void externalAccountsCannotCancelWithoutExplicitConfirmationEvenWithPassword() {
+        for(var provider:List.of(ExternalProviders.Provider.GOOGLE,ExternalProviders.Provider.APPLE)) {
+            var session=externalAccount(provider);UUID id=session.principal().accountId();
+            for(String password:Arrays.asList(null,"irrelevant-password")) {
+                var error=assertThrows(AuthFailure.class,()->cancellation.self(session.principal(),password,false,UUID.randomUUID()));
+                assertEquals("ACCOUNT_CANCELLATION_CONFIRMATION_REQUIRED",error.code());
+            }
+            assertNotNull(auth.authenticate(session.secret()));
+            assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM user_identity WHERE account_id=?",Integer.class,id));
+            assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE event_type IN ('ACCOUNT_DELETED','ACCOUNT_ANONYMIZED') AND actor_id=?",Integer.class,id));
+        }
+    }
+    @Test void confirmationCannotBypassRevokedExternalSession() {
+        for(var provider:List.of(ExternalProviders.Provider.GOOGLE,ExternalProviders.Provider.APPLE)) {
+            var session=externalAccount(provider);auth.logout(session.principal());
+            assertEquals(401,assertThrows(AuthFailure.class,()->cancellation.self(session.principal(),null,true,UUID.randomUUID())).status());
+            assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM user_account WHERE id=?",Integer.class,session.principal().accountId()));
+        }
+    }
+    @Test void appleD10DeletionPreservesExactEncryptedMaterialAndClientBinding() {
+        var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();
+        var before=material(id);
+        cancellation.self(session.principal(),null,true,UUID.randomUUID());
+        assertMaterialUnchanged(before,id);
+        var sealed=new AppleTokenVault.Sealed((String)before.getFirst().get("key_id"),(byte[])before.getFirst().get("iv"),(byte[])before.getFirst().get("ciphertext"));
+        assertTrue(vault.open(sealed,ExternalLoginService.credentialAad((UUID)before.getFirst().get("id"),(String)before.getFirst().get("client_id"))).startsWith("synthetic-refresh-"));
+        assertNull(auth.authenticate(session.secret()));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM user_account WHERE id=?",Integer.class,id));
+    }
+    @Test void appleHistoricalD10CancellationAnonymizesWithoutLosingRevocationMaterial() {
+        var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();
+        var before=material(id);
+        participation.overrides.put(id,new AccountParticipationFacts.Facts(true,false));
+        try {cancellation.self(session.principal(),null,true,UUID.randomUUID());}
+        finally {participation.overrides.remove(id);}
+        var account=jdbc.queryForMap("SELECT * FROM user_account WHERE id=?",id);
+        assertEquals("ANONYMIZED",account.get("status"));assertNull(account.get("email"));assertNull(account.get("display_name"));assertNull(account.get("normalized_email"));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM user_identity WHERE account_id=?",Integer.class,id));
+        assertMaterialUnchanged(before,id);assertNull(auth.authenticate(session.secret()));
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE event_type='ACCOUNT_ANONYMIZED' AND actor_id=?",Integer.class,id));
+    }
+    @Test void missingAppleMaterialBlocksBothSelfAndAdminBeforeDeletion() {
+        var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();
+        jdbc.update("DELETE FROM apple_revocation_credential WHERE account_id=?",id);
+        assertEquals("APPLE_REVOCATION_MATERIAL_UNAVAILABLE",assertThrows(AuthFailure.class,()->cancellation.self(session.principal(),null,true,UUID.randomUUID())).code());
+        assertEquals("APPLE_REVOCATION_MATERIAL_UNAVAILABLE",assertThrows(AuthFailure.class,()->cancellation.administrator(root,id,UUID.randomUUID())).code());
+        assertNotNull(auth.authenticate(session.secret()));assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM user_identity WHERE account_id=?",Integer.class,id));
+    }
+    @Test void concurrentExternalD10CancellationHasOneWinnerAndOneAudit() throws Exception {
+        var session=externalAccount(ExternalProviders.Provider.GOOGLE);var barrier=new CyclicBarrier(2);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            Callable<Boolean> call=()->{barrier.await(5,TimeUnit.SECONDS);
+                try {cancellation.self(session.principal(),null,true,UUID.randomUUID());return true;}
+                catch(AuthFailure rejected){assertEquals(401,rejected.status());return false;}
+            };
+            var first=pool.submit(call);var second=pool.submit(call);assertNotEquals(first.get(15,TimeUnit.SECONDS),second.get(15,TimeUnit.SECONDS));
+        }
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE event_type='ACCOUNT_DELETED' AND actor_id=?",Integer.class,session.principal().accountId()));
+    }
+    @Test void externalD10AuditFailureRollsBackAccountIdentitySessionsAndMaterial() {
+        var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();
+        var before=material(id);
+        var marker=new IllegalStateException("injected audit failure");
+        doThrow(marker).when(audit).append(any(),any(),eq(id),eq(AuditService.Event.ACCOUNT_DELETED),eq(id));
+        try {
+            Throwable failure=assertThrows(RuntimeException.class,()->cancellation.self(session.principal(),null,true,UUID.randomUUID()));
+            while(failure.getCause()!=null)failure=failure.getCause();assertSame(marker,failure);
+        }
+        finally {doCallRealMethod().when(audit).append(any(),any(),eq(id),eq(AuditService.Event.ACCOUNT_DELETED),eq(id));}
+        assertNotNull(auth.authenticate(session.secret()));assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM user_identity WHERE account_id=?",Integer.class,id));
+        assertMaterialUnchanged(before,id);
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE event_type='ACCOUNT_DELETED' AND actor_id=?",Integer.class,id));
+        cancellation.self(session.principal(),null,true,UUID.randomUUID());assertNull(auth.authenticate(session.secret()));
     }
     @AfterAll void cleanup(){guard();assertTrue(SCHEMA.matches("it_external_web_[0-9a-f]{32}"));jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");}
 }

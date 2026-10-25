@@ -46,8 +46,39 @@ class AccountCancellationHttpTest {
                 .andExpect(status().isNoContent()).andExpect(content().string(""))
                 .andExpect(header().string("Cache-Control","no-store"))
                 .andExpect(header().stringValues("Set-Cookie",hasItem(allOf(containsString("RALLYE_SESSION="),containsString("Max-Age=0")))));
-        verify(cancellation).self(actor,"synthetic-password",key);
+        verify(cancellation).self(actor,"synthetic-password",false,key);
         verify(throttle).check(eq("account-cancellation"),eq(actor.accountId().toString()),anyString());
+    }
+    @Test void externalConfirmationIsForwardedWithoutPasswordOrFreshProof() throws Exception {
+        authenticated(false);UUID key=UUID.randomUUID();
+        mvc.perform(post(SELF).header("Authorization","Bearer "+secret).header("Idempotency-Key",key)
+            .contentType("application/json").content("{\"confirmed\":true}"))
+            .andExpect(status().isNoContent()).andExpect(content().string(""));
+        verify(cancellation).self(actor,null,true,key);
+    }
+    @Test void explicitFalseIsNotConvertedIntoConsent() throws Exception {
+        authenticated(false);UUID key=UUID.randomUUID();
+        doThrow(new AuthFailure(403,"ACCOUNT_CANCELLATION_CONFIRMATION_REQUIRED")).when(cancellation).self(actor,null,false,key);
+        mvc.perform(post(SELF).header("Authorization","Bearer "+secret).header("Idempotency-Key",key)
+            .contentType("application/json").content("{\"confirmed\":false}"))
+            .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCOUNT_CANCELLATION_CONFIRMATION_REQUIRED"));
+        verify(cancellation).self(actor,null,false,key);
+    }
+    @Test void confirmationDoesNotBypassAuthenticationOrCookieCsrf() throws Exception {
+        mvc.perform(post(SELF).header("X-Rallye-Client","mobile").header("Idempotency-Key",UUID.randomUUID())
+            .contentType("application/json").content("{\"confirmed\":true}"))
+            .andExpect(status().isUnauthorized());
+        authenticated(false);
+        mvc.perform(post(SELF).cookie(new Cookie(AuthCookies.NAME,secret)).header("Idempotency-Key",UUID.randomUUID())
+            .contentType("application/json").content("{\"confirmed\":true}"))
+            .andExpect(status().isForbidden());
+        verifyNoInteractions(cancellation);
+        var response=mvc.perform(get("/api/v1/auth/csrf")).andReturn().getResponse();
+        String csrf=com.jayway.jsonpath.JsonPath.read(response.getContentAsString(),"$.token");UUID key=UUID.randomUUID();
+        mvc.perform(post(SELF).cookie(new Cookie(AuthCookies.NAME,secret),response.getCookie("XSRF-TOKEN"))
+            .header("X-XSRF-TOKEN",csrf).header("Idempotency-Key",key).contentType("application/json").content("{\"confirmed\":true}"))
+            .andExpect(status().isNoContent());
+        verify(cancellation).self(actor,null,true,key);
     }
     @Test void adminAcceptsBodylessRequestAndUsesSeparateThrottleNamespace() throws Exception {
         authenticated(true);UUID id=UUID.randomUUID(),key=UUID.randomUUID();
@@ -72,11 +103,11 @@ class AccountCancellationHttpTest {
         String token=com.jayway.jsonpath.JsonPath.read(response.getContentAsString(),"$.token");
         mvc.perform(post(SELF).cookie(new Cookie(AuthCookies.NAME,secret),response.getCookie("XSRF-TOKEN"))
                 .header("X-XSRF-TOKEN",token).header("Idempotency-Key",key).contentType("application/json").content("{\"currentPassword\":\"password\"}"))
-                .andExpect(status().isNoContent());verify(cancellation).self(actor,"password",key);
+                .andExpect(status().isNoContent());verify(cancellation).self(actor,"password",false,key);
     }
     @Test void errorsAreSafeAndRateLimitingStopsService() throws Exception {
         authenticated(false);UUID key=UUID.randomUUID();
-        doThrow(AuthFailure.credentials()).when(cancellation).self(any(),any(),any());
+        doThrow(AuthFailure.credentials()).when(cancellation).self(any(),any(),anyBoolean(),any());
         mvc.perform(post(SELF).header("Authorization","Bearer "+secret).header("Idempotency-Key",key)
                 .contentType("application/json").content("{\"currentPassword\":\"secret-must-not-appear\"}"))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
@@ -98,7 +129,7 @@ class AccountCancellationHttpTest {
         authenticated(false);String sensitive="private-current-password-token-email@example.test";
         var sql=new java.sql.SQLException("Private row: "+sensitive,"23503");
         var failure=new org.springframework.transaction.TransactionSystemException(sensitive,sql);
-        doThrow(failure).when(cancellation).self(any(),any(),any());
+        doThrow(failure).when(cancellation).self(any(),any(),anyBoolean(),any());
         mvc.perform(post(SELF).header("Authorization","Bearer "+secret).header("Idempotency-Key",UUID.randomUUID())
                 .contentType("application/json").content("{\"currentPassword\":\""+sensitive+"\"}"))
                 .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
@@ -109,7 +140,7 @@ class AccountCancellationHttpTest {
     @Test void explicitApplicationInternalErrorAlsoLogsItsCause(CapturedOutput output) throws Exception {
         authenticated(false);String sensitive="private-application-error-password";
         doThrow(new AuthFailure(500,"INTERNAL_ERROR",new java.sql.SQLException(sensitive,"P0001")))
-                .when(cancellation).self(any(),any(),any());
+                .when(cancellation).self(any(),any(),anyBoolean(),any());
         mvc.perform(post(SELF).header("Authorization","Bearer "+secret).header("Idempotency-Key",UUID.randomUUID())
                 .contentType("application/json").content("{\"currentPassword\":\""+sensitive+"\"}"))
                 .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
@@ -139,7 +170,7 @@ class AccountCancellationHttpTest {
     @Test void participationCheck503LogsPreservedSqlCauseWithoutChangingResponse(CapturedOutput output) throws Exception {
         authenticated(false);String sensitive="private-participation-database-details";
         doThrow(new AuthFailure(503,"PARTICIPATION_CHECK_UNAVAILABLE",new java.sql.SQLException(sensitive,"42P01")))
-                .when(cancellation).self(any(),any(),any());
+                .when(cancellation).self(any(),any(),anyBoolean(),any());
         mvc.perform(post(SELF).header("Authorization","Bearer "+secret).header("Idempotency-Key",UUID.randomUUID())
                 .contentType("application/json").content("{\"currentPassword\":\"unused-password\"}"))
                 .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("PARTICIPATION_CHECK_UNAVAILABLE"))

@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 public class AccountCancellationController {
-    public record Confirmation(@NotNull @Size(max=256) String currentPassword) {
+    public record Confirmation(@Size(max=256) String currentPassword,Boolean confirmed) {
+        @AssertTrue public boolean isConfirmationProvided() {return currentPassword!=null || confirmed!=null;}
         @Override public String toString() {return "CancellationConfirmation[redacted]";}
     }
     private final AccountCancellationService service;
@@ -25,7 +26,7 @@ public class AccountCancellationController {
             @RequestHeader("Idempotency-Key") UUID key,@Valid @RequestBody Confirmation input,
             HttpServletRequest request,HttpServletResponse response) {
         throttle.check("account-cancellation",actor.accountId().toString(),request.getRemoteAddr());
-        service.self(actor,input.currentPassword(),key);cookies.clear(response);
+        service.self(actor,input.currentPassword(),Boolean.TRUE.equals(input.confirmed()),key);cookies.clear(response);
         return ResponseEntity.noContent().build();
     }
     @PostMapping("/api/v1/admin/users/{accountId}/cancellations")

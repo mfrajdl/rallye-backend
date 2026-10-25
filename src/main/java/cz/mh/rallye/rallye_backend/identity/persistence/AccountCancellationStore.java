@@ -26,6 +26,10 @@ public class AccountCancellationStore {
         },id);
         return rows.isEmpty()?null:rows.getFirst();
     }
+    public void requireAppleRevocationMaterial(UUID account) {
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM apple_revocation_credential WHERE account_id=? AND client_id<>'' AND key_id<>'')",Boolean.class,account)))
+            throw new cz.mh.rallye.rallye_backend.identity.application.AuthFailure(503,"APPLE_REVOCATION_MATERIAL_UNAVAILABLE");
+    }
     public int deleteIdentities(UUID id) {
         lock(id);
         // Invalidate all unfinished proofs of identities about to be detached, including expired contexts.

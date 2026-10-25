@@ -310,6 +310,13 @@ class AccountCancellationServiceIT {
         mvc.perform(request).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNoContent());
         mvc.perform(request).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isUnauthorized());
     }
+    @Test void explicitConfirmationCannotReplaceMissingOrWrongLocalPassword() {
+        for(String password:java.util.Arrays.asList(null,"wrong-password")) {
+            assertEquals("INVALID_CREDENTIALS",error(()->service.self(owner.principal(),password,true,UUID.randomUUID()),401));
+            assertNotNull(auth.authenticate(owner.session().secret()));
+            assertEquals(1,count("user_identity",owner.id()));
+        }
+    }
     @AfterAll void cleanupOwnFixtures() throws Exception {
         assertTrue(SCHEMA.matches("it_cancel_service_[0-9a-f]{32}"));
         assertEquals("rallye_test",jdbc.queryForObject("SELECT current_database()",String.class));

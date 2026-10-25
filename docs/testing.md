@@ -1,6 +1,6 @@
 # Testování bez lokálního Dockeru
 
-> Aktuální pravidla: [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md), D09 nahrazuje D04/D05 a D10 nahrazuje D03. Účet má jedinou neměnnou LOCAL/GOOGLE/APPLE identitu; link/unlink a dodatečný LOCAL jsou zakázané. LOCAL vlastní zrušení vyžaduje znovu heslo, externí zrušení platnou relaci a samostatné výslovné potvrzení, nikoli čerstvou reautentizaci. Níže uvedené dokončené etapy a výsledky zachycují tehdejší implementaci; DB omezení je nyní připravené v 3c.3a s uživatelem potvrzeným PostgreSQL ověřením BUILD SUCCESS; externí potvrzení 3c.3b ještě není implementované. Dopady a nový plán: [external-auth-3c.md](external-auth-3c.md).
+> Aktuální pravidla: [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md), D09 nahrazuje D04/D05 a D10 nahrazuje D03. Účet má jedinou neměnnou LOCAL/GOOGLE/APPLE identitu; link/unlink a dodatečný LOCAL jsou zakázané. LOCAL vlastní zrušení vyžaduje znovu heslo, externí zrušení platnou relaci a samostatné výslovné potvrzení, nikoli čerstvou reautentizaci. Níže uvedené dokončené etapy a výsledky zachycují tehdejší implementaci; DB omezení je nyní připravené v 3c.3a s uživatelem potvrzeným PostgreSQL ověřením BUILD SUCCESS; externí potvrzení je implementované a automaticky ověřené v 3c.3b; LOCAL ruční ověření je dokončené, skutečné GOOGLE/APPLE zrušení čeká na HTTPS. Dopady a nový plán: [external-auth-3c.md](external-auth-3c.md).
 
 
 ## Aktuální závěrečný stav po 3b.6 (24. 10. 2026)
@@ -574,3 +574,44 @@ Po opravě Codex spustil verify na JDK 21: **BUILD SUCCESS, 274 testů, 0 failur
 
 
 Závěrečné integrační ověření opravy úklidu: uživatel potvrdil `.\mvnw.cmd -Pit verify` proti `rallye_test` s výsledkem **BUILD SUCCESS**. Jde o uživatelem potvrzený běh, nikoli běh Codexu; celkový počet testů nového běhu nebyl sdělen. Automatické ověření 3c.3a je dokončené. Uživatel následně potvrdil také manuální Postman složku 18: **6/6 Passed**. Skuteční poskytovatelé ani pozitivní složka 17 tím nejsou ověřeni. 3c.3b není zahájena; V10 se po aplikaci neměnila a V11 nevznikla.
+
+
+## 3c.3b – zrušení účtu D10
+
+Codex spustil verify na Microsoft JDK 21: BUILD SUCCESS, 284 testů, 0 failures/errors/skipped. Nové unit/HTTP kontroly a kompilace PostgreSQL regresí prošly. Osm nových ExternalWebLoginIT scénářů a LOCAL regrese AccountCancellationServiceIT prošly uživatelem potvrzeným `.\mvnw.cmd -Pit verify` proti rallye_test (BUILD SUCCESS). Existující úspěšný běh 3c.3a není novým ověřením D10. Migrace V1–V10 se nemění. Manuálně připraveny Postman 19 (LOCAL negativní kontroly), stávající 13 (LOCAL úspěch) a oddělená 20 (externí testovací účet v HTTPS prostředí). Přesná příprava, výsledky a limity: [account-cancellation-3c3b.md](account-cancellation-3c3b.md). Reálná Apple revokace zůstává neimplementovaná v 3c.5.
+
+
+Uživatelské potvrzení 25. 10. 2026: `.\mvnw.cmd -Pit verify` proti `rallye_test` skončilo **BUILD SUCCESS**. Jde o uživatelem potvrzené integrační ověření, nikoli PostgreSQL běh Codexu. Počet testů tohoto běhu nebyl sdělen. Automatické ověření 3c.3b je dokončené; manuální Postman složky 19/20 ani skutečná Google/Apple integrace tím nejsou potvrzené. Apple revokace zůstává v 3c.5; commit ani push nebyly provedeny.
+
+
+### Postman 19 – oprava chybějící přípravy relace
+
+Uživatel potvrdil 2 Passed / 2 Failed: oba POST měly 401 UNAUTHENTICATED, proto prošly statusy a selhaly očekávané kódy INVALID_CREDENTIALS. Složka byla závislá na předem přihlášené relaci. Byla doplněna vlastní cookie login příprava a /me kontroly před/po negativních operacích; stále se vyžaduje aktivovaný LOCAL účet. Lokální proměnné d10LocalEmail/d10LocalPassword, cookie režim a přesné pořadí popisuje [account-cancellation-3c3b.md](account-cancellation-3c3b.md). Původní negativní aserce se neoslabují, bezpečnostní mechanismy a produkční kód zůstávají beze změny. Nové skutečné manuální ověření není zatím potvrzené.
+
+
+Kontroly opravené 19: JSON Node/PowerShell, schéma Collection v2.1, 111 požadavků a 180 syntakticky validních JS skriptů. Offline simulace ověřila přihlášenou/nepřihlášenou cestu, neúspěšnou přípravu a zachování původního požadovaného kódu chyby; žádný HTTP ani PostgreSQL běh tím nebyl proveden. Původní bezpečnostní aserce zůstávají. Ostatní složky a sdílený skript nebyly měněny, tři nové proměnné jsou v repozitáři prázdné (d10LocalEmail, d10LocalPassword, automatické d10LocalPreparedAccountId).
+
+
+### Následná diagnostika Postman 19: 23 Passed / 4 Failed (403 ACCESS_DENIED)
+
+Průchozí login a všechny /me kontroly dokládají funkční autentizovanou relaci pomocných požadavků. Oba chráněné POST ale vracely 403 ACCESS_DENIED namísto aplikačních 401 INVALID_CREDENTIALS. ACCESS_DENIED vytváří security accessDeniedHandler; LOCAL password check jej nevytváří. CSRF je proto konkrétní podezřelá hranice před controllerem, nikoliv doložené odmítnutí hesla. Bez skutečných odchozích hlaviček a cookies nelze tvrdit, zda hlavička chyběla, byla stará, nebo neodpovídala cookie poslané v POST. Samotný /me není důkazem rotace CSRF cookie a takovou rotaci analýza nepotvrdila. CSRF zde není uložený v Rallye databázové relaci: CookieCsrfTokenRepository porovnává hlavičku s cookie XSRF-TOKEN. /csrf může vrátit XOR-maskovaný request token, proto se do hlavičky nikdy nekopíruje raw cookie.
+
+Proti funkční složce 13 měla 19 další pomocný /me až po společné CSRF přípravě. Oprava odstraňuje tuto časovou mezeru: collection-level CSRF příprava deleguje pouze dva přesně pojmenované negativní POST na jejich vlastní request-level skript. Ten nejprve ověří /me, potom jako poslední HTTP přípravu získá /csrf, ověří dostupnost RALLYE_SESSION a XSRF-TOKEN v jar a vloží čerstvou hlavičku přímo do odcházejícího požadavku. Po nastavení hlavičky už žádné další přípravné HTTP volání není. Pokud předpoklady chybí, aserce selže a POST se neodešle. Složka 13 i ostatní požadavky stále používají původní společnou přípravu. Původní aserce 401 INVALID_CREDENTIALS nebyly změněny.
+
+Opakování: importovat aktualizovanou kolekci, nastavit d10LocalEmail/d10LocalPassword aktivovaného LOCAL účtu a regressionAuthMode=cookie; pro všechny requesty ponechat Cookie Jar zapnutý a allowlist pro localhost. Používat stejný hostname/port v baseUrl i skutečných URL; nemíchat localhost a 127.0.0.1. Odstranit ručně nastavené Cookie, Authorization, X-Rallye-Client a X-XSRF-TOKEN; cookie ani token nevkládat ručně. Poté spustit pouze celou 19 od přípravného loginu. Negativní POST mají stále vrátit 401 INVALID_CREDENTIALS; nové aserce ověřují poslední CSRF přípravu a dostupnost obou cookies. /me zůstává 200 před i po. Během průchodu nespouštět logout, změnu/reset hesla ani destruktivní složku 13/20 nebo jiného uživatele na stejném jar.
+
+Pokud se 403 opakuje i po všech nových přípravných asercích, pro další diagnostiku ověřit v Postman Console pouze metadata skutečného POST: přítomnost jedné X-XSRF-TOKEN hlavičky, názvy RALLYE_SESSION/XSRF-TOKEN v odeslaném Cookie a případné Set-Cookie smazání/rotaci. Nesdílet jejich hodnoty, heslo ani tokeny. Zkontrolovat duplicitní cookies téhož jména pro různé domain/path; lze odstranit cookies pouze daného lokálního hostu a zopakovat login. Úspěch offline simulace není důkaz skutečného přenosu cookies Postmanem.
+
+Ověřeno: JSON Node/PowerShell, Postman schema v2.1, syntaxe JS a offline simulace včetně posledního získání CSRF, čtení cookies a nastavení hlavičky. Skutečné Postman opakování opravy není zatím potvrzené. Při této opravě se nezměnil produkční ani testovací Java kód, migrace ani security konfigurace. Maven/PG testy nebyly znovu spouštěny, jejich předchozí ověření zůstává oddělené.
+
+
+### Manuální 3c.3b – aktualizace složek 19 a 13
+
+Uživatel potvrdil složku 19: 35 Passed / 0 Failed. Složka 13 s No response zatím neověřila úspěšné zrušení účtu. Opravené předpoklady, jednorázový opt-in, ověření 204 + následného /me 401 a odmítnutého loginu jsou popsány v [account-cancellation-3c3b.md](account-cancellation-3c3b.md#postman-13--bezpečné-skutečné-ověření-local-zrušení-3c3b). Složku 13 nespouštět celou; povolení mazání je výchozí false. Uživatel následně potvrdil úspěšné LOCAL zrušení; závěrečný výsledek je uveden níže. Java ani PostgreSQL testy nebyly pro tuto čistě Postman/dokumentační změnu opakovány.
+
+
+### Uzavření 3c.3b – potvrzené výsledky
+
+Etapa 3c.3b je implementačně dokončená a lokálně otestovaná. Dřívější verify Codexu: BUILD SUCCESS, 284 testů. PostgreSQL verify: uživatelem potvrzené BUILD SUCCESS (Codex jej nespouštěl). Postman složka 19: uživatelem potvrzeno 35 Passed / 0 Failed. Samostatný `3b4b Self cancellation - DELETE TEST ACCOUNT (204)`: skutečné 204 No Content, prázdné tělo, následné zneplatnění relace a odmítnutí loginu původními údaji. Jednorázové ochranné povolení se vrátilo na false. Dřívější No response ani historická selhání nebyla započítána jako úspěch; nahradilo je toto potvrzené opakování.
+
+Skutečné GOOGLE/APPLE zrušení a pozitivní externí scénáře složky 20 zůstávají manuálně neověřené a vyžadují HTTPS testovací prostředí. Apple revokace patří do 3c.5. Při uzavření byly upraveny pouze dokumentační výsledky; automatické testy se znovu neopakovaly.

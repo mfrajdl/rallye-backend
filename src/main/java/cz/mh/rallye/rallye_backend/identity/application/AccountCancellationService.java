@@ -30,9 +30,15 @@ public class AccountCancellationService {
     }
     @Transactional
     public void self(AuthService.Principal actor,String password,UUID key) {
+        self(actor,password,false,key);
+    }
+    @Transactional
+    public void self(AuthService.Principal actor,String password,boolean confirmed,UUID key) {
         requireKey(key);authorize(actor,false);
         var account=accounts.lockAccount(actor.accountId());
-        identity.verify(account,password);
+        String provider=accounts.identityProvider(actor.accountId());
+        if("LOCAL".equals(provider))identity.verify(account,password);
+        else if(!confirmed)throw new AuthFailure(403,"ACCOUNT_CANCELLATION_CONFIRMATION_REQUIRED");
         commands.replay(actor.accountId(),key,"SELF_ACCOUNT_CANCEL","[\""+actor.accountId()+"\"]",clock.instant());
         cancel(actor.accountId(),actor.accountId(),false,key);
     }
@@ -65,6 +71,7 @@ public class AccountCancellationService {
         }
         if(facts==null)throw new AuthFailure(503,"PARTICIPATION_CHECK_UNAVAILABLE");
         if(facts.running())throw new AuthFailure(409,"ACCOUNT_PARTICIPATION_RUNNING");
+        if("APPLE".equals(accounts.identityProvider(target)))cancellation.requireAppleRevocationMaterial(target);
         var now=clock.instant().truncatedTo(ChronoUnit.MILLIS);
         var pending=cancellation.pendingTransferIds(target);
         var owned=cancellation.ownedCrewIds(target);

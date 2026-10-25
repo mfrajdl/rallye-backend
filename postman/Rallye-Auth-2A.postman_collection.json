@@ -312,6 +312,41 @@
       "key": "externalProvidersConfigured",
       "value": "false",
       "type": "string"
+    },
+    {
+      "key": "d10LocalEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "d10LocalPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "d10LocalPreparedAccountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "allowSelfAccountCancellation",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "allowAdminAccountCancellation",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "selfCancellationExpectedAccountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "selfCancellationSucceededAccountId",
+      "value": "",
+      "type": "string"
     }
   ],
   "event": [
@@ -338,7 +373,7 @@
           "    }",
           "} else {",
           "    const base = pm.collectionVariables.get('baseUrl').replace(/[/]+$/, '');",
-          "    if (!['GET', 'HEAD', 'OPTIONS'].includes(pm.request.method) && !pm.info.requestName.startsWith('403 ')) {",
+          "    if (!['GET', 'HEAD', 'OPTIONS'].includes(pm.request.method) && !pm.info.requestName.startsWith('403 ') && ![\"3b4b Self cancellation - DELETE TEST ACCOUNT (204)\",\"3c3b LOCAL confirmed cannot replace password\",\"3c3b LOCAL confirmed cannot override wrong password\"].includes(pm.info.requestName)) {",
           "        pm.sendRequest({url: base + '/api/v1/auth/csrf', method: 'GET', auth: {type: 'noauth'}}, (error, response) => {",
           "            if (error || response.code !== 200) {",
           "                pm.execution.skipRequest();",
@@ -3555,7 +3590,7 @@
     },
     {
       "name": "13 — Account cancellation 3b.4b (DESTRUCTIVE, run individually)",
-      "description": "See docs/account-cancellation-3b4b.md. Verify /auth/me before cancellation. All requests use the existing automatic cookie/CSRF mechanism. Never run this whole folder as a batch. No passwords or tokens are prefilled.",
+      "description": "Run requests individually: mixed user roles and destructive state transitions, NOT a standalone folder runner. Missing prerequisites produce failed prerequisite assertions plus No response (not HTTP success). See docs/account-cancellation-3c3b.md. SELF and ADMIN deletion require explicit one-shot approval; defaults false.",
       "item": [
         {
           "name": "3b4b Self cancellation - wrong password (401)",
@@ -3594,6 +3629,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
                   "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));"
                 ]
               }
@@ -3643,7 +3679,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('cancellationPassword')){pm.execution.skipRequest();throw new Error('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
+                  "if(!pm.variables.get('cancellationPassword')){stop('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
                 ]
               }
             },
@@ -3697,8 +3734,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
                   "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
-                  "if(!pm.collectionVariables.get('cancellationPassword')){pm.execution.skipRequest();throw new Error('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
+                  "if(!pm.variables.get('cancellationPassword')){stop('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
                 ]
               }
             },
@@ -3735,7 +3773,7 @@
               "type": "noauth"
             },
             "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
-            "description": "DESTRUCTIVE for the currently logged-in test account. Preserves crews/photos, removes login credentials. Run individually after checking identity with /auth/me. Never run the entire folder unattended.",
+            "description": "Run individually after cookie login as a disposable LOCAL account. Explicit allowSelfAccountCancellation=true and expected account UUID required. Approval resets to false. Verifies 204, /auth/me 401 and rejected original login.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"currentPassword\": \"{{cancellationPassword}}\"\n}",
@@ -3752,8 +3790,32 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
-                  "if(!pm.collectionVariables.get('cancellationPassword')){pm.execution.skipRequest();throw new Error('Set cancellationPassword to the current password of the logged-in disposable test account.');}"
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
+                  "pm.collectionVariables.unset('selfCancellationSucceededAccountId');",
+                  "if((pm.environment.get('regressionAuthMode')||'cookie')!=='cookie')stop('Use cookie mode for this LOCAL manual test.');",
+                  "if(pm.request.headers.has('Cookie'))stop('Remove manually configured Cookie headers; use Cookie Jar.');",
+                  "const password=pm.variables.get('cancellationPassword');",
+                  "const expected=pm.variables.get('selfCancellationExpectedAccountId');",
+                  "if(!password||!expected)stop('Set cancellationPassword and selfCancellationExpectedAccountId from the disposable LOCAL account /auth/me.');",
+                  "if(String(pm.variables.get('allowSelfAccountCancellation'))!=='true')stop('Explicitly set allowSelfAccountCancellation=true to approve deleting this account.');",
+                  "pm.variables.set('allowSelfAccountCancellation','false');pm.environment.set('allowSelfAccountCancellation','false');pm.collectionVariables.set('allowSelfAccountCancellation','false');",
+                  "pm.request.headers.remove('Authorization');pm.request.headers.remove('X-Rallye-Client');",
+                  "pm.request.headers.upsert({key:'Idempotency-Key',value:pm.variables.replaceIn('{{$guid}}')});",
+                  "pm.request.body.update(JSON.stringify({currentPassword:password}));",
+                  "const base=pm.collectionVariables.get('baseUrl').replace(/\\/$/,'');",
+                  "pm.sendRequest({url:base+'/api/v1/auth/me',method:'GET',auth:{type:'noauth'}},(err,res)=>{",
+                  " if(err||!res||res.code!==200)stop('Login as the disposable LOCAL account first; /auth/me must return 200.');",
+                  " const user=res.json();if(user.id!==expected)stop('Logged-in account does not match selfCancellationExpectedAccountId.');",
+                  " pm.variables.set('selfCancellationVerifiedEmail',user.email);",
+                  " pm.sendRequest({url:base+'/api/v1/auth/csrf',method:'GET',auth:{type:'noauth'}},(error,csrf)=>{",
+                  "  if(error||!csrf||csrf.code!==200)stop('Cannot obtain CSRF token.');",
+                  "  const data=csrf.json();if(data.headerName!=='X-XSRF-TOKEN'||!data.token)stop('Invalid CSRF response.');",
+                  "  const jar=pm.cookies.jar();jar.get(base,'RALLYE_SESSION',(e,session)=>{",
+                  "   if(e||!session)stop('Session cookie unavailable; allow cookie access for localhost.');",
+                  "   jar.get(base,'XSRF-TOKEN',(e,cookie)=>{if(e||!cookie)stop('CSRF cookie unavailable.');pm.request.headers.upsert({key:data.headerName,value:data.token});});",
+                  "  });",
+                  " });",
+                  "});"
                 ]
               }
             },
@@ -3762,9 +3824,24 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('HTTP 204',()=>pm.response.to.have.status(204));",
+                  "pm.test('HTTP 204 - account actually cancelled',()=>pm.response.to.have.status(204));",
                   "pm.test('No response body',()=>pm.expect(pm.response.text()).to.eql(''));",
-                  "pm.collectionVariables.unset('cancellationPassword');"
+                  "if(pm.response.code===204){",
+                  " pm.collectionVariables.set('selfCancellationSucceededAccountId',pm.variables.get('selfCancellationExpectedAccountId'));",
+                  " const base=pm.collectionVariables.get('baseUrl').replace(/\\/$/,'');",
+                  " const email=pm.variables.get('selfCancellationVerifiedEmail');const password=pm.variables.get('cancellationPassword');",
+                  " pm.sendRequest({url:base+'/api/v1/auth/me',method:'GET',auth:{type:'noauth'}},(err,res)=>{",
+                  "  pm.test('Cancelled session cannot access /auth/me (401)',()=>{pm.expect(err).to.equal(null);pm.expect(res.code).to.eql(401);});",
+                  "  pm.sendRequest({url:base+'/api/v1/auth/csrf',method:'GET',auth:{type:'noauth'}},(error,csrf)=>{",
+                  "   pm.test('CSRF available for negative login verification',()=>{pm.expect(error).to.equal(null);pm.expect(csrf.code).to.eql(200);});",
+                  "   if(error||!csrf||csrf.code!==200)return;",
+                  "   const token=csrf.json();",
+                  "   pm.sendRequest({url:base+'/api/v1/auth/login',method:'POST',auth:{type:'noauth'},header:{'Content-Type':'application/json',[token.headerName]:token.token},body:{mode:'raw',raw:JSON.stringify({email,password,rememberMe:false})}},(failure,login)=>{",
+                  "    pm.test('Cancelled account cannot login with original credentials',()=>{pm.expect(failure).to.equal(null);pm.expect(login.code).to.eql(401);pm.expect(login.json().code).to.eql('INVALID_CREDENTIALS');});",
+                  "   });",
+                  "  });",
+                  " });",
+                  "}"
                 ]
               }
             }
@@ -3808,7 +3885,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));"
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
+                  "if(!pm.collectionVariables.get('selfCancellationKey'))pm.collectionVariables.set('selfCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
+                  "if(!pm.collectionVariables.get('selfCancellationSucceededAccountId'))stop('Run successful SELF cancellation (204) first.');"
                 ]
               }
             },
@@ -3847,8 +3926,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
                   "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
-                  "if(!pm.collectionVariables.get('accountCancellationTargetId')){pm.execution.skipRequest();throw new Error('Set accountCancellationTargetId to a disposable target account UUID.');}"
+                  "if(!pm.collectionVariables.get('accountCancellationTargetId')){stop('Set accountCancellationTargetId to a disposable target account UUID.');}"
                 ]
               }
             },
@@ -3887,8 +3967,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
                   "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
-                  "if(!pm.collectionVariables.get('adminAccountId')){pm.execution.skipRequest();throw new Error('Set adminAccountId to the currently logged-in ADMIN account UUID.');}"
+                  "if(!pm.collectionVariables.get('adminAccountId')){stop('Set adminAccountId to the currently logged-in ADMIN account UUID.');}"
                 ]
               }
             },
@@ -3928,8 +4009,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
+                  "if(String(pm.variables.get('allowAdminAccountCancellation'))!=='true')stop('Set allowAdminAccountCancellation=true explicitly for this disposable target.');pm.variables.set('allowAdminAccountCancellation','false');pm.environment.set('allowAdminAccountCancellation','false');pm.collectionVariables.set('allowAdminAccountCancellation','false');",
                   "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
-                  "if(!pm.collectionVariables.get('accountCancellationTargetId')){pm.execution.skipRequest();throw new Error('Set accountCancellationTargetId to a disposable target account UUID.');}"
+                  "if(!pm.collectionVariables.get('accountCancellationTargetId')){stop('Set accountCancellationTargetId to a disposable target account UUID.');}"
                 ]
               }
             },
@@ -3969,8 +4052,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
                   "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
-                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')){pm.execution.skipRequest();throw new Error('Run the successful ADMIN cancellation first; retain its key.');}"
+                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')){stop('Run the successful ADMIN cancellation first; retain its key.');}"
                 ]
               }
             },
@@ -4009,8 +4093,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
                   "if(!pm.collectionVariables.get('adminCancellationKey'))pm.collectionVariables.set('adminCancellationKey',pm.variables.replaceIn('{{$guid}}'));",
-                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')||!pm.collectionVariables.get('accountCancellationConflictTargetId')||pm.collectionVariables.get('accountCancellationConflictTargetId')===pm.collectionVariables.get('accountCancellationOriginalTargetId')){pm.execution.skipRequest();throw new Error('Complete ADMIN cancellation and set a different UUID in accountCancellationConflictTargetId.');}"
+                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')||!pm.collectionVariables.get('accountCancellationConflictTargetId')||pm.collectionVariables.get('accountCancellationConflictTargetId')===pm.collectionVariables.get('accountCancellationOriginalTargetId')){stop('Complete ADMIN cancellation and set a different UUID in accountCancellationConflictTargetId.');}"
                 ]
               }
             },
@@ -4050,7 +4135,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')){pm.execution.skipRequest();throw new Error('Complete ADMIN cancellation first.');}",
+                  "function stop(reason){pm.test('Prerequisites satisfied - request NOT executed',()=>{throw new Error(reason);});pm.execution.skipRequest();throw new Error(reason);}",
+                  "if(!pm.collectionVariables.get('accountCancellationOriginalTargetId')){stop('Complete ADMIN cancellation first.');}",
                   "pm.request.headers.upsert({key:'Idempotency-Key',value:pm.variables.replaceIn('{{$guid}}')});"
                 ]
               }
@@ -4681,6 +4767,425 @@
                 "exec": [
                   "pm.test('Removed purpose rejected before provider access', () => pm.response.to.have.status(400));",
                   "pm.test('Safe validation error', () => pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "19 D10 cancellation - LOCAL negative checks",
+      "description": "Repeatable COOKIE-ONLY LOCAL regression. Set d10LocalEmail/d10LocalPassword locally to an existing ACTIVE verified LOCAL test account. Enable cookie jar and allowlist localhost. Run this folder in order: fresh login -> me -> two negative cancellations -> me. Does not depend on folder 13 and never deletes the account. If folder 13 already deleted it, register/activate a new test account first. Environments do not isolate Postman cookies: do not run other users/folders concurrently. All requests retain CSRF; no token is stored in collection variables. See docs/account-cancellation-3c3b.md. For each negative POST the request script now verifies /me FIRST and fetches CSRF LAST, checks both cookies and sets the endpoint-provided token header. Shared CSRF preparation delegates only these two exact requests to this ordered script.",
+      "item": [
+        {
+          "name": "3c3b Prepare LOCAL cookie session",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{d10LocalEmail}}\",\n  \"password\": \"{{d10LocalPassword}}\",\n  \"rememberMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Run first on every folder run. Existing account must be ACTIVE and email-verified. Replaces stale/current cookie with a fresh LOCAL session; no account creation, deletion, logout or Bearer token storage."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('d10LocalPreparedAccountId','');",
+                  "pm.request.body.update(JSON.stringify({email:pm.variables.get('d10LocalEmail'),password:pm.variables.get('d10LocalPassword'),rememberMe:false}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('LOCAL login HTTP 200',()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200){pm.test('Correct LOCAL account',()=>pm.expect(pm.response.json().email.toLowerCase()).to.eql(pm.variables.get('d10LocalEmail').trim().toLowerCase()));pm.test('Cookie login does not return Bearer',()=>pm.expect(pm.response.json().token).to.eql(undefined));}",
+                  "if(pm.response.code===200 && pm.response.json().email.toLowerCase()===pm.variables.get('d10LocalEmail').trim().toLowerCase() && pm.response.json().id)pm.collectionVariables.set('d10LocalPreparedAccountId',pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c3b Verify LOCAL session before negative checks",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Authenticated session HTTP 200',()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200)pm.test('Still the dedicated LOCAL account',()=>pm.expect(pm.response.json().email.toLowerCase()).to.eql(pm.variables.get('d10LocalEmail').trim().toLowerCase()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c3b LOCAL confirmed cannot replace password",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmed\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const preparedId=pm.collectionVariables.get('d10LocalPreparedAccountId');",
+                  "pm.test('Precondition: successful dedicated login preparation',()=>pm.expect(Boolean(preparedId)).to.eql(true));",
+                  "if(!preparedId){pm.execution.skipRequest();throw new Error('Run folder 19 from its successful LOCAL login; an old cookie is not a replacement for setup.');}",
+                  "const base=pm.collectionVariables.get('baseUrl').replace(/[/]+$/,'');",
+                  "pm.sendRequest({url:base+'/api/v1/auth/me',method:'GET',auth:{type:'noauth'}},(error,response)=>{",
+                  "    const valid=!error && response.code===200 && response.json().email.toLowerCase()===pm.variables.get('d10LocalEmail').trim().toLowerCase() && response.json().id===preparedId;",
+                  "    pm.test('Precondition: authenticated dedicated LOCAL account',()=>pm.expect(valid).to.eql(true));",
+                  "    if(!valid){pm.execution.skipRequest();throw new Error('No matching authenticated session. Run folder 19 from Prepare LOCAL cookie session; check cookie jar and account activation.');}",
+                  "    // Fetch CSRF last, after the authenticated /me prerequisite; no further pre-request HTTP calls follow.",
+                  "    pm.request.headers.remove('X-XSRF-TOKEN');",
+                  "    pm.sendRequest({url:base+'/api/v1/auth/csrf',method:'GET',auth:{type:'noauth'}},(csrfError,csrfResponse)=>{",
+                  "        const ok=!csrfError && csrfResponse.code===200;",
+                  "        pm.test('Final CSRF fetch succeeds',()=>pm.expect(ok).to.eql(true));",
+                  "        if(!ok){pm.execution.skipRequest();throw new Error('Final CSRF fetch failed.');}",
+                  "        const csrf=csrfResponse.json();",
+                  "        if(csrf.headerName!=='X-XSRF-TOKEN' || !csrf.token){pm.execution.skipRequest();throw new Error('Unexpected CSRF response.');}",
+                  "        const jar=pm.cookies.jar();",
+                  "        jar.get(base,'RALLYE_SESSION',(sessionError,sessionCookie)=>{",
+                  "            const sessionOk=!sessionError && Boolean(sessionCookie);",
+                  "            pm.test('Outgoing session cookie is available',()=>pm.expect(sessionOk).to.eql(true));",
+                  "            if(!sessionOk){pm.execution.skipRequest();throw new Error('Enable cookie jar, allowlist the host, and rerun login.');}",
+                  "            jar.get(base,'XSRF-TOKEN',(cookieError,cookie)=>{",
+                  "                const cookieOk=!cookieError && Boolean(cookie);",
+                  "                pm.test('Outgoing CSRF cookie is available',()=>pm.expect(cookieOk).to.eql(true));",
+                  "                if(!cookieOk){pm.execution.skipRequest();throw new Error('CSRF cookie unavailable; check cookie jar settings.');}",
+                  "                // The endpoint returns the Spring request token (possibly XOR-masked), not the raw cookie value.",
+                  "                pm.request.headers.upsert({key:csrf.headerName,value:csrf.token});",
+                  "                pm.test('Fresh CSRF header is set',()=>pm.expect(pm.request.headers.get(csrf.headerName)).to.eql(csrf.token));",
+                  "            });",
+                  "        });",
+                  "    });",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401',()=>pm.response.to.have.status(401));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_CREDENTIALS'));",
+                  "const base=pm.collectionVariables.get('baseUrl').replace(/[/]+$/,'');",
+                  "pm.sendRequest({url:base+'/api/v1/auth/me',method:'GET',auth:{type:'noauth'}},(error,response)=>{",
+                  "    pm.test('Rejected password preserves authenticated account',()=>{pm.expect(Boolean(error)).to.eql(false);pm.expect(response.code).to.eql(200);pm.expect(response.json().email.toLowerCase()).to.eql(pm.variables.get('d10LocalEmail').trim().toLowerCase());});",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c3b LOCAL confirmed cannot override wrong password",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"intentionally-incorrect-password\",\n  \"confirmed\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const configured=pm.variables.get('d10LocalPassword');const wrong=configured==='D10-intentionally-incorrect-A'?'D10-intentionally-incorrect-B':'D10-intentionally-incorrect-A';pm.request.body.update(JSON.stringify({currentPassword:wrong,confirmed:true}));",
+                  "const preparedId=pm.collectionVariables.get('d10LocalPreparedAccountId');",
+                  "pm.test('Precondition: successful dedicated login preparation',()=>pm.expect(Boolean(preparedId)).to.eql(true));",
+                  "if(!preparedId){pm.execution.skipRequest();throw new Error('Run folder 19 from its successful LOCAL login; an old cookie is not a replacement for setup.');}",
+                  "const base=pm.collectionVariables.get('baseUrl').replace(/[/]+$/,'');",
+                  "pm.sendRequest({url:base+'/api/v1/auth/me',method:'GET',auth:{type:'noauth'}},(error,response)=>{",
+                  "    const valid=!error && response.code===200 && response.json().email.toLowerCase()===pm.variables.get('d10LocalEmail').trim().toLowerCase() && response.json().id===preparedId;",
+                  "    pm.test('Precondition: authenticated dedicated LOCAL account',()=>pm.expect(valid).to.eql(true));",
+                  "    if(!valid){pm.execution.skipRequest();throw new Error('No matching authenticated session. Run folder 19 from Prepare LOCAL cookie session; check cookie jar and account activation.');}",
+                  "    // Fetch CSRF last, after the authenticated /me prerequisite; no further pre-request HTTP calls follow.",
+                  "    pm.request.headers.remove('X-XSRF-TOKEN');",
+                  "    pm.sendRequest({url:base+'/api/v1/auth/csrf',method:'GET',auth:{type:'noauth'}},(csrfError,csrfResponse)=>{",
+                  "        const ok=!csrfError && csrfResponse.code===200;",
+                  "        pm.test('Final CSRF fetch succeeds',()=>pm.expect(ok).to.eql(true));",
+                  "        if(!ok){pm.execution.skipRequest();throw new Error('Final CSRF fetch failed.');}",
+                  "        const csrf=csrfResponse.json();",
+                  "        if(csrf.headerName!=='X-XSRF-TOKEN' || !csrf.token){pm.execution.skipRequest();throw new Error('Unexpected CSRF response.');}",
+                  "        const jar=pm.cookies.jar();",
+                  "        jar.get(base,'RALLYE_SESSION',(sessionError,sessionCookie)=>{",
+                  "            const sessionOk=!sessionError && Boolean(sessionCookie);",
+                  "            pm.test('Outgoing session cookie is available',()=>pm.expect(sessionOk).to.eql(true));",
+                  "            if(!sessionOk){pm.execution.skipRequest();throw new Error('Enable cookie jar, allowlist the host, and rerun login.');}",
+                  "            jar.get(base,'XSRF-TOKEN',(cookieError,cookie)=>{",
+                  "                const cookieOk=!cookieError && Boolean(cookie);",
+                  "                pm.test('Outgoing CSRF cookie is available',()=>pm.expect(cookieOk).to.eql(true));",
+                  "                if(!cookieOk){pm.execution.skipRequest();throw new Error('CSRF cookie unavailable; check cookie jar settings.');}",
+                  "                // The endpoint returns the Spring request token (possibly XOR-masked), not the raw cookie value.",
+                  "                pm.request.headers.upsert({key:csrf.headerName,value:csrf.token});",
+                  "                pm.test('Fresh CSRF header is set',()=>pm.expect(pm.request.headers.get(csrf.headerName)).to.eql(csrf.token));",
+                  "            });",
+                  "        });",
+                  "    });",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401',()=>pm.response.to.have.status(401));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_CREDENTIALS'));",
+                  "const base=pm.collectionVariables.get('baseUrl').replace(/[/]+$/,'');",
+                  "pm.sendRequest({url:base+'/api/v1/auth/me',method:'GET',auth:{type:'noauth'}},(error,response)=>{",
+                  "    pm.test('Rejected password preserves authenticated account',()=>{pm.expect(Boolean(error)).to.eql(false);pm.expect(response.code).to.eql(200);pm.expect(response.json().email.toLowerCase()).to.eql(pm.variables.get('d10LocalEmail').trim().toLowerCase());});",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c3b Verify LOCAL session survives negative checks",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Authenticated session HTTP 200',()=>pm.response.to.have.status(200));",
+                  "if(pm.response.code===200)pm.test('Still the dedicated LOCAL account',()=>pm.expect(pm.response.json().email.toLowerCase()).to.eql(pm.variables.get('d10LocalEmail').trim().toLowerCase()));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const cookieMode = (pm.environment.get('regressionAuthMode') || 'cookie') === 'cookie';",
+              "pm.test('Folder 19 requires cookie mode',()=>pm.expect(cookieMode).to.eql(true));",
+              "if(!cookieMode){pm.execution.skipRequest();throw new Error('Set regressionAuthMode=cookie and rerun folder 19 from its login.');}",
+              "const email=pm.variables.get('d10LocalEmail'), password=pm.variables.get('d10LocalPassword');",
+              "pm.test('Dedicated LOCAL test credentials configured',()=>pm.expect(Boolean(email && password)).to.eql(true));",
+              "if(!email || !password){pm.execution.skipRequest();throw new Error('Set d10LocalEmail and d10LocalPassword locally; never export secrets.');}",
+              "if(pm.request.headers.get('Cookie')){pm.test('No manual Cookie header',()=>pm.expect(false).to.eql(true));pm.execution.skipRequest();throw new Error('Remove manual Cookie header; use the enabled cookie jar.');}",
+              "pm.request.headers.remove('Authorization');pm.request.headers.remove('X-Rallye-Client');"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "20 D10 cancellation - PREPARED external account (run individually)",
+      "description": "Not a local disabled-provider suite. Requires a disposable GOOGLE or APPLE account authenticated through approved HTTPS provider/browser flow and /auth/me=200. No registration cookie alone. Run negative requests first; verify /auth/me=200 after each. Last request really cancels the account; then /auth/me must return 401. Apple encrypted material is retained, remote revocation remains stage 3c.5. Never run the whole collection/folder in bulk. No auth_time, max_age or fresh grant.",
+      "item": [
+        {
+          "name": "3c3b External missing confirmation (400)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c3b External explicit false (403)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmed\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403',()=>pm.response.to.have.status(403));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('ACCOUNT_CANCELLATION_CONFIRMATION_REQUIRED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c3b External confirmed cancellation (204, DESTRUCTIVE)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/account-cancellations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmed\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204',()=>pm.response.to.have.status(204));",
+                  "pm.test('No response credentials',()=>pm.expect(pm.response.text()).to.eql(''));"
                 ]
               }
             }

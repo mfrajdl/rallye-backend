@@ -2,7 +2,7 @@
 
 ## Aktuální závazný základ a evidence rozhodnutí
 
-Závazná je [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md). Vydání 0.7.0 zůstává historicky beze změny. Původní dokumentační revize byla následována schválenou implementací 3c.3a; aktuální stav V10 a uživatelem potvrzené PG ověření: [single-identity-3c3a.md](single-identity-3c3a.md). Návrhy 3c.3b/c a 3c.4/5 nejsou implementované. 3c.1 a 3c.2 byly dokončeny podle tehdejšího rozsahu: verify 271 testů, uživatelem potvrzený PostgreSQL BUILD SUCCESS a lokální Postman 16 (6/6). Skutečné Google/Apple přihlášení a pozitivní Postman 17 jsou neověřené.
+Závazná je [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md). Vydání 0.7.0 zůstává historicky beze změny. Původní dokumentační revize byla následována schválenou implementací 3c.3a; aktuální stav V10 a uživatelem potvrzené PG ověření: [single-identity-3c3a.md](single-identity-3c3a.md). 3c.3b je implementována podle [account-cancellation-3c3b.md](account-cancellation-3c3b.md); její PG ověření uživatel potvrdil jako BUILD SUCCESS; LOCAL manuální ověření je potvrzené (Postman 19: 35/0, SELF 204 a odvolání přístupu); skutečné GOOGLE/APPLE zrušení čeká na HTTPS testovací prostředí. 3c.3c a 3c.4/5 nejsou implementované. 3c.1 a 3c.2 byly dokončeny podle tehdejšího rozsahu: verify 271 testů, uživatelem potvrzený PostgreSQL BUILD SUCCESS a lokální Postman 16 (6/6). Skutečné Google/Apple přihlášení a pozitivní Postman 17 jsou neověřené.
 
 | Rozhodnutí | Aktuální platnost |
 | --- | --- |
@@ -63,7 +63,7 @@ Jde o navržené technické řešení, ne aplikovanou ochranu. Administrátor da
 
 ### 3c.3b – potvrzení vlastního zrušení podle D10
 
-- Rozšířit existující POST /api/v1/auth/account-cancellations, nikoli zakládat paralelní službu. Návrh DTO: dosavadní currentPassword pro LOCAL; samostatné explicitní boolean confirmed=true pro externí účet, výchozí false. Přesný název DTO/error kód uzavřít při implementaci, žádné nové API zatím neexistuje.
+- Rozšířit existující POST /api/v1/auth/account-cancellations, nikoli zakládat paralelní službu. Návrh DTO: dosavadní currentPassword pro LOCAL; samostatné explicitní boolean confirmed=true pro externí účet, výchozí false. Implementace 3c.3b používá confirmed a ACCOUNT_CANCELLATION_CONFIRMATION_REQUIRED, viz konkrétní kontrakt v account-cancellation-3c3b.md.
 - Typ identity zjistit z DB v téže transakci. Platná relace je povinná v obou větvích, LOCAL heslo se vždy znovu ověří; externí potvrzení se nesmí vydávat za reautentizaci. Bez true nedělat žádnou změnu. Pro web zachovat CSRF a pro mobil stávající Bearer pravidla.
 - Potvrzení není přenosný token, nevytváří grant ani prodloužení relace. Nové přihlášení u poskytovatele ani auth_time/max_age se nevyžaduje. Samostatné potvrzovací UI musí vyjadřovat vědomý souhlas; backend vynucuje explicitní příznak, frontend nelze nahradit automatickým potvrzením na pozadí.
 - Zachovat aktuální idempotenci cancellation, replay po aktuální autorizaci, rollback, úklid CommandStore, relací, převodů a vlastnictví, audit ACCOUNT_CANCELLED a invariant posledního ADMIN. Nové auditní kategorie přidat jen s doloženou potřebou; žádné REAUTHENTICATION_SUCCEEDED při pouhém potvrzení.
@@ -96,4 +96,4 @@ Původní otázky politiky relací při link/unlink a odloženého APPLE unlink 
 
 ## Aktuální doporučení
 
-Schválená 3c.3a je implementována a uživatelem ověřena PostgreSQL během (BUILD SUCCESS). V1–V9 se nezměnily, V10 není Codexem aplikovaná na DB. Po úspěšném ověření a akceptaci pokračovat 3c.3b, zatím ji neimplementovat. Přesné testy a limity jsou v single-identity-3c3a.md.
+Schválená 3c.3a je implementována a uživatelem ověřena PostgreSQL během (BUILD SUCCESS). V1–V9 se nezměnily, V10 není Codexem aplikovaná na DB. Následná 3c.3b je implementována; PostgreSQL ověření již potvrdil uživatel, manuální ověření je oddělené podle account-cancellation-3c3b.md. Přesné testy a limity jsou v single-identity-3c3a.md.
