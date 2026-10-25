@@ -14,6 +14,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class LaunchTicketPrivacyFilter extends OncePerRequestFilter {
+    public static final String EXCHANGE="/api/v1/auth/external/mobile/exchanges";
     public static final String PATH="/api/v1/auth/external/mobile/launch";
     private static final String INPUT=LaunchTicketPrivacyFilter.class.getName()+".input";
     private record Input(Map<String,String[]> parameters) {
@@ -21,7 +22,7 @@ public class LaunchTicketPrivacyFilter extends OncePerRequestFilter {
     }
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
         String path=request.getRequestURI().substring(request.getContextPath().length());
-        return !path.equals(PATH) && !path.equals("/api/v1/auth/external/GOOGLE/callback")
+        return !path.equals(PATH) && !path.equals(EXCHANGE) && !path.equals("/api/v1/auth/external/GOOGLE/callback")
                 && !path.equals("/api/v1/auth/external/APPLE/callback") && request.getAttribute(INPUT)==null;
     }
     @Override protected boolean shouldNotFilterErrorDispatch(){return false;}
@@ -34,6 +35,10 @@ public class LaunchTicketPrivacyFilter extends OncePerRequestFilter {
             throws ServletException,IOException {
         response.setHeader("Cache-Control","no-store");
         response.setHeader("Referrer-Policy","no-referrer");
+        if(request.getRequestURI().equals(request.getContextPath()+EXCHANGE) && "POST".equals(request.getMethod())
+                && (!"mobile".equals(request.getHeader("X-Rallye-Client")) || AuthCookies.present(request) || request.getHeader("Authorization")!=null)) {
+            ApiErrors.write(response,400,"INVALID_REQUEST");return;
+        }
         if(request.getAttribute(INPUT)==null) {
             Map<String,String[]> original=new LinkedHashMap<>();
             request.getParameterMap().forEach((key,value)->original.put(key,value.clone()));

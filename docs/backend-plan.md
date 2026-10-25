@@ -415,3 +415,17 @@ Consume state, kontrola účtu, Apple materiál a grant jsou atomické pod spole
 Verify bez DB: BUILD SUCCESS, 317 testů. Nové MobileCallbackIT má 15 připravených PostgreSQL scénářů, opravený PostgreSQL běh uživatel potvrdil jako BUILD SUCCESS (2026-10-25); Codex jej nespouštěl. Nová Postman 23 je lokální negativní sada bez providerů, uživatel potvrdil All Passed. HTTPS/provider/browser/registrační stránka zůstávají integrační závislosti 3c.4b; exchange/Bearer a 3c.4a.3 nejsou implementovány. Předchozí odstavce o neimplementované 3c.4a.2 zachycují uzavření 3c.4a.1, aktuální stav je tento oddíl.
 
 Uzavření 3c.4a.2 (2026-10-25): implementačně dokončena a lokálně ověřena. Codex verify bez DB: 317 testů, BUILD SUCCESS. Uživatel potvrdil PostgreSQL verify včetně opravy SingleIdentityIT (BUILD SUCCESS) a Postman složku 23 (All Passed). Skutečné Google/Apple přihlášení přes HTTPS, browser/proxy a profilová stránka zůstávají neověřené. Exchange a mobilní Bearer relace patří až do nezahájené 3c.4a.3.
+
+### Realizace 3c.4a.3 – exchange (implementačně dokončeno a lokálně ověřeno)
+
+[Kontrakt a ověření](mobile-exchange-3c4a3.md): veřejný POST /api/v1/auth/external/mobile/exchanges s mobilní hlavičkou a code/requestId/codeVerifier, bez Cookie/Authorization. Jednorázová atomická spotřeba pod control → account → grant, PKCE S256, aktuální ACTIVE externí identita, běžná hashovaná user_session a transakční LOGIN_SUCCEEDED. JSON token/tokenType/rememberMe odpovídá LOCAL mobilnímu loginu. Grant platí 60 s nezávisle na již dokončené autorizaci; retry po ztracené úspěšné odpovědi vyžaduje nový tok. Bez nové migrace, V1–V12 se nemění. Privacy guard nově odmítá nebezpečné MVC exception/payload DEBUG logování. Připraveno 15 PostgreSQL scénářů MobileExchangeIT a Postman 24 (lokální negativní) / 25 (připravený skutečný HTTPS callback). PostgreSQL testy spustí uživatel, ne Codex; skuteční poskytovatelé, platformní aplikace, profilová stránka a 3c.4b zůstávají neověřené/neimplementované; 3c.5 se nezahajuje. Předchozí odstavce o neimplementovaném exchange jsou historické.
+
+Ověření 3c.4a.3 (Codex, 2026-10-25): Maven Wrapper / Microsoft JDK 21.0.12.1, `verify` bez DB – **BUILD SUCCESS, 335 testů, 0 failures/errors/skipped**, JAR sestaven. Zahrnuje 18 nových testů bez DB a zkompilovaných 15 MobileExchangeIT; PostgreSQL se nespouštělo. Postman Collection v2.1 prošla standardním JSON parserem, validací proti oficiálnímu lokálnímu schématu a syntaktickou kontrolou všech 222 JavaScript skriptů. Postman požadavky nebyly spuštěny. `git diff --check` bez chyb; uživatelské .gitignore a docs/Rallye_specifikace.md zachovány.
+
+### Uživatelské PostgreSQL ověření 3c.4a.3
+
+Uživatel po dokončení implementace potvrdil `.\mvnw.cmd -Pit verify` proti `rallye_test`: **BUILD SUCCESS**, včetně nových MobileExchangeIT. Jde o uživatelem provedený běh, nikoli vlastní spuštění Codexem; celkový počet testů nebyl sdělen. Postman složky 24/25 ani skutečné HTTPS/Google/Apple end-to-end ověření tímto potvrzením ověřeny nejsou. Bez commitu a pushe.
+
+### Uzavření 3c.4a.3
+
+Etapa je implementačně dokončena a lokálně ověřena. Codex: verify bez DB BUILD SUCCESS, 335 testů, validní Postman Collection v2.1/222 skriptů a git diff --check. Uživatel: PostgreSQL verify BUILD SUCCESS včetně MobileExchangeIT a Postman složka 24 All Passed. Skutečné Google/Apple přihlášení přes HTTPS a pozitivní Postman složka 25 dosud ověřeny nejsou; nevyvozují se ze simulovaných providerů. 3c.4b ani 3c.5 se nezahajují. Starší záznamy o čekajících testech popisují průběh před tímto potvrzením.

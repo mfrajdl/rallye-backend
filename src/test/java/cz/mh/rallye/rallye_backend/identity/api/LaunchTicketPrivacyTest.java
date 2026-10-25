@@ -65,6 +65,15 @@ class LaunchTicketPrivacyTest {
         try {assertThrows(IllegalStateException.class,()->new LaunchLoggingConfiguration().customize(new TomcatServletWebServerFactory(0)));}
         finally {logger.setLevel(before);}
     }
+    @Test void unsafeMvcExceptionAndPayloadDebugLoggingCannotStart() {
+        for(String name:java.util.List.of("org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver",
+                "org.springframework.web.filter.CommonsRequestLoggingFilter")) {
+            var logger=(ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger(name);
+            var before=logger.getLevel();logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+            try {assertThrows(IllegalStateException.class,()->new LaunchLoggingConfiguration().customize(new TomcatServletWebServerFactory(0)));}
+            finally {logger.setLevel(before);}
+        }
+    }
     @Test void realEmbeddedTomcatAccessLogOmitsQueryAndReferer() throws Exception {
         String ticket="synthetic-tomcat-private-ticket";
         var factory=new TomcatServletWebServerFactory(0);factory.setAddress(InetAddress.getByName("127.0.0.1"));

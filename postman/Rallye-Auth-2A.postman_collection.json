@@ -371,7 +371,7 @@
         "type": "text/javascript",
         "exec": [
           "// Bootstrap tests are anonymous protocol requests, never a Bearer regression session.",
-          "if ((pm.info.requestName.startsWith('3c4a1 ') || pm.info.requestName.startsWith('3c4a2 '))) {",
+          "if ((pm.info.requestName.startsWith('3c4a1 ') || pm.info.requestName.startsWith('3c4a2 ') || pm.info.requestName.startsWith('3c4a3 '))) {",
           "    pm.request.headers.remove('Authorization'); pm.request.headers.remove('Cookie'); pm.request.headers.remove('X-XSRF-TOKEN');",
           "    pm.request.headers.upsert({key:'X-Rallye-Client',value:'mobile'});",
           "} else {",
@@ -5799,6 +5799,669 @@
                   "pm.test('Safe error code',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_CALLBACK_INVALID'));",
                   "pm.test('Callback privacy headers',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');});",
                   "pm.test('No redirect or Rallye session',()=>{pm.expect(pm.response.headers.get('Location')).to.equal(undefined);pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').some(h=>h.value.startsWith('RALLYE_SESSION='))).to.eql(false);});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "24 Mobile exchange 3c.4a.3 - LOCAL negative checks",
+      "description": "Run the whole folder independently with providers disabled. No real account, grant, cookies, CSRF or session is needed. All inputs are synthetic; no destructive operation. Expect HTTP responses, not skipped tests.",
+      "item": [
+        {
+          "name": "3c4a3 Missing verifier",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n  \"requestId\": \"00000000-0000-4000-8000-000000000001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 Invalid code format",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"not-a-code\",\n  \"requestId\": \"00000000-0000-4000-8000-000000000001\",\n  \"codeVerifier\": \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 Invalid requestId",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n  \"requestId\": \"not-a-uuid\",\n  \"codeVerifier\": \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 Invalid verifier format",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n  \"requestId\": \"00000000-0000-4000-8000-000000000001\",\n  \"codeVerifier\": \"short\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 Unknown handoff uses generic error",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n  \"requestId\": \"00000000-0000-4000-8000-000000000001\",\n  \"codeVerifier\": \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_HANDOFF_INVALID'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 Missing mobile header rejected",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n  \"requestId\": \"00000000-0000-4000-8000-000000000001\",\n  \"codeVerifier\": \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.remove('X-Rallye-Client');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 Session cookie is not exchange authentication",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n  \"requestId\": \"00000000-0000-4000-8000-000000000001\",\n  \"codeVerifier\": \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.upsert({key:'Cookie',value:'RALLYE_SESSION='+'C'.repeat(43)});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 Authorization is not exchange authentication",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n  \"requestId\": \"00000000-0000-4000-8000-000000000001\",\n  \"codeVerifier\": \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.upsert({key:'Authorization',value:'Bearer '+'C'.repeat(43)});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('INVALID_REQUEST'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "25 Mobile exchange 3c.4a.3 - PREPARED HTTPS live callback",
+      "description": "Run individually. Requires configured HTTPS/provider and existing active external account, mobileBootstrapPrepared=true. Start generates an independent mobile PKCE verifier in the selected private environment. Open mobileBrowserStartUrl directly in system browser (do not call launch in Postman), finish provider login, privately copy only callback code and requestId into mobileHandoffCode/mobileCallbackRequestId. Exchange within 60 seconds. Do not export environment secrets or log them. This folder is NOT locally verified without a real provider. Stop before exchange when new profile registration is needed; finish browser registration then start again. See docs/mobile-exchange-3c4a3.md.",
+      "item": [
+        {
+          "name": "3c4a3 E2E start - then open browserStartUrl in system browser",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/{{mobileProvider}}/requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"LOGIN\",\n  \"returnId\": \"{{mobileReturnId}}\",\n  \"rememberMe\": false,\n  \"mobileChallenge\": \"{{mobileExchangeChallenge}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(String(pm.variables.get('mobileBootstrapPrepared'))!=='true'||!pm.variables.get('baseUrl').startsWith('https://')){pm.test('Prepared HTTPS required',()=>{throw new Error('Configure HTTPS provider and mobile target, then set mobileBootstrapPrepared=true.');});pm.execution.skipRequest();throw new Error('Prepared HTTPS required');}",
+                  "const verifier=(pm.variables.replaceIn('{{$randomUUID}}')+pm.variables.replaceIn('{{$randomUUID}}')).replace(/-/g,'');",
+                  "pm.environment.set('mobilePkceVerifier',verifier);const C=require('crypto-js');pm.variables.set('mobileExchangeChallenge',C.SHA256(verifier).toString(C.enc.Base64).replace(/=/g,'').replace(/\\+/g,'-').replace(/\\//g,'_'));",
+                  "['mobileHandoffCode','mobileCallbackRequestId','mobileBearerToken','mobileExchangeSucceeded','mobileRequestId','mobileBrowserStartUrl'].forEach(k=>pm.environment.unset(k));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "pm.test('Bootstrap only',()=>{const b=pm.response.json();pm.expect(b.stage).to.eql('MOBILE_BOOTSTRAP');pm.expect(b.token).to.equal(undefined);});",
+                  "if(pm.response.code===200){pm.environment.set('mobileRequestId',pm.response.json().requestId);pm.environment.set('mobileBrowserStartUrl',pm.response.json().browserStartUrl);}",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 E2E exchange live callback grant",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{mobileHandoffCode}}\",\n  \"requestId\": \"{{mobileRequestId}}\",\n  \"codeVerifier\": \"{{mobilePkceVerifier}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(String(pm.variables.get('mobileBootstrapPrepared'))!=='true'||!pm.variables.get('baseUrl').startsWith('https://')){pm.test('Prepared HTTPS required',()=>{throw new Error('Configure HTTPS provider and mobile target, then set mobileBootstrapPrepared=true.');});pm.execution.skipRequest();throw new Error('Prepared HTTPS required');}",
+                  "if(!pm.environment.get('mobileHandoffCode')||!pm.environment.get('mobilePkceVerifier')||!pm.environment.get('mobileRequestId')||pm.environment.get('mobileCallbackRequestId')!==pm.environment.get('mobileRequestId')){pm.test('Matching live callback required',()=>{throw new Error('Complete real browser callback for the existing account, set mobileHandoffCode and matching mobileCallbackRequestId; exchange within 60 seconds.');});pm.execution.skipRequest();throw new Error('Matching live callback required');}",
+                  "pm.environment.unset('mobileBearerToken');pm.environment.unset('mobileExchangeSucceeded');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "pm.test('Existing Bearer contract',()=>{const b=pm.response.json();pm.expect(b.token).to.match(/^[A-Za-z0-9_-]{43}$/);pm.expect(b.tokenType).to.eql('Bearer');pm.expect(b.rememberMe).to.eql(false);});",
+                  "if(pm.response.code===200){pm.environment.set('mobileBearerToken',pm.response.json().token);pm.environment.set('mobileExchangeSucceeded','true');}",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 E2E replay rejected",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/external/mobile/exchanges",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{mobileHandoffCode}}\",\n  \"requestId\": \"{{mobileRequestId}}\",\n  \"codeVerifier\": \"{{mobilePkceVerifier}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(String(pm.variables.get('mobileBootstrapPrepared'))!=='true'||!pm.variables.get('baseUrl').startsWith('https://')){pm.test('Prepared HTTPS required',()=>{throw new Error('Configure HTTPS provider and mobile target, then set mobileBootstrapPrepared=true.');});pm.execution.skipRequest();throw new Error('Prepared HTTPS required');}",
+                  "if(!pm.environment.get('mobileHandoffCode')||!pm.environment.get('mobilePkceVerifier')||!pm.environment.get('mobileRequestId')||pm.environment.get('mobileCallbackRequestId')!==pm.environment.get('mobileRequestId')){pm.test('Matching live callback required',()=>{throw new Error('Complete real browser callback for the existing account, set mobileHandoffCode and matching mobileCallbackRequestId; exchange within 60 seconds.');});pm.execution.skipRequest();throw new Error('Matching live callback required');}",
+                  "if(pm.environment.get('mobileExchangeSucceeded')!=='true'){pm.test('Successful exchange required',()=>{throw new Error('Run successful exchange first.');});pm.execution.skipRequest();throw new Error('Exchange required');}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400',()=>pm.response.to.have.status(400));",
+                  "pm.test('Safe error',()=>pm.expect(pm.response.json().code).to.eql('EXTERNAL_HANDOFF_INVALID'));",
+                  "pm.test('Privacy and no credential cookies',()=>{pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');pm.expect(pm.response.headers.get('Referrer-Policy')).to.eql('no-referrer');pm.expect(pm.response.headers.get('Set-Cookie')).to.equal(undefined);pm.expect(pm.response.headers.get('Location')).to.equal(undefined);});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 E2E Bearer me",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/me"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(String(pm.variables.get('mobileBootstrapPrepared'))!=='true'||!pm.variables.get('baseUrl').startsWith('https://')){pm.test('Prepared HTTPS required',()=>{throw new Error('Configure HTTPS provider and mobile target, then set mobileBootstrapPrepared=true.');});pm.execution.skipRequest();throw new Error('Prepared HTTPS required');}",
+                  "const t=pm.environment.get('mobileBearerToken');if(!t){pm.test('Own mobile Bearer required',()=>{throw new Error('Run successful exchange first.');});pm.execution.skipRequest();throw new Error('No token');}pm.request.headers.upsert({key:'Authorization',value:'Bearer '+t});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+                  "pm.test('Account view',()=>pm.expect(pm.response.json().id).to.match(/^[0-9a-f-]{36}$/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 E2E logout own mobile session",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/logout"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(String(pm.variables.get('mobileBootstrapPrepared'))!=='true'||!pm.variables.get('baseUrl').startsWith('https://')){pm.test('Prepared HTTPS required',()=>{throw new Error('Configure HTTPS provider and mobile target, then set mobileBootstrapPrepared=true.');});pm.execution.skipRequest();throw new Error('Prepared HTTPS required');}",
+                  "const t=pm.environment.get('mobileBearerToken');if(!t){pm.test('Own mobile Bearer required',()=>{throw new Error('Run successful exchange first.');});pm.execution.skipRequest();throw new Error('No token');}pm.request.headers.upsert({key:'Authorization',value:'Bearer '+t});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204',()=>pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3c4a3 E2E old Bearer rejected after logout",
+          "protocolProfileBehavior": {
+            "disableCookies": true,
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/me"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(String(pm.variables.get('mobileBootstrapPrepared'))!=='true'||!pm.variables.get('baseUrl').startsWith('https://')){pm.test('Prepared HTTPS required',()=>{throw new Error('Configure HTTPS provider and mobile target, then set mobileBootstrapPrepared=true.');});pm.execution.skipRequest();throw new Error('Prepared HTTPS required');}",
+                  "const t=pm.environment.get('mobileBearerToken');if(!t){pm.test('Own mobile Bearer required',()=>{throw new Error('Run successful exchange first.');});pm.execution.skipRequest();throw new Error('No token');}pm.request.headers.upsert({key:'Authorization',value:'Bearer '+t});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401',()=>pm.response.to.have.status(401));",
+                  "pm.test('Old credentials invalid',()=>pm.expect(pm.response.json().code).to.eql('INVALID_CREDENTIALS'));",
+                  "if(pm.response.code===401){['mobileBearerToken','mobileHandoffCode','mobilePkceVerifier','mobileCallbackRequestId','mobileExchangeSucceeded'].forEach(k=>pm.environment.unset(k));}"
                 ]
               }
             }

@@ -642,3 +642,17 @@ Uživatelský PostgreSQL běh: 209 testů, jedna chyba aserce v `SingleIdentityI
 Po opravě přípravy: vlastní běh `verify` bez PostgreSQL – BUILD SUCCESS, 317 testů, 0 failures/errors/skipped; PostgreSQL testy byly zkompilovány, nikoli spuštěny.
 
 Uzavření 3c.4a.2 (2026-10-25): implementačně dokončena a lokálně ověřena. Codex verify bez DB: 317 testů, BUILD SUCCESS. Uživatel potvrdil PostgreSQL verify včetně opravy SingleIdentityIT (BUILD SUCCESS) a Postman složku 23 (All Passed). Skutečné Google/Apple přihlášení přes HTTPS, browser/proxy a profilová stránka zůstávají neověřené. Exchange a mobilní Bearer relace patří až do nezahájené 3c.4a.3.
+
+## 3c.4a.3 – mobilní exchange (připraveno k ověření)
+
+[Detailní kontrakt a postup](mobile-exchange-3c4a3.md). Připraveno 15 PostgreSQL testů MobileExchangeIT s izolovaným schématem rallye_test: skutečný callback/grant/exchange nad mock providerem, me/logout přes HTTP, replay, PKCE a requestId, přesná expirace, souběhy exchange/cancellation a rollback po skutečném zápisu session/auditu. Nové testy bez DB pokrývají RFC PKCE vektor, validaci, pořadí zámků, HTTP/CSRF, throttle, redakci a odmítnutí nebezpečných loggerů. PostgreSQL `.\mvnw.cmd -Pit verify` spouští pouze uživatel a nový výsledek uživatel potvrdil jako BUILD SUCCESS. Postman 24 lze spustit celý na localhost bez providerů; Postman 25 po přípravě HTTPS jednotlivě s browserovým callbackem. Uživatel potvrdil lokální Postman 24 jako All Passed; skutečné provider přihlášení a pozitivní Postman 25 zatím ověřeny nejsou.
+
+Ověření 3c.4a.3 (Codex, 2026-10-25): Maven Wrapper / Microsoft JDK 21.0.12.1, `verify` bez DB – **BUILD SUCCESS, 335 testů, 0 failures/errors/skipped**, JAR sestaven. Zahrnuje 18 nových testů bez DB a zkompilovaných 15 MobileExchangeIT; PostgreSQL se nespouštělo. Postman Collection v2.1 prošla standardním JSON parserem, validací proti oficiálnímu lokálnímu schématu a syntaktickou kontrolou všech 222 JavaScript skriptů. Postman požadavky nebyly spuštěny. `git diff --check` bez chyb; uživatelské .gitignore a docs/Rallye_specifikace.md zachovány.
+
+### Uživatelské PostgreSQL ověření 3c.4a.3
+
+Uživatel po dokončení implementace potvrdil `.\mvnw.cmd -Pit verify` proti `rallye_test`: **BUILD SUCCESS**, včetně nových MobileExchangeIT. Jde o uživatelem provedený běh, nikoli vlastní spuštění Codexem; celkový počet testů nebyl sdělen. Postman složky 24/25 ani skutečné HTTPS/Google/Apple end-to-end ověření tímto potvrzením ověřeny nejsou. Bez commitu a pushe.
+
+### Uzavření 3c.4a.3
+
+Etapa je implementačně dokončena a lokálně ověřena. Codex: verify bez DB BUILD SUCCESS, 335 testů, validní Postman Collection v2.1/222 skriptů a git diff --check. Uživatel: PostgreSQL verify BUILD SUCCESS včetně MobileExchangeIT a Postman složka 24 All Passed. Skutečné Google/Apple přihlášení přes HTTPS a pozitivní Postman složka 25 dosud ověřeny nejsou; nevyvozují se ze simulovaných providerů. 3c.4b ani 3c.5 se nezahajují. Starší záznamy o čekajících testech popisují průběh před tímto potvrzením.

@@ -43,6 +43,7 @@ public class AuthConfiguration {
                 }))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(org.springframework.http.HttpMethod.GET,"/api/v1/auth/external/mobile/launch").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/api/v1/auth/external/mobile/exchanges").permitAll()
                         .requestMatchers("/api/hello", "/api/v1/auth/csrf", "/api/v1/auth/register",
                                 "/api/v1/auth/email-verifications", "/api/v1/auth/email-verification-requests",
                                 "/api/v1/auth/login", "/api/v1/auth/password-reset-requests",
