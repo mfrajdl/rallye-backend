@@ -20,18 +20,22 @@ public class ExternalProviders {
     public record Client(boolean enabled,String clientId,String clientSecret,String callbackUri) {
         @Override public String toString(){return "ExternalClient[redacted]";}
     }
-    private final Settings settings;
-    public ExternalProviders(Settings settings){this.settings=settings;}
+    private final Settings settings;private final AppleClientSecrets appleSecrets;
+    public ExternalProviders(Settings settings){this(settings,null);}
+    @org.springframework.beans.factory.annotation.Autowired
+    public ExternalProviders(Settings settings,AppleClientSecrets appleSecrets){this.settings=settings;this.appleSecrets=appleSecrets;}
     public ClientRegistration registration(Provider provider) {
         Client c=settings.providers().get(provider);
         if(c==null || !c.enabled())throw new AuthFailure(503,"EXTERNAL_PROVIDER_DISABLED");
-        if(c.clientId()==null || c.clientId().isBlank() || c.clientSecret()==null || c.clientSecret().isBlank())throw unavailable();
+        if(c.clientId()==null || c.clientId().isBlank())throw unavailable();
+        String secret=provider==Provider.APPLE && appleSecrets!=null && appleSecrets.enabled()?appleSecrets.create(c.clientId()):c.clientSecret();
+        if(secret==null || secret.isBlank())throw unavailable();
         URI uri=uri(c.callbackUri());
         if(!"https".equals(uri.getScheme()) || uri.getHost()==null || uri.getQuery()!=null || uri.getFragment()!=null || uri.getUserInfo()!=null)throw unavailable();
         if(provider==Provider.APPLE && (uri.getHost().equals("localhost") || uri.getHost().matches("[0-9.]+")))throw unavailable();
         String issuer=issuer(provider);
         return ClientRegistration.withRegistrationId(provider.name().toLowerCase(java.util.Locale.ROOT))
-            .clientId(c.clientId()).clientSecret(c.clientSecret()).clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
+            .clientId(c.clientId()).clientSecret(secret).clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE).redirectUri(c.callbackUri())
             .scope(provider==Provider.GOOGLE?new String[]{"openid","email","profile"}:new String[]{"email","name"})
             .authorizationUri(provider==Provider.GOOGLE?"https://accounts.google.com/o/oauth2/v2/auth":issuer+"/auth/authorize")

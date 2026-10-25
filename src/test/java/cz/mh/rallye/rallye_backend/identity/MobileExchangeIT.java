@@ -172,10 +172,27 @@ class MobileExchangeIT {
     @Test void cancellationAndAnonymizationDeleteGrantAndNeverAllowLaterExchange(){
         for(var provider:ExternalProviders.Provider.values())for(boolean historical:List.of(false,true)) {
             var h=handoff(provider,true);var existing=session(h.account());if(historical)participation.overrides.put(h.account().id(),new AccountParticipationFacts.Facts(true,false));
+            var material=provider==ExternalProviders.Provider.APPLE
+                ?jdbc.queryForList("SELECT * FROM apple_revocation_credential WHERE account_id=? ORDER BY id",h.account().id())
+                :List.<Map<String,Object>>of();
+            if(provider==ExternalProviders.Provider.APPLE)assertFalse(material.isEmpty(),"Apple fixture must contain captured material");
             cancellation.self(existing.principal(),null,true,UUID.randomUUID());invalid(()->exchange(h));
             assertEquals(0,grants(h.run().requestId()));assertEquals(0,sessions(h.account().id()));assertNull(auth.authenticate(existing.secret()));
             if(historical)assertEquals("ANONYMIZED",jdbc.queryForObject("SELECT status FROM user_account WHERE id=?",String.class,h.account().id()));
-            if(provider==ExternalProviders.Provider.APPLE)assertTrue(jdbc.queryForObject("SELECT count(*) FROM apple_revocation_credential WHERE account_id=?",Integer.class,h.account().id())>0);
+            else assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM user_account WHERE id=?",Integer.class,h.account().id()));
+            // Cancellation detaches the live owner; immutable case/material IDs preserve revocation provenance.
+            for(var before:material) {
+                var after=jdbc.queryForMap("SELECT * FROM apple_revocation_credential WHERE id=?",before.get("id"));
+                assertNull(after.get("account_id"));assertNull(after.get("registration_id"));
+                for(String column:List.of("id","case_id","client_id","key_id","created_at"))assertEquals(before.get(column),after.get(column),column);
+                assertArrayEquals((byte[])before.get("iv"),(byte[])after.get("iv"));
+                assertArrayEquals((byte[])before.get("ciphertext"),(byte[])after.get("ciphertext"));
+                var authorization=jdbc.queryForMap("SELECT * FROM apple_authorization_case WHERE id=?",after.get("case_id"));
+                assertEquals(h.account().id(),authorization.get("origin_account_id"));
+                assertNull(authorization.get("account_id"));assertNull(authorization.get("registration_id"));
+                assertEquals("REVOCATION_REQUIRED",authorization.get("status"));
+                assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM apple_revocation_job WHERE credential_id=? AND case_id=? AND reason='ACCOUNT_CANCELLATION' AND status='PENDING'",Integer.class,after.get("id"),after.get("case_id")));
+            }
         }
     }
     @Test void exchangeBeforeCancellationProducesOnlySubsequentlyRevokedSessions(){

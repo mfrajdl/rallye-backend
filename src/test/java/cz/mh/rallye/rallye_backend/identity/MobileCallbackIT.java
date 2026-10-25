@@ -132,7 +132,7 @@ class MobileCallbackIT {
         var r=run(account(ExternalProviders.Provider.GOOGLE));var rejected=login.rejectCallback(r.provider(),r.state(),r.correlation());
         assertEquals(r.requestId(),rejected.requestId());assertEquals("https://app.example.test/mobile/return",rejected.returnUri());assertEquals(0,grants(r.requestId()));assertThrows(AuthFailure.class,()->finish(r));
     }
-    @Test void grantFailureRollsBackStateAndAppleCredentialWithoutCreatingSession() {
+    @Test void grantFailureKeepsCapturedAppleCredentialButCreatesNoSessionOrGrant() {
         var a=account(ExternalProviders.Provider.APPLE);var r=run(a);
         int credentials=jdbc.queryForObject("SELECT count(*) FROM apple_revocation_credential WHERE account_id=?",Integer.class,a.id());
         MobileGrantStore target=org.springframework.test.util.AopTestUtils.getUltimateTargetObject(grantStore);var marker=new IllegalStateException("injected grant failure");
@@ -140,8 +140,9 @@ class MobileCallbackIT {
         try {Throwable failure=assertThrows(RuntimeException.class,()->finish(r));while(failure.getCause()!=null)failure=failure.getCause();assertSame(marker,failure);}
         finally {doCallRealMethod().when(target).issue(eq(a.id()),eq(r.requestId()),any(),any(),any());}
         assertEquals(0,grants(r.requestId()));assertEquals(0,sessions(a.id()));
-        assertNull(jdbc.queryForObject("SELECT consumed_at FROM external_auth_flow WHERE state_hash=?",java.sql.Timestamp.class,secrets.hash(r.state())));
-        assertEquals(credentials,jdbc.queryForObject("SELECT count(*) FROM apple_revocation_credential WHERE account_id=?",Integer.class,a.id()));
+        assertNotNull(jdbc.queryForObject("SELECT consumed_at FROM external_auth_flow WHERE state_hash=?",java.sql.Timestamp.class,secrets.hash(r.state())));
+        assertEquals(credentials+1,jdbc.queryForObject("SELECT count(*) FROM apple_revocation_credential WHERE account_id=?",Integer.class,a.id()));
+        assertThrows(AuthFailure.class,()->finish(r));
     }
     @Test void cancellationBetweenProofAndTransactionCannotIssueOldAccountGrant() {
         var a=account(ExternalProviders.Provider.GOOGLE);var session=session(a);var r=run(a);

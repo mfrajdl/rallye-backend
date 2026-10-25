@@ -15,9 +15,12 @@ public class ExternalAccountStore {
         @Override public String toString(){return "ExternalRegistration[redacted]";}
     }
     private final JdbcTemplate jdbc;
-    public ExternalAccountStore(JdbcTemplate jdbc){this.jdbc=jdbc;}
+    private final cz.mh.rallye.rallye_backend.identity.application.AppleAuthorizationLifecycle apple;
+    public ExternalAccountStore(JdbcTemplate jdbc,cz.mh.rallye.rallye_backend.identity.application.AppleAuthorizationLifecycle apple){this.jdbc=jdbc;this.apple=apple;}
     public void lock(){jdbc.queryForObject("SELECT id FROM admin_control WHERE id=1 FOR UPDATE",Integer.class);}
-    public void purgeExpired(Instant now){jdbc.update("DELETE FROM external_registration WHERE expires_at<=?",at(now));}
+    public void purgeExpired(Instant now){apple.purge(now);}
+    public void captureApple(UUID flow,String subject,String client,UUID account,UUID registration,String token){apple.capture(flow,subject,client,account,registration,token);}
+    public boolean appleBlocked(String issuer,String subject){return apple.blocked(issuer,subject);}
     public UUID account(String provider,String issuer,String subject) {
         var ids=jdbc.queryForList("SELECT account_id FROM user_identity WHERE provider=? AND issuer=? AND subject=?",UUID.class,provider,issuer,subject);
         return ids.isEmpty()?null:ids.getFirst();
@@ -44,16 +47,9 @@ public class ExternalAccountStore {
         jdbc.update("INSERT INTO user_identity(id,account_id,provider,issuer,subject,created_at) VALUES (?,?,?,?,?,?)",UUID.randomUUID(),id,r.provider(),r.issuer(),r.subject(),at(now));
         return true;
     }
-    public void credential(UUID id,UUID account,UUID registration,String clientId,
-            String keyId,byte[] iv,byte[] ciphertext,Instant now) {
-        jdbc.update("""
-            INSERT INTO apple_revocation_credential(id,account_id,registration_id,client_id,key_id,iv,ciphertext,created_at)
-            VALUES (?,?,?,?,?,?,?,?)
-            """,id,account,registration,clientId,keyId,iv,ciphertext,at(now));
-    }
     public boolean hasCredential(UUID account,String clientId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM apple_revocation_credential WHERE account_id=? AND client_id=?)",Boolean.class,account,clientId));
     }
-    public void associate(UUID registration,UUID account) {jdbc.update("UPDATE apple_revocation_credential SET account_id=?,registration_id=NULL WHERE registration_id=?",account,registration);}
+    public void associate(UUID registration,UUID account) {apple.bindRegistrations(account);}
     private static Timestamp at(Instant at){return Timestamp.from(at);}
 }

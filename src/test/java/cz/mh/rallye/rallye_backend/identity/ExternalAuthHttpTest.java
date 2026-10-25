@@ -244,4 +244,12 @@ class ExternalAuthHttpTest {
             .andExpect(header().string("Referrer-Policy","no-referrer")).andExpect(cookie().doesNotExist(AuthCookies.NAME));
     }
 
+    @Test void applePendingRevocationIsSafe503WithoutSessionOrCompletionCookie() throws Exception {
+        when(login.callback(any(),any(),any(),any(),any())).thenThrow(new AuthFailure(503,"APPLE_AUTHORIZATION_PENDING_REVOCATION"));
+        mvc.perform(post("/api/v1/auth/external/APPLE/callback").param("state","opaque-state").param("code","opaque-code")
+            .cookie(new Cookie("RALLYE_OIDC_APPLE","opaque-correlation")))
+            .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("APPLE_AUTHORIZATION_PENDING_REVOCATION"))
+            .andExpect(cookie().doesNotExist(AuthCookies.NAME)).andExpect(header().doesNotExist("Location"));
+    }
+
 }

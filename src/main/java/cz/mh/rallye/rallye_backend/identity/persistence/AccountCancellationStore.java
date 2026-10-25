@@ -16,7 +16,8 @@ public class AccountCancellationStore {
         @Override public String toString() {return "AccountCancellationState[redacted]";}
     }
     private final JdbcTemplate jdbc;
-    public AccountCancellationStore(JdbcTemplate jdbc) {this.jdbc=jdbc;}
+    private final cz.mh.rallye.rallye_backend.identity.application.AppleAuthorizationLifecycle apple;
+    public AccountCancellationStore(JdbcTemplate jdbc,cz.mh.rallye.rallye_backend.identity.application.AppleAuthorizationLifecycle apple) {this.jdbc=jdbc;this.apple=apple;}
     public State lock(UUID id) {
         jdbc.queryForObject("SELECT id FROM admin_control WHERE id=1 FOR UPDATE",Integer.class);
         var rows=jdbc.query("SELECT * FROM user_account WHERE id=? FOR UPDATE",(rs,n)->{
@@ -32,11 +33,12 @@ public class AccountCancellationStore {
     }
     public int deleteIdentities(UUID id) {
         lock(id);
+        apple.cancel(id);
         // Invalidate all unfinished proofs of identities about to be detached, including expired contexts.
         jdbc.update("""
-            DELETE FROM external_registration r WHERE EXISTS(SELECT 1 FROM user_identity i
+            DELETE FROM external_registration r WHERE NOT EXISTS(SELECT 1 FROM apple_authorization_case c WHERE c.registration_id=r.id) AND (EXISTS(SELECT 1 FROM user_identity i
               WHERE i.account_id=? AND i.provider=r.provider AND i.issuer=r.issuer AND i.subject=r.subject)
-              OR proposed_email=(SELECT normalized_email FROM user_account WHERE id=?)
+              OR proposed_email=(SELECT normalized_email FROM user_account WHERE id=?))
             """,id,id);
         return jdbc.update("DELETE FROM user_identity WHERE account_id=?",id);
     }

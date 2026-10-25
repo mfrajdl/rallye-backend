@@ -81,6 +81,41 @@ public class AppleRevocationStore {
     public boolean retry(UUID id,long version,Instant now) {
         return jdbc.update("UPDATE apple_revocation_job SET status='PENDING',last_error=NULL,last_http_status=NULL,next_attempt_at=?,version=version+1,updated_at=? WHERE id=? AND status='BLOCKED' AND version=?",at(now),at(now),id,version)==1;
     }
+    public record Material(String clientId,AppleTokenVault.Sealed sealed) {
+        @Override public String toString(){return "AppleRevocationMaterial[redacted]";}
+    }
+    public Material material(Job job){
+        var rows=jdbc.query("SELECT client_id,key_id,iv,ciphertext FROM apple_revocation_credential WHERE id=? AND case_id=?",(r,n)->new Material(r.getString("client_id"),new AppleTokenVault.Sealed(r.getString("key_id"),r.getBytes("iv"),r.getBytes("ciphertext"))),job.credential(),job.caseId());
+        return rows.isEmpty()?null:rows.getFirst();
+    }
+    public boolean succeed(Job job,Instant now){
+        return jdbc.update("""
+            UPDATE apple_revocation_job SET status='SUCCEEDED',completed_at=?,lease_id=NULL,lease_until=NULL,
+                last_error=NULL,last_http_status=NULL,version=version+1,updated_at=?
+            WHERE id=? AND case_id=? AND credential_id=? AND status='PROCESSING' AND lease_id=? AND version=? AND lease_until>?
+            """,at(now),at(now),job.id(),job.caseId(),job.credential(),job.lease(),job.version(),at(now))==1;
+    }
+    public void removeSucceededMaterial(Job job){
+        if(jdbc.update("DELETE FROM apple_revocation_credential WHERE id=? AND case_id=?",job.credential(),job.caseId())!=1)throw new IllegalStateException("Apple completed material is missing");
+    }
+    public void finishCase(Authorization c,Instant now){
+        jdbc.update("""
+            UPDATE apple_authorization_case SET status='COMPLETED',version=version+1,updated_at=?
+            WHERE id=? AND status IN ('REVOCATION_REQUIRED','BLOCKED')
+                AND NOT EXISTS(SELECT 1 FROM apple_revocation_job WHERE case_id=? AND status<>'SUCCEEDED')
+                AND NOT EXISTS(SELECT 1 FROM apple_revocation_credential WHERE case_id=?)
+            """,at(now),c.id(),c.id(),c.id());
+        // Include registration cases captured behind the barrier, not only already-enqueued work.
+        jdbc.update("DELETE FROM apple_revocation_barrier b WHERE identity_digest=? AND NOT EXISTS(SELECT 1 FROM apple_authorization_case c WHERE c.identity_digest=b.identity_digest AND c.status<>'COMPLETED')",c.digest());
+    }
+    public void pruneCompleted(Instant cutoff){
+        jdbc.update("""
+            DELETE FROM apple_revocation_job j WHERE j.status='SUCCEEDED' AND j.completed_at<?
+                AND EXISTS(SELECT 1 FROM apple_authorization_case c WHERE c.id=j.case_id AND c.status='COMPLETED')
+                AND NOT EXISTS(SELECT 1 FROM apple_revocation_job other WHERE other.case_id=j.case_id AND (other.status<>'SUCCEEDED' OR other.completed_at>=?))
+            """,at(cutoff),at(cutoff));
+        jdbc.update("DELETE FROM apple_authorization_case c WHERE status='COMPLETED' AND updated_at<? AND NOT EXISTS(SELECT 1 FROM apple_revocation_job WHERE case_id=c.id)",at(cutoff));
+    }
     private Job mapJob(ResultSet r,int ignored)throws SQLException {
         String error=r.getString("last_error");Integer http=r.getObject("last_http_status",Integer.class);
         return new Job(r.getObject("id",UUID.class),r.getObject("case_id",UUID.class),r.getObject("credential_id",UUID.class),Reason.valueOf(r.getString("reason")),Status.valueOf(r.getString("status")),r.getInt("attempts"),r.getTimestamp("next_attempt_at").toInstant(),r.getObject("lease_id",UUID.class),r.getTimestamp("lease_until")==null?null:r.getTimestamp("lease_until").toInstant(),error==null?null:Error.valueOf(error),http,r.getLong("version"));

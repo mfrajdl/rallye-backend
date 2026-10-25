@@ -51,6 +51,9 @@ public class ExternalFlowService {
         return new Started(url.build().encode().toUriString(),correlation,expires);
     }
     public void callback(ExternalProviders.Provider provider,String state,String correlation,String code) {
+        // Obsolete protocol-only completion must never exchange and discard an Apple refresh token.
+        // Actual web/mobile HTTP callbacks always use ExternalLoginService and its durable capture.
+        if(provider==ExternalProviders.Provider.APPLE)throw new AuthFailure(503,"APPLE_CREDENTIAL_STORAGE_UNAVAILABLE");
         if(!secret(state) || !secret(correlation) || code==null || code.isBlank() || code.length()>4096)throw invalid();
         var flow=tx.execute(status->{var f=store.find(secrets.hash(state));check(f,provider,correlation);return f;});
         var registration=providers.registration(provider);
@@ -71,7 +74,8 @@ public class ExternalFlowService {
             return flow.returnUri();
         });
     }
-    public record Verified(ExternalFlowStore.Flow flow,ExternalOidcVerifier.Identity identity,String state,String correlation) {
+    public record Verified(ExternalFlowStore.Flow flow,ExternalOidcVerifier.Identity identity,String state,String correlation,String clientId) {
+        public Verified(ExternalFlowStore.Flow flow,ExternalOidcVerifier.Identity identity,String state,String correlation){this(flow,identity,state,correlation,null);}
         @Override public String toString(){return "VerifiedCallback[redacted]";}
     }
     public Verified verifyWebCallback(ExternalProviders.Provider provider,String state,String correlation,String code) {
@@ -88,7 +92,7 @@ public class ExternalFlowService {
         if(!client.getRedirectUri().equals(flow.callbackUri()))throw invalid();
         var proof=verifier.exchange(client,code,state,flow.nonceHash(),provider==ExternalProviders.Provider.GOOGLE?secrets.hash("rallye-oidc-pkce:"+correlation):null);
         if(proof==null || !ExternalProviders.issuer(provider).equals(proof.issuer()) || proof.subject()==null || proof.subject().isBlank() || proof.subject().length()>255)throw invalid();
-        return new Verified(flow,proof,state,correlation);
+        return new Verified(flow,proof,state,correlation,client.getClientId());
     }
     @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
     public void consumeVerified(Verified verified) {

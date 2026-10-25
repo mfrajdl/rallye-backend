@@ -13,7 +13,7 @@ import static org.mockito.ArgumentMatchers.*;
 class AppleRevocationFoundationTest {
     AppleRevocationStore store=mock(AppleRevocationStore.class);AdminStore control=mock(AdminStore.class);AppleTokenVault vault=mock(AppleTokenVault.class);SecretTokens secrets=new SecretTokens();
     Instant now=Instant.parse("2026-10-25T12:00:00Z");UUID account=UUID.randomUUID(),id=UUID.randomUUID();
-    AppleRevocationFoundation service=new AppleRevocationFoundation(store,control,vault,secrets,Clock.fixed(now,ZoneOffset.UTC));
+    AppleRevocationFoundation service=new AppleRevocationFoundation(store,control,vault,secrets,Clock.fixed(now,ZoneOffset.UTC),mock(cz.mh.rallye.rallye_backend.audit.application.AuditService.class));
     AppleRevocationFoundation.NewCase input(UUID a,UUID r){return new AppleRevocationFoundation.NewCase("https://appleid.apple.com","subject","client",UUID.randomUUID(),UUID.randomUUID(),a,r);}
     Authorization c(CaseStatus status){return new Authorization(id,"https://appleid.apple.com","subject",secrets.hash("https://appleid.apple.com\nsubject"),"client",UUID.randomUUID(),UUID.randomUUID(),account,null,status,0);}
     @Test void requiresExactlyOneOwnerAndAllIdentityContextBeforeDatabaseAccess(){

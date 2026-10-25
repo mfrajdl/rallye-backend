@@ -52,6 +52,9 @@ public class AuditStore {
         jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id) VALUES (?,?,'USER',?,?,?)",
                 id, Timestamp.from(time), actor, type.name(), target);
     }
+    public void appendAppleRevocation(UUID id,Instant time,UUID job){
+        jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,event_type,target_id,target_type) VALUES (?,?,'SYSTEM','APPLE_REVOCATION_SUCCEEDED',?,'APPLE_REVOCATION')",id,Timestamp.from(time),job);
+    }
     public List<Entry> find(UUID actor, UUID target, Event event, Instant from, Instant until, int page, int size) {
         var sql = new StringBuilder("SELECT * FROM audit_event WHERE true");
         var values = new ArrayList<Object>();

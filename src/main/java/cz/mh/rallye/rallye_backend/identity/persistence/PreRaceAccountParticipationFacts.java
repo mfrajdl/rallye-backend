@@ -23,6 +23,8 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                             && (!"11".equals(rs.getString("version")) || "V11__external_mobile_login.sql".equals(rs.getString("script")))
                             && (!"12".equals(rs.getString("version")) || "V12__external_mobile_handoff.sql".equals(rs.getString("script")))
                             && (!"13".equals(rs.getString("version")) || "V13__apple_revocation_foundation.sql".equals(rs.getString("script")))
+                            && (!"14".equals(rs.getString("version")) || "V14__apple_authorization_lifecycle.sql".equals(rs.getString("script")))
+                            && (!"15".equals(rs.getString("version")) || "V15__apple_revocation_completion.sql".equals(rs.getString("script")))
                             ?rs.getString("version"):"unsupported");
             if(!versions.equals(List.of("1","2","3","4","5","6"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7"))
@@ -31,7 +33,9 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12"))
-                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13")))throw unavailable();
+                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13"))
+                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14"))
+                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15")))throw unavailable();
             return new Facts(false,false);
         } catch(org.springframework.dao.DataAccessException failure) {throw new AuthFailure(503,"PARTICIPATION_CHECK_UNAVAILABLE",failure);}
     }

@@ -8,15 +8,15 @@ import cz.mh.rallye.rallye_backend.identity.persistence.AppleRevocationStore.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Internal persistence primitives, deliberately not wired to callback/cancellation or a scheduler. */
+/** Transactional Apple authorization and revocation operations; provider I/O stays outside these transactions. */
 @Service
 @Transactional
 public class AppleRevocationFoundation {
     public record NewCase(String issuer,String subject,String clientId,UUID generation,UUID flowId,UUID account,UUID registration) {
         @Override public String toString(){return "NewAppleCase[redacted]";}
     }
-    private final AppleRevocationStore store;private final AdminStore control;private final AppleTokenVault vault;private final SecretTokens secrets;private final Clock clock;
-    public AppleRevocationFoundation(AppleRevocationStore store,AdminStore control,AppleTokenVault vault,SecretTokens secrets,Clock clock){this.store=store;this.control=control;this.vault=vault;this.secrets=secrets;this.clock=clock;}
+    private final AppleRevocationStore store;private final AdminStore control;private final AppleTokenVault vault;private final SecretTokens secrets;private final Clock clock;private final cz.mh.rallye.rallye_backend.audit.application.AuditService audit;
+    public AppleRevocationFoundation(AppleRevocationStore store,AdminStore control,AppleTokenVault vault,SecretTokens secrets,Clock clock,cz.mh.rallye.rallye_backend.audit.application.AuditService audit){this.store=store;this.control=control;this.vault=vault;this.secrets=secrets;this.clock=clock;this.audit=audit;}
     public Authorization create(NewCase input) {
         if(input==null || !"https://appleid.apple.com".equals(input.issuer()) || blank(input.subject(),255) || blank(input.clientId(),255)
             || input.generation()==null || input.flowId()==null || (input.account()==null)==(input.registration()==null))throw invalid();
@@ -48,6 +48,15 @@ public class AppleRevocationFoundation {
         return store.failure(job,lease,version,error,http,now,next.truncatedTo(ChronoUnit.MILLIS),blocked);
     }
     public boolean retryBlocked(UUID job,long version){if(job==null || version<0)throw invalid();return store.retry(job,version,now());}
+    @Transactional(readOnly=true) public Material material(Job job){return store.material(job);}
+    /** Internal worker completion: only called after Apple HTTP 200. CAS rejects stale results. */
+    public boolean complete(Job job){
+        var c=locked(job.caseId());Instant now=now();
+        if(!store.succeed(job,now))return false;
+        store.removeSucceededMaterial(job);store.finishCase(c,now);
+        audit.appleRevocation(job.id());return true;
+    }
+    public void pruneCompleted(){control.lock();store.pruneCompleted(now().minus(Duration.ofDays(30)));}
     private Authorization locked(UUID id){if(id==null)throw invalid();control.lock();var c=store.find(id,true);if(c==null)throw conflict();return c;}
     private Instant now(){return clock.instant().truncatedTo(ChronoUnit.MILLIS);}
     private static boolean blank(String s,int max){return s==null || s.isBlank() || s.length()>max;}

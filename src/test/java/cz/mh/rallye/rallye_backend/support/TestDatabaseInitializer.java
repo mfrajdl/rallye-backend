@@ -34,7 +34,8 @@ public final class TestDatabaseInitializer
                 Map.entry("spring.flyway.clean-disabled", true),
                 Map.entry("spring.flyway.baseline-on-migrate", false),
                 Map.entry("spring.jpa.hibernate.ddl-auto", "validate"),
-                Map.entry("spring.sql.init.mode", "never"))));
+                Map.entry("spring.sql.init.mode", "never"),
+                Map.entry("rallye.auth.apple-revocation.enabled", false))));
     }
 
     private static void verifyServerIdentity(TestDatabaseSettings settings) {

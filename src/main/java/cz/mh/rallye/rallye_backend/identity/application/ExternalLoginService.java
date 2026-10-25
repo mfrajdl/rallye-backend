@@ -22,11 +22,11 @@ public class ExternalLoginService {
     private final AuthService auth;private final SecretTokens secrets;private final Clock clock;private final AuditService audit;
     private final jakarta.validation.Validator validator;
     private final MobileCallbackService mobile;
-    private final AppleTokenVault vault;private final ExternalProviders providers;private final TransactionTemplate tx;
+    private final AppleTokenVault vault;private final ExternalProviders providers;private final TransactionTemplate tx;private final TransactionTemplate captureTx;
     public ExternalLoginService(ExternalFlowService flows,ExternalAccountStore external,AccountStore accounts,AuthService auth,
         SecretTokens secrets,Clock clock,AuditService audit,AppleTokenVault vault,ExternalProviders providers,PlatformTransactionManager manager,jakarta.validation.Validator validator,MobileCallbackService mobile) {
         this.flows=flows;this.external=external;this.accounts=accounts;this.auth=auth;this.secrets=secrets;this.clock=clock;
-        this.audit=audit;this.validator=validator;this.mobile=mobile;this.vault=vault;this.providers=providers;this.tx=new TransactionTemplate(manager);
+        this.audit=audit;this.validator=validator;this.mobile=mobile;this.vault=vault;this.providers=providers;this.tx=new TransactionTemplate(manager);this.captureTx=new TransactionTemplate(manager);this.captureTx.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
     public Outcome callback(ExternalProviders.Provider provider,String state,String correlation,String code,String appleName) {
         if(provider==ExternalProviders.Provider.APPLE)vault.requireReady();
@@ -34,13 +34,33 @@ public class ExternalLoginService {
         var proof=verified.identity();
         String name=validName(provider==ExternalProviders.Provider.APPLE?appleName:proof.name());
         String email=validEmail(proof.email());
+        // Apple token capture survives failure of the subsequent business transaction.
+        final Outcome captured=provider==ExternalProviders.Provider.APPLE?captureTx.execute(status->{
+            external.lock();flows.consumeVerified(verified);
+            Instant now=now();UUID account=external.account(provider.name(),proof.issuer(),proof.subject());
+            if(account!=null) {
+                accounts.lockAccount(account);
+                external.captureApple(verified.flow().id(),proof.subject(),verified.clientId(),account,null,proof.refreshToken());
+                return new Outcome(verified.flow().returnUri(),null,null);
+            }
+            var attempt=mobile.context(verified.flow());String target=attempt==null?verified.flow().returnUri():attempt.profileUri();
+            UUID registration=UUID.randomUUID();String secret=secrets.create();
+            external.registration(new ExternalAccountStore.Registration(registration,provider.name(),proof.issuer(),proof.subject(),email,
+                email!=null && proof.emailVerified(),name,verified.flow().rememberMe(),target,now.plus(COMPLETION_LIFE),null),secrets.hash(secret),now);
+            external.captureApple(verified.flow().id(),proof.subject(),verified.clientId(),null,registration,proof.refreshToken());
+            return new Outcome(target,null,secret,null,attempt==null?null:attempt.id());
+        }):null;
         return tx.execute(status->{
-            external.lock();var mobileContext=mobile.context(verified.flow());flows.consumeVerified(verified);
-            Instant now=now();external.purgeExpired(now);UUID account=external.account(provider.name(),proof.issuer(),proof.subject());
+            external.lock();var mobileContext=mobile.context(verified.flow());
+            if(provider!=ExternalProviders.Provider.APPLE)flows.consumeVerified(verified);
+            if(provider==ExternalProviders.Provider.APPLE && external.appleBlocked(proof.issuer(),proof.subject()))throw new AuthFailure(503,"APPLE_AUTHORIZATION_PENDING_REVOCATION");
+            Instant now=now();external.purgeExpired(now);
+            if(captured!=null && captured.registrationSecret()!=null)return captured; // D12: first registration never becomes a mobile login.
+            UUID account=external.account(provider.name(),proof.issuer(),proof.subject());
             if(account!=null) {
                 var current=accounts.lockAccount(account);
                 if(current==null || !"ACTIVE".equals(current.status()))throw AuthFailure.credentials();
-                preserveApple(provider,proof,account,null,now);
+
                 if(mobileContext!=null) {
                     String handoff=mobile.issue(account,mobileContext);
                     return new Outcome(mobileContext.returnUri(),null,null,handoff,mobileContext.id());
@@ -49,11 +69,12 @@ public class ExternalLoginService {
                 audit.record(account,AuditService.Event.LOGIN_SUCCEEDED,account);
                 return new Outcome(verified.flow().returnUri(),new AuthService.LoginSession(secret,new AuthService.Principal(account,session,verified.flow().rememberMe())),null);
             }
+            if(captured!=null)throw AuthFailure.credentials();
             String target=mobileContext==null?verified.flow().returnUri():mobileContext.profileUri();
             UUID registration=UUID.randomUUID();String secret=secrets.create();
             external.registration(new ExternalAccountStore.Registration(registration,provider.name(),proof.issuer(),proof.subject(),email,
                 email!=null && proof.emailVerified(),name,verified.flow().rememberMe(),target,now.plus(COMPLETION_LIFE),null),secrets.hash(secret),now);
-            preserveApple(provider,proof,null,registration,now);
+
             return new Outcome(target,null,secret,null,mobileContext==null?null:mobileContext.id());
         });
     }
@@ -75,6 +96,7 @@ public class ExternalLoginService {
         external.lock();var r=require(secret);
         if(r.consumedAt()!=null)return; // Same generic result; never reissues credentials or mail.
         Instant now=now();
+        if("APPLE".equals(r.provider()) && external.appleBlocked(r.issuer(),r.subject())){external.consume(r.id(),now);return;}
         if(external.account(r.provider(),r.issuer(),r.subject())==null) {
             UUID account=UUID.randomUUID();boolean verified=r.verified() && email.equals(r.email());
             if(external.create(account,r,email,name,verified,now)) {
@@ -82,6 +104,8 @@ public class ExternalLoginService {
                 if(!verified)auth.requestVerification(email);
             }
         }
+        UUID existing=external.account(r.provider(),r.issuer(),r.subject());
+        if(existing!=null && "APPLE".equals(r.provider()))external.associate(r.id(),existing);
         external.consume(r.id(),now);
         // Always 202: a collision neither links nor reports an existing account.
     }
@@ -89,17 +113,6 @@ public class ExternalLoginService {
         if(secret==null || !secret.matches("[A-Za-z0-9_-]{43}"))throw invalid();
         var r=external.registration(secrets.hash(secret));
         if(r==null || !r.expiresAt().isAfter(now()))throw invalid();return r;
-    }
-    private void preserveApple(ExternalProviders.Provider provider,ExternalOidcVerifier.Identity proof,UUID account,UUID registration,Instant now) {
-        if(provider!=ExternalProviders.Provider.APPLE)return;
-        if(proof.refreshToken()==null || proof.refreshToken().isBlank()) {
-            // A later login may omit the token; do not erase an already preserved credential.
-            if(account!=null && external.hasCredential(account,providers.registration(provider).getClientId()))return;
-            throw new AuthFailure(503,"APPLE_CREDENTIAL_STORAGE_UNAVAILABLE");
-        }
-        UUID id=UUID.randomUUID();String clientId=providers.registration(provider).getClientId();
-        var sealed=vault.seal(proof.refreshToken(),credentialAad(id,clientId));
-        external.credential(id,account,registration,clientId,sealed.keyId(),sealed.iv(),sealed.ciphertext(),now);
     }
     public static String credentialAad(UUID id,String clientId){return tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.List.of(id.toString(),clientId));}
     public record EmailValue(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Email @jakarta.validation.constraints.Size(max=254) String value) {}

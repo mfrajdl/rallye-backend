@@ -674,3 +674,54 @@ Uživatel spustí podle stávajících bezpečnostních pravidel proti rallye_te
 Poznámka k běhům: jeden meziběh se 349 testy měl jediné selhání existujícího AuditExportHttpTest.adminStreamsCsvWithDownloadHeadersAndAllFilters (500; ConcurrentModificationException při souběžném zápisu hlaviček MockHttpServletResponse). Nové testy prošly. Beze změny kódu auditu byl celý verify zopakován: **BUILD SUCCESS, 349 testů, 0 failures/errors/skipped**. Tím se nedokládá oprava tohoto ojedinělého testového souběhu; zůstává odděleným pozorováním.
 
 Uzavření 3c.5a.1: uživatel potvrdil `.\mvnw.cmd -Pit verify` proti `rallye_test` jako **BUILD SUCCESS**, včetně nových AppleRevocationIT. Jde o uživatelské ověření, nikoli běh Codexu. Skutečné Apple/HTTPS ověření nebylo provedeno; zákaz samostatného nasazení před 3c.5a.2/V14 zůstává platný.
+
+
+## 3c.5a.2.1 – V14, Apple capture/registrace a cancellation
+
+Implementováno k novému PostgreSQL ověření; uživatelský BUILD SUCCESS z 3c.5a.1/V13 se na V14 nepřenáší. Podle schválení zahrnuje i obsah původní 3c.5a.2.2, která již není samostatným krokem.
+
+Codex ověřil Maven Wrapper 3.10.0 na Microsoft JDK 21.0.12.1. Poslední `verify` bez PostgreSQL: **BUILD SUCCESS, 369 testů, 0 failures/errors/skipped**. Nové unit testy ověřují complete binding, chybějící refresh token, client/subject korelaci, D14 odklad při jiném kontextu/účtu, enqueue před úklidem, selhání bez smazání, invalidaci cizího formuláře podle e-mailu bez revokace jeho identity, samostatný capture commit a zpracování chyb databázové údržby. HTTP regrese ověřuje bezpečnou 503 bariéry bez relace/redirectu; dosavadní security/CSRF a LOCAL/GOOGLE testy prošly.
+
+ExternalWebLoginIT má **17 nových PostgreSQL scénářů** (celkem 40): úplné subject/client/flow/owner vazby, dva souběžné kontexty, rollback completion, definitivní a neúplná expirace, PENDING_EMAIL, self/ADMIN enqueue a ADMIN replay, rollback cancellation po INSERT práce, dvojitý callback, souběh completion/purge, cancellation/callback, hraniční expirace, bariéra, V14 NOT NULL/guard a odmítnutí nepřiřazeného syntetického materiálu při migraci, capture INSERT rollback i purge enqueue rollback. Dosavadní Apple fyzické smazání/anonymizace ověřují zachovaný ciphertext s odpojeným vlastníkem a trvalou prací. MobileCallbackIT výslovně ověřuje zachování capture po chybě vydání grantu a zákaz replay spotřebovaného flow. Google rollback zůstává dosavadní. Původní V12→V13 kompatibilní test je cíleně připnutý na V13; V14 nesmí přijmout nepřiřazené prostředky. Future fixture používají V15, kontrola není oslabena.
+
+Všechny PostgreSQL testy Codex pouze zkompiloval; **nespustil je**. Spustí uživatel v připraveném PowerShellu s TestDatabaseInitializer a vyhrazenou rallye_test:
+
+```powershell
+.\mvnw.cmd -Pit verify
+```
+
+V13 ani starší migrace nejsou změněné. V14 může bezpečně odmítnout přetrvávající syntetické prostředky bez case_id; v takovém případě neposkytuje backfill ani mazání a je potřeba prozkoumat konkrétní testovací data bez clean/repair. Nejde o podporu historických produkčních Apple tokenů.
+
+Časovač `rallye.auth.apple-registration-maintenance.enabled` je v application-it.properties vypnutý. Testy volají databázovou údržbu explicitně, takže jejich výsledek nezávisí na minutovém triggeru. Nejde o Apple retry scheduler: žádný test nevolá skutečné Apple API. HTTPS/provider/browser ověření nebylo provedeno. API klient, worker, dokončení revokace a odstranění ciphertextu zůstávají mimo podetapu.
+
+
+### Oprava mobilní regrese po prvním PostgreSQL běhu V14
+
+Uživatel spustil 261 PostgreSQL testů: 1 failure, 0 errors, BUILD FAILURE. MobileExchangeIT.cancellationAndAnonymizationDeleteGrantAndNeverAllowLaterExchange na původním řádku 178 vyžadoval Apple credential s původním account_id i po zrušení. To odporuje novému odpojení vlastníka; materiál žije dál přes case_id a origin_account_id. Předcházející kontroly zamítnutí exchange, odstranění grantu/sessions a zneplatnění relace prošly pro dosažený průchod. Nešlo o potvrzenou regresi produkčního exchange ani ztrátu ciphertextu.
+
+Opraven tentýž test, bez změn produkčního kódu či migrací: před cancellation pořídí snapshot prostředků a po ní ověří jejich stejná UUID/case/client/key/IV/ciphertext, NULL aktuální vlastníky, REVOCATION_REQUIRED případ s původním účtem a přesně jednu PENDING ACCOUNT_CANCELLATION úlohu pro každý prostředek. Obě větve (fyzické smazání a anonymizace) nadále odmítají původní mobilní grant a nevytvářejí session; zachována je i Google větev. Nový duplicitní test nepřibyl. Celý PostgreSQL běh po opravě čeká na opakované uživatelské `.\mvnw.cmd -Pit verify`; předchozí neúspěch se nepovažuje za úspěšné ověření V14.
+
+Po této opravě Codex zopakoval Maven Wrapper verify na Microsoft JDK 21.0.12.1: **BUILD SUCCESS, 369 testů, 0 failures/errors/skipped**, včetně kompilace opraveného IT. `git diff --check` prošel. PostgreSQL integrační testy Codex nespouštěl.
+
+
+## Dokončení Apple revocation – závěrečné ověření 3c.5
+
+Předchozí 3c.5a.2.1 včetně opraveného MobileExchangeIT ověřil uživatel jako PostgreSQL BUILD SUCCESS. Nové dokončení revokací používá V15, bez nových tabulek a bez dalšího dělení do podetap. Přesný migration guard nově přijímá V15__apple_revocation_completion.sql a odmítá budoucí V16; V1–V14 se nemění.
+
+Codex: Maven Wrapper verify na Microsoft JDK 21.0.12.1 **BUILD SUCCESS, 386 testů, 0 failures/errors/skipped**. Zahrnuje klienta s mockovaným HTTP (pevná URL/form body, 200, 4xx/5xx/429, timeout/síť, zákaz wire logování), skutečné podepsání/ověření syntetického ES256 JWT v dočasném adresáři, správný client kontext a unit testy workeru/retry/blocked. Žádný skutečný Apple účet, privátní klíč nebo Apple request nebyl použit. Běžný build sestavil JAR. Git diff --check prošel.
+
+AppleRevocationIT má osm nových scénářů (celkem 27) pro skutečné SQL dokončení/audit/odstranění ciphertextu, retry po dočasné chybě a zachování materiálu, BLOCKED bez opakování, souběžné workery, stale lease, rollback po zápisu auditu, 30denní úklid a bariéru s novou čekající registrací. Provider je mockovaný. Tyto nové PostgreSQL testy Codex pouze zkompiloval; kompletní integrační sadu nespouštěl.
+
+TestDatabaseInitializer vynucuje rallye.auth.apple-revocation.enabled=false i přes případné přenesené prostředí; skutečný worker/signing je v PostgreSQL kontextu vypnutý. Integrační worker se vytváří explicitně s mock Apple klientem. Regrese 2A/LOCAL/GOOGLE a předchozí HTTP/CSRF testy zůstávají.
+
+Závěrečný manuální PostgreSQL běh (samostatná rallye_test, původní ochrany beze změny):
+
+```powershell
+.\mvnw.cmd -Pit verify
+```
+
+Uživatel následně potvrdil tento závěrečný PostgreSQL běh jako BUILD SUCCESS včetně V15, souběhů a nových scénářů revokace. Codex integrační sadu nespouštěl. Skutečný HTTPS/Apple smoke s konfigurací a bezpečným testovacím účtem je oddělený manuální krok podle docs/apple-revocation-3c5.md; dosud neproběhl. Bez commitu, pushe či deploymentu.
+
+### Uzavření 3c.5
+
+Uživatelem potvrzené `.\mvnw.cmd -Pit verify` proti rallye_test: **BUILD SUCCESS** po dokončení celé implementace V15. Codex: verify bez DB **386 testů, BUILD SUCCESS**, git diff --check prošel. Starší průběžné poznámky o čekajícím ověření popisují stav před tímto potvrzením. Skutečné HTTPS/Apple ověření stále neproběhlo; etapa je implementačně a automatickými testy dokončená. Při závěrečném Git uzavření se testy znovu nespouštěly a implementace ani migrace se neměnily.

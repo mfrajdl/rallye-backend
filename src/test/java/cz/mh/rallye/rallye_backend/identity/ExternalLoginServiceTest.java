@@ -116,4 +116,48 @@ class ExternalLoginServiceTest {
         verifyNoInteractions(accounts,auth,audit);
     }
 
+    void appleProof(String refresh) {
+        callback(ExternalProviders.Provider.APPLE,"apple@example.test",true,"Apple");
+        var flow=new ExternalFlowStore.Flow(UUID.randomUUID(),"APPLE","LOGIN",null,null,"nonce","correlation","https://example.test/callback","https://example.test/return",false,null,clock.instant().plusSeconds(600));
+        when(flows.verifyCallback(any(),any(),any(),any())).thenReturn(new ExternalFlowService.Verified(flow,new ExternalOidcVerifier.Identity("https://appleid.apple.com","apple-subject","apple@example.test",true,null,refresh),"state","cookie","verified-client"));
+    }
+    @Test void appleCaptureCommitsBeforeBusinessSessionAndUsesVerifiedClient() {
+        appleProof("synthetic-refresh");UUID account=UUID.randomUUID();when(external.account(any(),any(),any())).thenReturn(account);
+        when(accounts.lockAccount(account)).thenReturn(new AccountStore.Account(account,"apple@example.test","Apple","ACTIVE",null));
+        service().callback(ExternalProviders.Provider.APPLE,"s","c","code",null);
+        var order=inOrder(external,manager,accounts);
+        order.verify(external).captureApple(any(),eq("apple-subject"),eq("verified-client"),eq(account),isNull(),eq("synthetic-refresh"));
+        order.verify(manager).commit(any());order.verify(accounts).insertSession(eq(account),any(),eq(false),any(),any());
+        verifyNoInteractions(providers);
+    }
+    @Test void appleCaptureFailureNeverStartsBusinessSession() {
+        appleProof("synthetic-refresh");doThrow(new IllegalStateException("injected capture failure")).when(external).captureApple(any(),any(),any(),any(),any(),any());
+        assertThrows(IllegalStateException.class,()->service().callback(ExternalProviders.Provider.APPLE,"s","c","code",null));
+        verify(manager).rollback(any());verify(manager,never()).commit(any());verifyNoInteractions(accounts,audit);
+    }
+    @Test void appleRegistrationCapturesBeforeReturningAnyCompletionSecret() {
+        appleProof("synthetic-refresh");var out=service().callback(ExternalProviders.Provider.APPLE,"s","c","code",null);
+        assertNotNull(out.registrationSecret());assertNull(out.session());
+        var order=inOrder(external,manager);order.verify(external).registration(any(),eq(secrets.hash(out.registrationSecret())),any());
+        order.verify(external).captureApple(any(),eq("apple-subject"),eq("verified-client"),isNull(),any(),eq("synthetic-refresh"));order.verify(manager).commit(any());
+    }
+    @Test void pendingAppleRevocationRejectsBusinessResultAfterDurableCapture() {
+        appleProof("synthetic-refresh");when(external.appleBlocked(any(),any())).thenReturn(true);
+        assertEquals("APPLE_AUTHORIZATION_PENDING_REVOCATION",assertThrows(AuthFailure.class,()->service().callback(ExternalProviders.Provider.APPLE,"s","c","code",null)).code());
+        verify(manager).commit(any());verify(manager).rollback(any());verifyNoInteractions(accounts,audit);
+    }
+    @Test void blockedAppleCompletionNeverCreatesOrLinksAccount() {
+        var r=new ExternalAccountStore.Registration(UUID.randomUUID(),"APPLE","https://appleid.apple.com","subject","apple@example.test",true,"Apple",false,"https://example.test/return",clock.instant().plusSeconds(900),null);
+        when(external.registration(any())).thenReturn(r);when(external.appleBlocked(r.issuer(),r.subject())).thenReturn(true);
+        service().complete(secrets.create(),"apple@example.test","Apple");verify(external).consume(r.id(),clock.instant());
+        verify(external,never()).create(any(),any(),any(),any(),anyBoolean(),any());verifyNoInteractions(auth,audit);
+    }
+
+    @Test void obsoleteProtocolOnlyCallbackCannotExchangeAndDiscardAppleMaterial() {
+        var store=mock(ExternalFlowStore.class);var verifier=mock(ExternalOidcVerifier.class);
+        var protocol=new ExternalFlowService(providers,store,secrets,clock,manager,verifier);
+        assertThrows(AuthFailure.class,()->protocol.callback(ExternalProviders.Provider.APPLE,"state","correlation","code"));
+        verifyNoInteractions(store,providers,verifier,manager);
+    }
+
 }

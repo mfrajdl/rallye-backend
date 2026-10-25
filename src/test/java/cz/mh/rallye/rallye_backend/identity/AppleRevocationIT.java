@@ -38,6 +38,7 @@ class AppleRevocationIT {
     @Autowired AppleTokenVault vault;
     @Autowired PlatformTransactionManager manager;
     @Autowired PreRaceAccountParticipationFacts facts;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean cz.mh.rallye.rallye_backend.audit.persistence.AuditStore audit;
     final SecretTokens secrets=new SecretTokens();
     TransactionTemplate tx(){return new TransactionTemplate(manager);}
     void guard(){assertEquals("rallye_test",jdbc.queryForObject("SELECT current_database()",String.class));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_user",String.class));assertEquals(SCHEMA,jdbc.queryForObject("SELECT current_schema()",String.class));}
@@ -62,6 +63,7 @@ class AppleRevocationIT {
     List<Job> enroll(Authorization c){return service.enqueue(c.id(),c.account()!=null?Reason.ACCOUNT_CANCELLATION:Reason.REGISTRATION_ABANDONED);}
     void violation(String expected,Runnable action){var error=assertThrows(RuntimeException.class,action::run);SQLException sql=null;for(Throwable t=error;t!=null;t=t.getCause())if(t instanceof SQLException e)sql=e;assertNotNull(sql,"Expected a database invariant");assertEquals(expected,sql.getSQLState());}
     @Test void v13MigrationAndPreciseGuardAcceptOnlyReviewedSchema(){
+        assertEquals(1,count("SELECT count(*) FROM flyway_schema_history WHERE version='15' AND script='V15__apple_revocation_completion.sql' AND success"));
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE version='13' AND script='V13__apple_revocation_foundation.sql' AND success",Integer.class));
         assertFalse(tx().execute(s->facts.forAccount(UUID.randomUUID())).historical());
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V13__unknown.sql' WHERE version='13'");assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
@@ -163,11 +165,63 @@ class AppleRevocationIT {
             UUID reg=UUID.randomUUID(),material=UUID.randomUUID();
             jdbc.update("INSERT INTO "+schema+".external_registration(id,provider,issuer,subject,email_verified,remember_me,return_uri,token_hash,created_at,expires_at) VALUES (?,'APPLE','https://appleid.apple.com','synthetic',true,false,'https://example.test',?,now(),now()+interval '15 minutes')",reg,secrets.hash("upgrade"));
             jdbc.update("INSERT INTO "+schema+".apple_revocation_credential(id,registration_id,client_id,key_id,iv,ciphertext,created_at) VALUES (?,?,'client','test',?,?,now())",material,reg,new byte[12],new byte[32]);
-            org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).load().migrate();
+            org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("13").load().migrate();
             jdbc.update("DELETE FROM "+schema+".external_registration WHERE id=?",reg);
             assertNull(jdbc.queryForObject("SELECT case_id FROM "+schema+".apple_revocation_credential WHERE id=?",UUID.class,material));assertNull(jdbc.queryForObject("SELECT registration_id FROM "+schema+".apple_revocation_credential WHERE id=?",UUID.class,material));
             assertArrayEquals(new byte[32],jdbc.queryForObject("SELECT ciphertext FROM "+schema+".apple_revocation_credential WHERE id=?",byte[].class,material));
         } finally {guard();assertTrue(schema.matches("it_apple_revocation_[0-9a-f]{32}_upgrade"));jdbc.execute("DROP SCHEMA IF EXISTS \""+schema+"\" CASCADE");}
+    }
+    AppleRevocationWorker worker(AppleRevocationClient client){return new AppleRevocationWorker(service,client,vault,clock);}
+    AppleRevocationClient successfulApple(){var client=org.mockito.Mockito.mock(AppleRevocationClient.class);org.mockito.Mockito.when(client.revoke(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any())).thenReturn(new AppleRevocationClient.Result(200,null,false));return client;}
+    int count(String sql,Object... args){return jdbc.queryForObject(sql,Integer.class,args);}
+    @Test void successfulWorkerRemovesCiphertextCompletesCaseAndAudits(){
+        var c=create(false);UUID material=service.addMaterial(c.id(),"synthetic");var job=enroll(c).getFirst();var client=successfulApple();assertTrue(worker(client).processNext());
+        assertEquals(Status.SUCCEEDED,service.jobs(c.id()).getFirst().status());assertEquals(CaseStatus.COMPLETED,service.find(c.id()).status());
+        assertEquals(0,count("SELECT count(*) FROM apple_revocation_credential WHERE id=?",material));assertEquals(0,count("SELECT count(*) FROM apple_revocation_barrier WHERE identity_digest=?",c.digest()));
+        assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND actor_kind='SYSTEM' AND event_type='APPLE_REVOCATION_SUCCEEDED'",job.id()));
+        org.mockito.Mockito.verify(client).revoke(c.clientId(),"synthetic");
+    }
+    @Test void temporaryProviderFailureKeepsMaterialUntilSuccessfulRetry(){
+        var c=create(false);UUID material=service.addMaterial(c.id(),"synthetic");enroll(c);byte[] bytes=jdbc.queryForObject("SELECT ciphertext FROM apple_revocation_credential WHERE id=?",byte[].class,material);
+        var client=org.mockito.Mockito.mock(AppleRevocationClient.class);org.mockito.Mockito.when(client.revoke(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any()))
+            .thenReturn(new AppleRevocationClient.Result(503,AppleRevocationStore.Error.PROVIDER_SERVER,true),new AppleRevocationClient.Result(200,null,false));
+        var worker=worker(client);assertTrue(worker.processNext());assertEquals(Status.RETRY_WAIT,service.jobs(c.id()).getFirst().status());assertFalse(worker.processNext());
+        assertArrayEquals(bytes,jdbc.queryForObject("SELECT ciphertext FROM apple_revocation_credential WHERE id=?",byte[].class,material));clock.advance(Duration.ofSeconds(60));assertTrue(worker.processNext());assertEquals(Status.SUCCEEDED,service.jobs(c.id()).getFirst().status());
+        assertEquals(0,count("SELECT count(*) FROM apple_revocation_credential WHERE id=?",material));
+    }
+    @Test void permanentProviderFailureBlocksWithoutRepeatedCallsOrMaterialLoss(){
+        var c=create(false);UUID material=service.addMaterial(c.id(),"synthetic");enroll(c);var client=org.mockito.Mockito.mock(AppleRevocationClient.class);org.mockito.Mockito.when(client.revoke(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any())).thenReturn(new AppleRevocationClient.Result(400,AppleRevocationStore.Error.PROVIDER_REJECTED,false));
+        var worker=worker(client);assertTrue(worker.processNext());assertFalse(worker.processNext());assertEquals(Status.BLOCKED,service.jobs(c.id()).getFirst().status());assertEquals(1,count("SELECT count(*) FROM apple_revocation_credential WHERE id=?",material));org.mockito.Mockito.verify(client,org.mockito.Mockito.times(1)).revoke(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
+    }
+    @Test void concurrentWorkersClaimOneJobAndCompleteItOnce()throws Exception{
+        var c=create(false);service.addMaterial(c.id(),"synthetic");var job=enroll(c).getFirst();var client=successfulApple();var gate=new CyclicBarrier(2);
+        try(var pool=Executors.newFixedThreadPool(2)){Callable<Boolean> action=()->{gate.await(5,TimeUnit.SECONDS);return worker(client).processNext();};var a=pool.submit(action);var b=pool.submit(action);assertNotEquals(a.get(20,TimeUnit.SECONDS),b.get(20,TimeUnit.SECONDS));}
+        org.mockito.Mockito.verify(client,org.mockito.Mockito.times(1)).revoke(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='APPLE_REVOCATION_SUCCEEDED'",job.id()));
+    }
+    @Test void expiredLeaseCannotCompleteOrDeleteMaterial(){
+        var c=create(false);UUID material=service.addMaterial(c.id(),"synthetic");enroll(c);var old=service.claim(Duration.ofSeconds(60));clock.advance(Duration.ofSeconds(60));var current=service.claim(Duration.ofSeconds(60));
+        assertFalse(service.complete(old));assertEquals(1,count("SELECT count(*) FROM apple_revocation_credential WHERE id=?",material));assertEquals(current.lease(),service.jobs(c.id()).getFirst().lease());
+    }
+    @Test void auditFailureRollsBackSuccessAndMaterialDeletionThenRetryCanFinish(){
+        var c=create(false);UUID material=service.addMaterial(c.id(),"synthetic");var job=enroll(c).getFirst();var client=successfulApple();
+        var target=org.springframework.test.util.AopTestUtils.<cz.mh.rallye.rallye_backend.audit.persistence.AuditStore>getUltimateTargetObject(audit);
+        org.mockito.Mockito.doAnswer(call->{call.callRealMethod();throw new IllegalStateException("injected audit failure");}).when(target).appendAppleRevocation(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.eq(job.id()));
+        try{assertThrows(RuntimeException.class,()->worker(client).processNext());}
+        finally{org.mockito.Mockito.doCallRealMethod().when(target).appendAppleRevocation(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.eq(job.id()));}
+        assertEquals(Status.PROCESSING,service.jobs(c.id()).getFirst().status());assertEquals(CaseStatus.REVOCATION_REQUIRED,service.find(c.id()).status());assertEquals(1,count("SELECT count(*) FROM apple_revocation_credential WHERE id=?",material));assertEquals(0,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='APPLE_REVOCATION_SUCCEEDED'",job.id()));
+        clock.advance(Duration.ofMinutes(2));assertTrue(worker(client).processNext());assertEquals(Status.SUCCEEDED,service.jobs(c.id()).getFirst().status());
+    }
+    @Test void completedMetadataExpiresAfterThirtyDaysButBlockedWorkSurvives(){
+        var done=create(false);service.addMaterial(done.id(),"synthetic");enroll(done);worker(successfulApple()).processNext();
+        var pending=create(false);UUID material=service.addMaterial(pending.id(),"synthetic");enroll(pending);service.pruneCompleted();assertNotNull(service.find(done.id()));
+        clock.advance(Duration.ofDays(30).plusSeconds(1));service.pruneCompleted();assertNull(service.find(done.id()));assertNotNull(service.find(pending.id()));assertEquals(1,service.jobs(pending.id()).size());assertEquals(1,count("SELECT count(*) FROM apple_revocation_credential WHERE id=?",material));
+    }
+    @Test void barrierWaitsForRegistrationCapturedWhileOldRevocationWasPending(){
+        var old=create(false);service.addMaterial(old.id(),"synthetic-old");enroll(old);
+        var f=fixture(true);jdbc.update("UPDATE external_registration SET subject=? WHERE id=?",old.subject(),f.registration());
+        var newer=service.create(new AppleRevocationFoundation.NewCase(old.issuer(),old.subject(),old.clientId(),UUID.randomUUID(),f.flow(),null,f.registration()));service.addMaterial(newer.id(),"synthetic-new");
+        worker(successfulApple()).processNext();assertEquals(1,count("SELECT count(*) FROM apple_revocation_barrier WHERE identity_digest=?",old.digest()));
+        service.enqueue(newer.id(),Reason.REGISTRATION_ABANDONED);worker(successfulApple()).processNext();assertEquals(0,count("SELECT count(*) FROM apple_revocation_barrier WHERE identity_digest=?",old.digest()));
     }
     @AfterAll void cleanup(){guard();assertTrue(SCHEMA.matches("it_apple_revocation_[0-9a-f]{32}"));jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");}
 }

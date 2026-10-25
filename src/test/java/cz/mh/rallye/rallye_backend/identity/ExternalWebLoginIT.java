@@ -54,6 +54,7 @@ class ExternalWebLoginIT {
     @MockitoBean ExternalOidcVerifier verifier;
     @MockitoSpyBean AuditStore audit;
     @MockitoSpyBean ExternalAccountStore external;
+    @MockitoSpyBean AppleRevocationStore revocations;
     SecretTokens tokens=new SecretTokens();
     AuthService.Principal root;
     record Context(ExternalProviders.Provider provider,String state,String correlation) {}
@@ -169,7 +170,7 @@ class ExternalWebLoginIT {
         var unfinished=finish(context(ExternalProviders.Provider.APPLE,UUID.randomUUID().toString(),email,true,null,false),null);
         cancellation.administrator(root,account,UUID.randomUUID());assertNull(auth.authenticate(next.session().secret()));
         assertThrows(AuthFailure.class,()->login.profile(unfinished.registrationSecret()));
-        assertTrue(jdbc.queryForObject("SELECT count(*) FROM apple_revocation_credential WHERE account_id=?",Integer.class,account)>0);
+        assertTrue(jdbc.queryForObject("SELECT count(*) FROM apple_revocation_credential WHERE case_id IN (SELECT id FROM apple_authorization_case WHERE origin_account_id=?)",Integer.class,account)>0);
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM user_account WHERE id=?",Integer.class,account));
     }
     @Test void completionFailureRollsBackAccountIdentityAndContextAndCanRetry() {
@@ -236,10 +237,11 @@ class ExternalWebLoginIT {
         return jdbc.queryForList("SELECT * FROM apple_revocation_credential WHERE account_id=? ORDER BY id",account);
     }
     void assertMaterialUnchanged(List<Map<String,Object>> before,UUID account) {
-        var after=material(account);assertEquals(before.size(),after.size());assertFalse(before.isEmpty());
+        var after=jdbc.queryForList("SELECT * FROM apple_revocation_credential WHERE case_id IN (SELECT id FROM apple_authorization_case WHERE origin_account_id=?) ORDER BY id",account);assertEquals(before.size(),after.size());assertFalse(before.isEmpty());
         for(int i=0;i<before.size();i++)for(String column:before.get(i).keySet()) {
             Object expected=before.get(i).get(column),actual=after.get(i).get(column);
             if(expected instanceof byte[] bytes)assertArrayEquals(bytes,(byte[])actual);
+            else if(column.equals("account_id")){assertTrue(actual==null || actual.equals(expected));}
             else assertEquals(expected,actual,column);
         }
     }
@@ -282,7 +284,7 @@ class ExternalWebLoginIT {
         var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();
         var before=material(id);
         cancellation.self(session.principal(),null,true,UUID.randomUUID());
-        assertMaterialUnchanged(before,id);
+        assertMaterialUnchanged(before,id);assertRevocation(id,before.size());
         var sealed=new AppleTokenVault.Sealed((String)before.getFirst().get("key_id"),(byte[])before.getFirst().get("iv"),(byte[])before.getFirst().get("ciphertext"));
         assertTrue(vault.open(sealed,ExternalLoginService.credentialAad((UUID)before.getFirst().get("id"),(String)before.getFirst().get("client_id"))).startsWith("synthetic-refresh-"));
         assertNull(auth.authenticate(session.secret()));
@@ -297,12 +299,17 @@ class ExternalWebLoginIT {
         var account=jdbc.queryForMap("SELECT * FROM user_account WHERE id=?",id);
         assertEquals("ANONYMIZED",account.get("status"));assertNull(account.get("email"));assertNull(account.get("display_name"));assertNull(account.get("normalized_email"));
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM user_identity WHERE account_id=?",Integer.class,id));
-        assertMaterialUnchanged(before,id);assertNull(auth.authenticate(session.secret()));
+        assertMaterialUnchanged(before,id);assertRevocation(id,before.size());assertNull(auth.authenticate(session.secret()));
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE event_type='ACCOUNT_ANONYMIZED' AND actor_id=?",Integer.class,id));
     }
     @Test void missingAppleMaterialBlocksBothSelfAndAdminBeforeDeletion() {
-        var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();
-        jdbc.update("DELETE FROM apple_revocation_credential WHERE account_id=?",id);
+        UUID id=UUID.randomUUID(),sessionId=UUID.randomUUID();String secret=tokens.create(),email=email();
+        new TransactionTemplate(manager).executeWithoutResult(s->{
+            jdbc.update("INSERT INTO user_account(id,email,normalized_email,display_name,status,created_at,updated_at,email_verified_at) VALUES (?,?,?,'Missing material','ACTIVE',now(),now(),now())",id,email,email);
+            jdbc.update("INSERT INTO user_identity(id,account_id,provider,issuer,subject,created_at) VALUES (?,?,'APPLE','https://appleid.apple.com',?,now())",UUID.randomUUID(),id,UUID.randomUUID().toString());
+            jdbc.update("INSERT INTO user_session(id,account_id,token_hash,remember_me,created_at,last_used_at,expires_at) VALUES (?,?,?,false,?,?,?)",sessionId,id,tokens.hash(secret),java.sql.Timestamp.from(clock.instant()),java.sql.Timestamp.from(clock.instant()),java.sql.Timestamp.from(clock.instant().plusSeconds(86400)));
+        });
+        var session=new AuthService.LoginSession(secret,new AuthService.Principal(id,sessionId,false));
         assertEquals("APPLE_REVOCATION_MATERIAL_UNAVAILABLE",assertThrows(AuthFailure.class,()->cancellation.self(session.principal(),null,true,UUID.randomUUID())).code());
         assertEquals("APPLE_REVOCATION_MATERIAL_UNAVAILABLE",assertThrows(AuthFailure.class,()->cancellation.administrator(root,id,UUID.randomUUID())).code());
         assertNotNull(auth.authenticate(session.secret()));assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM user_identity WHERE account_id=?",Integer.class,id));
@@ -334,4 +341,170 @@ class ExternalWebLoginIT {
         cancellation.self(session.principal(),null,true,UUID.randomUUID());assertNull(auth.authenticate(session.secret()));
     }
     @AfterAll void cleanup(){guard();assertTrue(SCHEMA.matches("it_external_web_[0-9a-f]{32}"));jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");}
+    int count(String sql,Object... args){return jdbc.queryForObject(sql,Integer.class,args);}
+    void purge(){new TransactionTemplate(manager).executeWithoutResult(s->external.purgeExpired(clock.instant()));}
+    void assertRevocation(UUID account,int expected){
+        assertEquals(0,count("SELECT count(*) FROM apple_authorization_case WHERE account_id=?",account));
+        assertEquals(expected,count("SELECT count(*) FROM apple_revocation_job j JOIN apple_authorization_case c ON c.id=j.case_id WHERE c.origin_account_id=? AND j.status='PENDING' AND j.reason='ACCOUNT_CANCELLATION'",account));
+        assertEquals(expected,count("SELECT count(*) FROM apple_revocation_credential m JOIN apple_authorization_case c ON c.id=m.case_id WHERE c.origin_account_id=? AND m.account_id IS NULL AND m.registration_id IS NULL",account));
+    }
+    @Test void appleCaptureHasVerifiedSubjectClientFlowAndNoUnboundMaterial() {
+        String subject=UUID.randomUUID().toString();var ctx=context(ExternalProviders.Provider.APPLE,subject,email(),true,null,false);var out=finish(ctx,"Apple");
+        var row=jdbc.queryForMap("SELECT c.*,m.case_id FROM apple_authorization_case c JOIN apple_revocation_credential m ON m.case_id=c.id WHERE c.subject=?",subject);
+        assertEquals("APPLE-synthetic-client",row.get("client_id"));assertEquals("REGISTRATION_PENDING",row.get("status"));assertNotNull(row.get("registration_id"));
+        assertEquals(jdbc.queryForObject("SELECT id FROM external_auth_flow WHERE state_hash=?",UUID.class,tokens.hash(ctx.state())),row.get("origin_flow_id"));
+        assertNotNull(out.registrationSecret());assertEquals(0,count("SELECT count(*) FROM apple_revocation_credential WHERE case_id IS NULL"));
+    }
+    @Test void appleCompletionBindsAllSameSubjectContextsAtomically() {
+        String subject=UUID.randomUUID().toString(),email=email();
+        var a=finish(context(ExternalProviders.Provider.APPLE,subject,email,true,null,false),"A");
+        var b=finish(context(ExternalProviders.Provider.APPLE,subject,email,true,null,false),"B");
+        login.complete(a.registrationSecret(),email,"Apple");UUID id=account(subject);
+        assertEquals(2,count("SELECT count(*) FROM apple_authorization_case WHERE account_id=? AND status='ACCOUNT_BOUND'",id));
+        assertEquals(2,material(id).size());login.complete(b.registrationSecret(),email,"Apple");assertEquals(1,count("SELECT count(*) FROM user_identity WHERE subject=?",subject));
+    }
+    @Test void appleCompletionFailureRollsBackBindingAndRetainsCapturedTokenForRetry() {
+        String subject=UUID.randomUUID().toString(),email=email();var out=finish(context(ExternalProviders.Provider.APPLE,subject,email,true,null,false),"Apple");
+        ExternalAccountStore target=org.springframework.test.util.AopTestUtils.getUltimateTargetObject(external);
+        doAnswer(call->{call.callRealMethod();throw new IllegalStateException("injected after binding");}).when(target).consume(any(),any());
+        try {assertThrows(RuntimeException.class,()->login.complete(out.registrationSecret(),email,"Apple"));}
+        finally {doCallRealMethod().when(target).consume(any(),any());}
+        assertEquals(0,count("SELECT count(*) FROM user_identity WHERE subject=?",subject));
+        assertEquals(1,count("SELECT count(*) FROM apple_authorization_case WHERE subject=? AND status='REGISTRATION_PENDING'",subject));
+        assertEquals(1,count("SELECT count(*) FROM apple_revocation_credential m JOIN apple_authorization_case c ON c.id=m.case_id WHERE c.subject=? AND m.registration_id IS NOT NULL",subject));
+        login.complete(out.registrationSecret(),email,"Apple");assertEquals(1,material(account(subject)).size());
+    }
+    @Test void abandonedAppleRegistrationEnqueuesBeforePurgeWithoutLosingCiphertext() {
+        String subject=UUID.randomUUID().toString();var out=finish(context(ExternalProviders.Provider.APPLE,subject,email(),true,null,false),"Apple");
+        UUID credential=jdbc.queryForObject("SELECT m.id FROM apple_revocation_credential m JOIN apple_authorization_case c ON c.id=m.case_id WHERE c.subject=?",UUID.class,subject);
+        byte[] before=jdbc.queryForObject("SELECT ciphertext FROM apple_revocation_credential WHERE id=?",byte[].class,credential);Instant previous=clock.instant();
+        try {clock.advance(Duration.ofMinutes(15));purge();purge();}
+        finally {clock.advance(Duration.between(clock.instant(),previous));}
+        assertEquals(0,count("SELECT count(*) FROM external_registration WHERE token_hash=?",tokens.hash(out.registrationSecret())));
+        assertEquals(1,count("SELECT count(*) FROM apple_revocation_job WHERE credential_id=? AND reason='REGISTRATION_ABANDONED'",credential));
+        assertArrayEquals(before,jdbc.queryForObject("SELECT ciphertext FROM apple_revocation_credential WHERE id=?",byte[].class,credential));
+    }
+    @Test void liveSiblingPreventsPrematureD14Revocation() {
+        String subject=UUID.randomUUID().toString(),email=email();Instant previous=clock.instant();
+        try {
+            finish(context(ExternalProviders.Provider.APPLE,subject,email,true,null,false),"A");clock.advance(Duration.ofMinutes(5));
+            var live=finish(context(ExternalProviders.Provider.APPLE,subject,email,true,null,false),"B");clock.advance(Duration.ofMinutes(10));purge();
+            assertEquals(0,count("SELECT count(*) FROM apple_revocation_job j JOIN apple_authorization_case c ON c.id=j.case_id WHERE c.subject=?",subject));
+            assertEquals(2,count("SELECT count(*) FROM apple_authorization_case WHERE subject=? AND status='REGISTRATION_PENDING'",subject));
+            login.complete(live.registrationSecret(),email,"Apple");assertEquals(2,material(account(subject)).size());purge();
+        } finally {clock.advance(Duration.between(clock.instant(),previous));}
+    }
+    @Test void pendingEmailAccountIsNotAnAbandonedRegistration() {
+        String subject=UUID.randomUUID().toString(),email=email();var out=finish(context(ExternalProviders.Provider.APPLE,subject,null,false,null,false),"Apple");
+        login.complete(out.registrationSecret(),email,"Apple");UUID id=account(subject);Instant previous=clock.instant();
+        try {clock.advance(Duration.ofMinutes(16));purge();}finally{clock.advance(Duration.between(clock.instant(),previous));}
+        assertEquals("PENDING_EMAIL",jdbc.queryForObject("SELECT status FROM user_account WHERE id=?",String.class,id));
+        assertEquals(1,material(id).size());assertEquals(0,count("SELECT count(*) FROM apple_revocation_job j JOIN apple_authorization_case c ON c.id=j.case_id WHERE c.account_id=?",id));
+    }
+    @Test void selfAndAdminCancellationDetachAndEnqueueAllAppleCasesWithReplay() {
+        var own=externalAccount(ExternalProviders.Provider.APPLE);UUID id=own.principal().accountId();int expected=material(id).size();
+        cancellation.self(own.principal(),null,true,UUID.randomUUID());assertRevocation(id,expected);
+        var other=externalAccount(ExternalProviders.Provider.APPLE);UUID target=other.principal().accountId();int all=material(target).size();UUID key=UUID.randomUUID();
+        cancellation.administrator(root,target,key);cancellation.administrator(root,target,key);assertRevocation(target,all);
+        assertEquals(1,count("SELECT count(*) FROM audit_event WHERE event_type='ACCOUNT_DELETED' AND target_id=?",target));
+    }
+    @Test void cancellationEnqueueFailureRollsBackOwnerIdentitySessionsAndCiphertext() {
+        var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();var before=material(id);
+        AppleRevocationStore target=org.springframework.test.util.AopTestUtils.getUltimateTargetObject(revocations);
+        doAnswer(call->{call.callRealMethod();throw new IllegalStateException("injected enqueue failure");}).when(target).enqueue(any(),any(),any());
+        try {assertThrows(RuntimeException.class,()->cancellation.self(session.principal(),null,true,UUID.randomUUID()));}
+        finally {doCallRealMethod().when(target).enqueue(any(),any(),any());}
+        assertNotNull(auth.authenticate(session.secret()));assertMaterialUnchanged(before,id);
+        assertEquals(before.size(),count("SELECT count(*) FROM apple_authorization_case WHERE account_id=? AND status='ACCOUNT_BOUND'",id));
+        assertEquals(0,count("SELECT count(*) FROM apple_revocation_job j JOIN apple_authorization_case c ON c.id=j.case_id WHERE c.origin_account_id=?",id));
+        assertEquals(0,count("SELECT count(*) FROM apple_revocation_barrier WHERE identity_digest IN (SELECT identity_digest FROM apple_authorization_case WHERE account_id=?)",id));
+        cancellation.self(session.principal(),null,true,UUID.randomUUID());assertRevocation(id,before.size());
+    }
+    @Test void replayedAndConcurrentAppleCallbackCaptureAtMostOneCase() throws Exception {
+        String subject=UUID.randomUUID().toString();var ctx=context(ExternalProviders.Provider.APPLE,subject,email(),true,null,false);var gate=new CyclicBarrier(2);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            Callable<Boolean> call=()->{gate.await(5,TimeUnit.SECONDS);try{finish(ctx,"Apple");return true;}catch(AuthFailure e){assertEquals("EXTERNAL_STATE_INVALID",e.code());return false;}};
+            var a=pool.submit(call);var b=pool.submit(call);assertNotEquals(a.get(15,TimeUnit.SECONDS),b.get(15,TimeUnit.SECONDS));
+        }
+        assertEquals(1,count("SELECT count(*) FROM apple_authorization_case WHERE subject=?",subject));assertThrows(AuthFailure.class,()->finish(ctx,"Apple"));
+    }
+    @Test void concurrentAppleCompletionsAndPurgeKeepOneIdentityAndBothTokens() throws Exception {
+        String subject=UUID.randomUUID().toString(),email=email();var a=finish(context(ExternalProviders.Provider.APPLE,subject,email,true,null,false),"A");var b=finish(context(ExternalProviders.Provider.APPLE,subject,email,true,null,false),"B");var gate=new CyclicBarrier(3);
+        try(var pool=Executors.newFixedThreadPool(3)){
+            var x=pool.submit(()->{gate.await(5,TimeUnit.SECONDS);login.complete(a.registrationSecret(),email,"A");return true;});
+            var y=pool.submit(()->{gate.await(5,TimeUnit.SECONDS);login.complete(b.registrationSecret(),email,"B");return true;});
+            var z=pool.submit(()->{gate.await(5,TimeUnit.SECONDS);purge();return true;});x.get(15,TimeUnit.SECONDS);y.get(15,TimeUnit.SECONDS);z.get(15,TimeUnit.SECONDS);
+        }
+        assertEquals(1,count("SELECT count(*) FROM user_identity WHERE subject=?",subject));assertEquals(2,material(account(subject)).size());
+    }
+    @Test void cancelledAppleIdentityCannotRegisterAgainWhileRevocationIsPending() {
+        var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();String subject=jdbc.queryForObject("SELECT subject FROM user_identity WHERE account_id=?",String.class,id);
+        cancellation.self(session.principal(),null,true,UUID.randomUUID());
+        var attempt=context(ExternalProviders.Provider.APPLE,subject,email(),true,null,false);
+        assertEquals("APPLE_AUTHORIZATION_PENDING_REVOCATION",assertThrows(AuthFailure.class,()->finish(attempt,"Apple")).code());
+        assertEquals(0,count("SELECT count(*) FROM user_identity WHERE subject=?",subject));
+        assertEquals(1,count("SELECT count(*) FROM apple_authorization_case WHERE subject=? AND status='REGISTRATION_PENDING'",subject));
+    }
+    @Test void v14RejectsUnboundMaterialAndUnknownMigrationName() {
+        var failure=assertThrows(org.springframework.dao.DataAccessException.class,()->jdbc.update("INSERT INTO apple_revocation_credential(id,client_id,key_id,iv,ciphertext,created_at) VALUES (?,'client','test',?,?,now())",UUID.randomUUID(),new byte[12],new byte[32]));
+        java.sql.SQLException sql=null;for(Throwable t=failure;t!=null;t=t.getCause())if(t instanceof java.sql.SQLException e)sql=e;assertNotNull(sql);assertEquals("23502",sql.getSQLState());
+        assertEquals(1,count("SELECT count(*) FROM flyway_schema_history WHERE version='14' AND script='V14__apple_authorization_lifecycle.sql' AND success"));
+        var facts=new PreRaceAccountParticipationFacts(jdbc);new TransactionTemplate(manager).executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V14__unknown.sql' WHERE version='14'");assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));s.setRollbackOnly();});
+    }
+
+    @Test void concurrentAppleCancellationAndCallbackCannotLeaveOwnedCasesOrValidSessions() throws Exception {
+        var session=externalAccount(ExternalProviders.Provider.APPLE);UUID id=session.principal().accountId();String subject=jdbc.queryForObject("SELECT subject FROM user_identity WHERE account_id=?",String.class,id);
+        var ctx=context(ExternalProviders.Provider.APPLE,subject,email(),true,null,false);var gate=new CyclicBarrier(2);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var a=pool.submit(()->{gate.await(5,TimeUnit.SECONDS);cancellation.self(session.principal(),null,true,UUID.randomUUID());return true;});
+            var b=pool.submit(()->{gate.await(5,TimeUnit.SECONDS);try{return finish(ctx,"Apple");}catch(AuthFailure rejected){return null;}});
+            a.get(15,TimeUnit.SECONDS);var outcome=b.get(15,TimeUnit.SECONDS);if(outcome!=null && outcome.session()!=null)assertNull(auth.authenticate(outcome.session().secret()));
+        }
+        assertEquals(0,count("SELECT count(*) FROM user_account WHERE id=?",id));assertEquals(0,count("SELECT count(*) FROM apple_authorization_case WHERE account_id=?",id));
+        assertEquals(0,count("SELECT count(*) FROM apple_revocation_credential m JOIN apple_authorization_case c ON c.id=m.case_id WHERE c.origin_account_id=? AND NOT EXISTS(SELECT 1 FROM apple_revocation_job j WHERE j.credential_id=m.id)",id));
+    }
+    @Test void exactExpiryCompletionAndPurgeRaceCannotCreateAnAccount() throws Exception {
+        String subject=UUID.randomUUID().toString(),email=email();var out=finish(context(ExternalProviders.Provider.APPLE,subject,email,true,null,false),"Apple");Instant previous=clock.instant();
+        try {clock.advance(Duration.ofMinutes(15));var gate=new CyclicBarrier(2);
+            try(var pool=Executors.newFixedThreadPool(2)){
+                var a=pool.submit(()->{gate.await(5,TimeUnit.SECONDS);assertThrows(AuthFailure.class,()->login.complete(out.registrationSecret(),email,"Apple"));return true;});
+                var b=pool.submit(()->{gate.await(5,TimeUnit.SECONDS);purge();return true;});a.get(15,TimeUnit.SECONDS);b.get(15,TimeUnit.SECONDS);
+            }
+            assertEquals(0,count("SELECT count(*) FROM user_identity WHERE subject=?",subject));
+            assertEquals(1,count("SELECT count(*) FROM apple_revocation_job j JOIN apple_authorization_case c ON c.id=j.case_id WHERE c.subject=?",subject));
+        }finally{clock.advance(Duration.between(clock.instant(),previous));}
+    }
+    @Test void v14MigrationRefusesUnboundPreproductionMaterialWithoutDeletingIt() {
+        String schema=SCHEMA+"_v14";
+        try {
+            var source=jdbc.getDataSource();org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("13").load().migrate();UUID id=UUID.randomUUID();
+            jdbc.update("INSERT INTO "+schema+".apple_revocation_credential(id,client_id,key_id,iv,ciphertext,created_at) VALUES (?,'client','test',?,?,now())",id,new byte[12],new byte[32]);
+            assertThrows(org.flywaydb.core.api.FlywayException.class,()->org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).load().migrate());
+            assertArrayEquals(new byte[32],jdbc.queryForObject("SELECT ciphertext FROM "+schema+".apple_revocation_credential WHERE id=?",byte[].class,id));
+            assertEquals(0,count("SELECT count(*) FROM "+schema+".flyway_schema_history WHERE version='14' AND success"));
+        }finally{guard();assertTrue(schema.matches("it_external_web_[0-9a-f]{32}_v14"));jdbc.execute("DROP SCHEMA IF EXISTS \""+schema+"\" CASCADE");}
+    }
+
+    @Test void captureInsertFailureRollsBackFlowRegistrationCaseAndMaterialTogether() {
+        String subject=UUID.randomUUID().toString();var ctx=context(ExternalProviders.Provider.APPLE,subject,email(),true,null,false);
+        AppleRevocationStore target=org.springframework.test.util.AopTestUtils.getUltimateTargetObject(revocations);
+        doAnswer(call->{call.callRealMethod();throw new IllegalStateException("injected after material insert");}).when(target).material(any(),any(),any(),any());
+        try{assertThrows(RuntimeException.class,()->finish(ctx,"Apple"));}
+        finally{doCallRealMethod().when(target).material(any(),any(),any(),any());}
+        assertEquals(0,count("SELECT count(*) FROM apple_authorization_case WHERE subject=?",subject));assertEquals(0,count("SELECT count(*) FROM external_registration WHERE subject=?",subject));
+        assertNull(jdbc.queryForObject("SELECT consumed_at FROM external_auth_flow WHERE state_hash=?",java.sql.Timestamp.class,tokens.hash(ctx.state())));
+        assertEquals(0,count("SELECT count(*) FROM apple_revocation_credential WHERE case_id IS NULL"));
+    }
+    @Test void purgeEnqueueFailureRollsBackContextsCiphertextAndBarrier() {
+        String subject=UUID.randomUUID().toString();var out=finish(context(ExternalProviders.Provider.APPLE,subject,email(),true,null,false),"Apple");Instant previous=clock.instant();
+        AppleRevocationStore target=org.springframework.test.util.AopTestUtils.getUltimateTargetObject(revocations);
+        doAnswer(call->{call.callRealMethod();throw new IllegalStateException("injected purge enqueue failure");}).when(target).enqueue(any(),any(),any());
+        try{clock.advance(Duration.ofMinutes(15));assertThrows(RuntimeException.class,this::purge);}
+        finally{doCallRealMethod().when(target).enqueue(any(),any(),any());clock.advance(Duration.between(clock.instant(),previous));}
+        assertEquals(1,count("SELECT count(*) FROM external_registration WHERE token_hash=?",tokens.hash(out.registrationSecret())));
+        assertEquals(1,count("SELECT count(*) FROM apple_authorization_case WHERE subject=? AND status='REGISTRATION_PENDING'",subject));
+        assertEquals(0,count("SELECT count(*) FROM apple_revocation_job j JOIN apple_authorization_case c ON c.id=j.case_id WHERE c.subject=?",subject));
+        assertEquals(0,count("SELECT count(*) FROM apple_revocation_barrier WHERE identity_digest=?",tokens.hash("https://appleid.apple.com\n"+subject)));
+    }
+
 }
