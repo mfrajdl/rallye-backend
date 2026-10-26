@@ -54,4 +54,26 @@ class CommandAccountsTest {
         assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"CREW_CREATE","[\"Crew\",null,null,null]",
                 "{\"id\":\""+target+"\",\"captainAccountId\":null,\"futureAccountId\":\""+owner+"\"}"));
     }
+    @Test void templateCommandsRelateOnlyActorAndRejectUnknownResultFields() {
+        UUID template=UUID.randomUUID();
+        String result="{\"id\":\""+target+"\",\"templateId\":\""+template+"\",\"version\":1}";
+        String request="[\""+template+"\",0,null,null,0]";
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_STAGE_CREATE",request,result).accounts());
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_STAGE_CREATE",request,result.replace("\"version\":1","\"code\":\"secret\",\"version\":1")));
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,template,"TEMPLATE_CREATE","[\"Name\",null,-3]","{\"id\":\""+template+"\",\"templateId\":\""+template+"\",\"version\":0}").accounts());
+    }
+
+    @Test void imageCommandContainsOnlyDigestAndNoBinaryOrAccountTargets(){
+        UUID template=UUID.randomUUID();String result="{\"id\":\""+target+"\",\"templateId\":\""+template+"\",\"version\":1}";
+        String request="[\""+template+"\",1,\""+"a".repeat(64)+"\"]";
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_IMAGE_CREATE",request,result).accounts());
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_IMAGE_CREATE",request.replace("a".repeat(64),"raw-image"),result));
+    }
+    @Test void duplicationCommandsUseOnlyResourceIdsAndNeverIncludeCodeMaterial(){
+        UUID template=UUID.randomUUID(),stage=UUID.randomUUID();String created="{\"id\":\""+target+"\",\"templateId\":\""+target+"\",\"version\":0}";
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_DUPLICATE","[\""+template+"\"]",created).accounts());
+        String request="[\""+template+"\",\""+stage+"\",7]";String result="{\"id\":\""+target+"\",\"templateId\":\""+template+"\",\"version\":8}";
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_STAGE_DUPLICATE",request,result).accounts());
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_STAGE_DUPLICATE",request,result.replace("\"version\":8","\"codeHash\":\"secret\",\"version\":8")));
+    }
 }

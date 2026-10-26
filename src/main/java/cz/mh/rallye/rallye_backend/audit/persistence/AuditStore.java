@@ -48,6 +48,15 @@ public class AuditStore {
                 """,id,Timestamp.from(time),actor==null?"SYSTEM":"USER",actor,event.name(),
                 UUID.fromString("00000000-0000-0000-0000-000000000005"),metadata);
     }
+    public void appendTemplate(UUID id,Instant time,UUID actor,Event event,UUID target,boolean stage){
+        jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type) VALUES (?,?,'USER',?,?,?,?)",id,Timestamp.from(time),actor,event.name(),target,stage?"TEMPLATE_STAGE":"TEMPLATE");
+    }
+    public void appendTemplateCopy(UUID id,Instant time,UUID actor,UUID target,UUID source,UUID template,boolean stage){
+        String metadata=tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(
+                java.util.Map.of("sourceId",source,"templateId",template));
+        jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type,metadata) VALUES (?,?,'USER',?,?,?,?,?::jsonb)",
+                id,Timestamp.from(time),actor,stage?"TEMPLATE_STAGE_DUPLICATED":"TEMPLATE_DUPLICATED",target,stage?"TEMPLATE_STAGE":"TEMPLATE",metadata);
+    }
     public void append(UUID id, Instant time, UUID actor, Event type, UUID target) {
         jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id) VALUES (?,?,'USER',?,?,?)",
                 id, Timestamp.from(time), actor, type.name(), target);

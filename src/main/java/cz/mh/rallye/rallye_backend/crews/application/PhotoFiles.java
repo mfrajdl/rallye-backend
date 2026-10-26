@@ -36,10 +36,19 @@ public class PhotoFiles {
                 try {
                     String format=reader.getFormatName().toLowerCase(java.util.Locale.ROOT);
                     if(!format.equals("jpeg")&&!format.equals("png")) throw new AuthFailure(415,"PHOTO_UNSUPPORTED_FORMAT");
+                    // ImageIO tolerates some truncated JPEG/PNG streams. Require their end marker too.
+                    if(format.equals("jpeg") && (bytes.length<2 || bytes[bytes.length-2]!=(byte)0xff || bytes[bytes.length-1]!=(byte)0xd9))
+                        throw new AuthFailure(400,"INVALID_PHOTO");
+                    if(format.equals("png") && (bytes.length<12 || !java.util.Arrays.equals(
+                            java.util.Arrays.copyOfRange(bytes,bytes.length-12,bytes.length),
+                            new byte[]{0,0,0,0,73,69,78,68,(byte)174,66,96,(byte)130})))
+                        throw new AuthFailure(400,"INVALID_PHOTO");
+                    var warning=new boolean[1];reader.addIIOReadWarningListener((source,message)->warning[0]=true);
                     reader.setInput(imageInput,true,true);
                     int width=reader.getWidth(0),height=reader.getHeight(0);
                     if(width<1||height<1||width>4096||height>4096) throw new AuthFailure(400,"INVALID_PHOTO_DIMENSIONS");
                     var decoded=reader.read(0);
+                    if(decoded==null || warning[0])throw new AuthFailure(400,"INVALID_PHOTO");
                     // Copy pixels only: do not retain EXIF/GPS or ancillary source metadata.
                     var clean=new BufferedImage(width,height,format.equals("jpeg")?BufferedImage.TYPE_INT_RGB:BufferedImage.TYPE_INT_ARGB);
                     var graphics=clean.createGraphics();

@@ -17,6 +17,17 @@ final class CommandAccounts {
             }
             JsonNode req=JSON.readTree(request),res=JSON.readTree(result);
             if(!req.isArray() || !res.isObject()) throw invalid();
+            if(operation.equals("TEMPLATE_CREATE") || operation.equals("TEMPLATE_STAGE_CREATE") || operation.equals("TEMPLATE_IMAGE_CREATE") || operation.equals("TEMPLATE_DUPLICATE") || operation.equals("TEMPLATE_STAGE_DUPLICATE")) {
+                if(operation.equals("TEMPLATE_CREATE")){size(req,3);if(!req.get(0).isString() || !req.get(2).isIntegralNumber())throw invalid();textOrNull(req.get(1));}
+                else if(operation.equals("TEMPLATE_DUPLICATE")){size(req,1);requiredId(req.get(0));}
+                else if(operation.equals("TEMPLATE_STAGE_DUPLICATE")){size(req,3);requiredId(req.get(0));requiredId(req.get(1));if(!req.get(2).isIntegralNumber() || req.get(2).longValue()<0)throw invalid();}
+                else if(operation.equals("TEMPLATE_IMAGE_CREATE")){size(req,3);requiredId(req.get(0));if(!req.get(1).isIntegralNumber() || !req.get(2).isString() || !req.get(2).asString().matches("[0-9a-f]{64}"))throw invalid();}
+                else {size(req,5);requiredId(req.get(0));if(!req.get(1).isIntegralNumber())throw invalid();textOrNull(req.get(2));for(int i=3;i<5;i++)if(!req.get(i).isNull()&&!req.get(i).isIntegralNumber())throw invalid();}
+                if(!new HashSet<>(res.propertyNames()).equals(Set.of("id","templateId","version")) || !target.equals(requiredId(res.get("id"))) || !res.get("version").isIntegralNumber())throw invalid();
+                UUID template=requiredId(res.get("templateId"));
+                if((operation.equals("TEMPLATE_CREATE") || operation.equals("TEMPLATE_DUPLICATE"))?!template.equals(target):!template.equals(requiredId(req.get(0))))throw invalid();
+                return new Content(ids,req,res); // Target IDs are templates/stages, never user accounts.
+            }
             switch(operation) {
                 case "ADMIN_ACCOUNT_CANCEL" -> {size(req,1);ids.add(requiredId(req.get(0)));
                     if(!target.equals(requiredId(req.get(0))) || res.get("outcome")==null || !Set.of("DELETED","ANONYMIZED").contains(res.get("outcome").asString()))throw invalid();}

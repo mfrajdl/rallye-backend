@@ -139,7 +139,24 @@ class CrewServiceTest {
         assertEquals(403,assertThrows(AuthFailure.class,()->service.list(principal,true,null,false,0,50)).status());
         assertThrows(AuthFailure.class,()->service.list(principal,false,null,false,0,101));
         when(roles.administrator(actor)).thenReturn(true);
-        when(crews.list(null,true,true,0,50)).thenReturn(List.of(row(null,0)));
+        when(crews.list(null,true,true,0,50)).thenReturn(List.of(new CrewStore.ListedCrew(row(null,0),null)));
         assertNull(service.list(principal,true,null,true,0,50).items().getFirst().captainAccountId());
     }
+    @Test void listingMapsJoinedCaptainNameAndPreservesPaginationAndFilters(){
+        var first=new CrewStore.ListedCrew(row(actor,2),"Jana Nováková");
+        when(crews.list(actor,false,false,0,1)).thenReturn(List.of(first,first));
+        var page=service.list(principal,false,null,false,0,1);
+        assertEquals(0,page.page());assertEquals(1,page.size());assertTrue(page.hasMore());assertEquals(1,page.items().size());
+        var item=page.items().getFirst();assertEquals(actor,item.captainAccountId());assertEquals("Jana Nováková",item.captainDisplayName());
+        assertEquals(id,item.id());assertEquals("Crew",item.name());assertEquals(2,item.version());assertEquals(clock.instant(),item.createdAt());assertFalse(item.hasPhoto());
+        when(roles.administrator(actor)).thenReturn(true);when(crews.list(other,false,false,1,1)).thenReturn(List.of(first));
+        service.list(principal,true,other,false,1,1);verify(crews).list(other,false,false,1,1);
+        // Names come from the joined result; no account lookup is performed per list row.
+        verify(accounts,never()).account(any());verify(accounts,times(2)).lockAccount(actor);
+    }
+    @Test void orphanListHasBothCaptainFieldsNull(){
+        when(roles.administrator(actor)).thenReturn(true);when(crews.list(null,true,true,0,50)).thenReturn(List.of(new CrewStore.ListedCrew(row(null,0),null)));
+        var item=service.list(principal,true,null,true,0,50).items().getFirst();assertNull(item.captainAccountId());assertNull(item.captainDisplayName());
+    }
+
 }

@@ -296,3 +296,31 @@ Následuje 3b.3: potvrzované převody mezi uživateli, platnost 7 dní, zrušen
 a atomické zrušení čekajícího převodu při již existující administrátorské změně.
 Historické účasti a jejich ochrany vzniknou až s modulem účastí; nejsou nahrazené
 ručním příznakem v crew. Tato etapa jejich tabulky ani procesy nezavádí.
+
+## Doplnění seznamu posádek pro webovou administraci
+
+`GET /api/v1/crews` řadí všechny rozsahy a filtry před stránkováním pomocí
+`ORDER BY lower(c.name) ASC, c.id ASC`. Velikost písmen nerozhoduje; při shodě
+normalizovaného názvu rozhoduje UUID. Porovnávání používá kolaci PostgreSQL databáze,
+bez odstraňování diakritiky. Původní řazení bylo `created_at DESC, id DESC`.
+
+Položky `items` mají navíc `captainDisplayName`: aktuální `user_account.display_name`
+načtené jedním `LEFT JOIN`, bez kopírování jména a bez dotazů pro jednotlivé posádky.
+U osiřelé posádky jsou `captainAccountId` i `captainDisplayName` explicitně `null`.
+Změna profilového jména se projeví při dalším načtení seznamu bez změny verze posádky.
+Samostatné seznamové DTO `CrewService.ListItem` zachovává všechna dosavadní pole;
+DTO detailu a měnících operací `CrewService.View` se nemění. Stránkovaná obálka,
+query parametry, filtry i oprávnění zůstávají stejné. Migrace není potřeba.
+
+Unit/HTTP testy kontrolují mapování, obálku, null hodnoty a nezměněný detail.
+Běžné Maven `verify` po této úpravě prošlo: BUILD SUCCESS, 481 testů bez chyb
+na JDK 21; PostgreSQL integrační testy se při tomto běhu nespouštěly.
+Nové scénáře `CrewsIT` ověřují SQL pořadí včetně shod a velikosti písmen napříč
+stránkami a rozsahy, aktuální jméno po změně profilu, osiřelé posádky a filtry.
+Jejich PostgreSQL ověření čeká na ruční spuštění uživatelem:
+`.\mvnw.cmd -Pit verify` proti `rallye_test`; Codex je nespouští.
+
+
+Následné kompletní PostgreSQL ověření uživatel potvrdil při uzavření backendu
+šablon 4a–4d jako BUILD SUCCESS (`.\mvnw.cmd -Pit verify` proti rallye_test),
+včetně souvisejících regresí seznamu posádek. Codex DB testy nespouštěl.

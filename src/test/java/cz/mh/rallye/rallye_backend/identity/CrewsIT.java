@@ -99,6 +99,60 @@ class CrewsIT {
         assertEquals(crew.id(),crews.detail(root.principal(),crew.id()).id());
         assertEquals(root.principal().accountId(),crews.captain(root.principal(),orphan.id(),0,root.principal().accountId(),UUID.randomUUID()).captainAccountId());
     }
+    @Test void listSortsCaseInsensitivelyByNameThenIdBeforePagingInBothScopes() {
+        var created=new ArrayList<CrewService.View>();
+        for(String name:List.of("Zebra","beta","Alpha","BETA","alpha","Alpha"))
+            created.add(crews.create(owner.principal(),UUID.randomUUID(),name,null,null,false,null));
+        var expected=created.stream().sorted(Comparator.comparing((CrewService.View c)->c.name().toLowerCase(Locale.ROOT))
+                .thenComparing(c->c.id().toString())).map(CrewService.View::id).toList();
+        var own=new ArrayList<UUID>();var filtered=new ArrayList<UUID>();
+        for(int page=0;page<3;page++) {
+            var mine=crews.list(owner.principal(),false,null,false,page,2);
+            var all=crews.list(root.principal(),true,owner.principal().accountId(),false,page,2);
+            assertEquals(page,mine.page());assertEquals(2,mine.size());assertEquals(page<2,mine.hasMore());
+            assertEquals(page<2,all.hasMore());
+            own.addAll(mine.items().stream().map(CrewService.ListItem::id).toList());
+            filtered.addAll(all.items().stream().map(CrewService.ListItem::id).toList());
+        }
+        assertEquals(expected,own);assertEquals(expected,filtered);
+        var unfiltered=new ArrayList<UUID>();
+        for(int page=0;;page++) {
+            var result=crews.list(root.principal(),true,null,false,page,100);
+            unfiltered.addAll(result.items().stream().map(CrewService.ListItem::id).filter(expected::contains).toList());
+            if(!result.hasMore())break;
+        }
+        assertEquals(expected,unfiltered);
+    }
+    @Test void listReadsCurrentCaptainNameWithoutChangingCrewOrDetail() {
+        var first=create();var second=create();
+        var before=crews.list(owner.principal(),false,null,false,0,50);
+        assertEquals(2,before.items().size());
+        assertTrue(before.items().stream().allMatch(c->"Captain".equals(c.captainDisplayName())));
+        auth.changeDisplayName(owner.principal(),"Jana Nováková");
+        for(var result:List.of(crews.list(owner.principal(),false,null,false,0,50),
+                crews.list(root.principal(),true,owner.principal().accountId(),false,0,50))) {
+            assertEquals(2,result.items().size());
+            assertTrue(result.items().stream().allMatch(c->"Jana Nováková".equals(c.captainDisplayName())
+                    &&owner.principal().accountId().equals(c.captainAccountId())&&c.version()==0));
+        }
+        assertEquals(first,crews.detail(owner.principal(),first.id()));
+        assertEquals(second,crews.detail(owner.principal(),second.id()));
+    }
+    @Test void listPreservesOwnershipCaptainAndOrphanFilters() {
+        var mine=create();
+        var other=crews.create(stranger.principal(),UUID.randomUUID(),"Other",null,null,false,null);
+        var orphan=crews.create(root.principal(),UUID.randomUUID(),"Orphan list",null,null,true,null);
+        assertEquals(List.of(mine.id()),crews.list(owner.principal(),false,null,false,0,50).items().stream()
+                .map(CrewService.ListItem::id).toList());
+        assertEquals(List.of(other.id()),crews.list(root.principal(),true,stranger.principal().accountId(),false,0,50)
+                .items().stream().map(CrewService.ListItem::id).toList());
+        var orphans=crews.list(root.principal(),true,null,true,0,100).items();
+        assertTrue(orphans.stream().anyMatch(c->c.id().equals(orphan.id())));
+        assertTrue(orphans.stream().allMatch(c->c.captainAccountId()==null&&c.captainDisplayName()==null));
+        assertEquals(403,assertThrows(AuthFailure.class,()->crews.list(owner.principal(),true,null,false,0,50)).status());
+        assertEquals(400,assertThrows(AuthFailure.class,()->crews.list(owner.principal(),false,
+                stranger.principal().accountId(),false,0,50)).status());
+    }
     @Test void captainTargetsMustBeActiveVerifiedAndDifferentAndOldOwnerImmediatelyLosesAccess() {
         var crew=create();UUID key=UUID.randomUUID();
         assertEquals("CAPTAIN_UNCHANGED",assertThrows(AuthFailure.class,()->crews.captain(root.principal(),crew.id(),0,owner.principal().accountId(),key)).code());

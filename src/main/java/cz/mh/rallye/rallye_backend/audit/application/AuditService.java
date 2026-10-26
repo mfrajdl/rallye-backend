@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuditService {
-    public enum Event { LOGIN_SUCCEEDED, LOGOUT_SUCCEEDED, PASSWORD_CHANGED, PASSWORD_RESET_COMPLETED, PROFILE_NAME_CHANGED,
+    public enum Event { TEMPLATE_DUPLICATED, TEMPLATE_STAGE_DUPLICATED, TEMPLATE_IMAGE_CREATED, TEMPLATE_IMAGE_DELETED, TEMPLATE_READIED, TEMPLATE_STAGE_CONFIGURED, TEMPLATE_CREATED, TEMPLATE_UPDATED, TEMPLATE_DELETED, TEMPLATE_DRAFTED, TEMPLATE_STAGE_CREATED, TEMPLATE_STAGE_UPDATED, TEMPLATE_STAGE_DELETED, TEMPLATE_REORDERED, LOGIN_SUCCEEDED, LOGOUT_SUCCEEDED, PASSWORD_CHANGED, PASSWORD_RESET_COMPLETED, PROFILE_NAME_CHANGED,
         APPLE_REVOCATION_SUCCEEDED, APPLE_REVOCATION_RETRIED, ADMIN_GRANTED, ADMIN_REVOKED, ADMIN_BOOTSTRAPPED, ACCOUNT_DELETED, ACCOUNT_ANONYMIZED, AUDIT_EXPORT, AUDIT_CLEANUP,
         CREW_TRANSFER_REQUESTED, CREW_TRANSFER_ACCEPTED, CREW_TRANSFER_REJECTED, CREW_TRANSFER_CANCELLED,
         CREW_CREATED, CREW_UPDATED, CREW_DELETED, CREW_CAPTAIN_CHANGED, CREW_PHOTO_CHANGED, CREW_PHOTO_DELETED, PHOTO_CLEANUP_STARTED }
@@ -20,6 +20,14 @@ public class AuditService {
 
     @Transactional(propagation=Propagation.MANDATORY)
     public void appleRevocation(UUID job){store.appendAppleRevocation(UUID.randomUUID(),clock.instant().truncatedTo(ChronoUnit.MILLIS),job);}
+
+    @Transactional(propagation=Propagation.MANDATORY)
+    public void template(UUID actor,Event event,UUID target,boolean stage){store.appendTemplate(UUID.randomUUID(),clock.instant().truncatedTo(ChronoUnit.MILLIS),actor,event,target,stage);}
+
+    @Transactional(propagation=Propagation.MANDATORY)
+    public void templateCopy(UUID actor,UUID target,UUID source,UUID template,boolean stage){
+        store.appendTemplateCopy(UUID.randomUUID(),clock.instant().truncatedTo(ChronoUnit.MILLIS),actor,target,source,template,stage);
+    }
 
     // Audit failure must roll back the operation, never create an independent transaction.
     @Transactional(propagation = Propagation.MANDATORY)

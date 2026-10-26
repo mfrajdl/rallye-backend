@@ -94,4 +94,22 @@ class CrewHttpTest {
         mvc.perform(delete("/api/v1/crews/"+id+"?version=0").header("Authorization","Bearer "+secret))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CREW_VERSION_CONFLICT"));
     }
+    @Test void listAddsOnlyCaptainDisplayNameAndKeepsPageEnvelopeAndDetailContract()throws Exception{
+        var item=new CrewService.ListItem(id,principal.accountId(),"Crew","RZ","Description",false,Instant.EPOCH,Instant.EPOCH,2,"Jana Nováková");
+        when(crews.list(principal,false,null,false,0,50)).thenReturn(new CrewService.Page(java.util.List.of(item),0,50,false));
+        mvc.perform(get("/api/v1/crews").header("Authorization","Bearer "+secret)).andExpect(status().isOk())
+            .andExpect(jsonPath("$",org.hamcrest.Matchers.aMapWithSize(4))).andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(50)).andExpect(jsonPath("$.hasMore").value(false))
+            .andExpect(jsonPath("$.items[0]",org.hamcrest.Matchers.aMapWithSize(10))).andExpect(jsonPath("$.items[0].captainAccountId").value(principal.accountId().toString())).andExpect(jsonPath("$.items[0].captainDisplayName").value("Jana Nováková"))
+            .andExpect(jsonPath("$.items[0].name").value("Crew")).andExpect(jsonPath("$.items[0].registrationPlate").value("RZ")).andExpect(jsonPath("$.items[0].description").value("Description")).andExpect(jsonPath("$.items[0].hasPhoto").value(false))
+            .andExpect(jsonPath("$.items[0].version").value(2)).andExpect(jsonPath("$.items[0].createdAt").value(Instant.EPOCH.toString())).andExpect(jsonPath("$.items[0].updatedAt").value(Instant.EPOCH.toString()));
+        when(crews.detail(principal,id)).thenReturn(new CrewService.View(id,principal.accountId(),"Crew","RZ","Description",false,Instant.EPOCH,Instant.EPOCH,2));
+        mvc.perform(get("/api/v1/crews/"+id).header("Authorization","Bearer "+secret)).andExpect(status().isOk()).andExpect(jsonPath("$",org.hamcrest.Matchers.aMapWithSize(9))).andExpect(jsonPath("$",org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasKey("captainDisplayName"))));
+    }
+    @Test void orphanListSerializesExplicitNullCaptainFieldsAndUsesExistingScope()throws Exception{
+        when(crews.list(principal,true,null,true,0,2)).thenReturn(new CrewService.Page(java.util.List.of(new CrewService.ListItem(id,null,"Orphan",null,null,false,Instant.EPOCH,Instant.EPOCH,0,null)),0,2,false));
+        mvc.perform(get("/api/v1/crews").param("scope","all").param("orphaned","true").param("size","2").header("Authorization","Bearer "+secret)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0]",org.hamcrest.Matchers.hasKey("captainAccountId"))).andExpect(jsonPath("$.items[0]",org.hamcrest.Matchers.hasKey("captainDisplayName")))
+            .andExpect(jsonPath("$.items[0].captainAccountId").value(org.hamcrest.Matchers.nullValue())).andExpect(jsonPath("$.items[0].captainDisplayName").value(org.hamcrest.Matchers.nullValue()));
+    }
+
 }

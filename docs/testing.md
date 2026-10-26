@@ -754,3 +754,134 @@ Produkční trigger ani chování API se nemění. Cílené opakování uživate
 `.\mvnw.cmd -Pit -Dit.test=AdministrationIT verify`. Následné úplné PostgreSQL
 ověření po opravě uživatel potvrdil jako **BUILD SUCCESS**. Při závěrečném
 Git uzavření se testy znovu nespouštěly.
+
+
+## Etapa 4a – šablony a rozpracovaná stanoviště
+
+Nové TemplateServiceTest a TemplateHttpTest pokrývají ADMIN, CSRF, validaci,
+no-op a verze, signed body, pořadí a API bez CODE/HTML. Dotčené CommandAccounts
+formáty a explicitní povolení V16 mají samostatné testy. TemplatesIT připravuje
+izolované PostgreSQL scénáře podle [templates-4a.md](templates-4a.md), včetně
+V15 -> V16, rollbacku, souběhu, pořadí a bezpečnosti rušení účtů.
+Pro PostgreSQL spusťte `.\mvnw.cmd -Pit verify` proti rallye_test podle výše
+popsaných pravidel. Codex PostgreSQL sadu nespouštěl; následný úplný běh
+uživatel potvrdil jako **BUILD SUCCESS**, včetně TemplatesIT a V16.
+
+Ověření 4a bez PostgreSQL: Maven Wrapper verify na JDK 21 – **BUILD SUCCESS**,
+456 testů, 0 failures/errors/skipped. Cílené unit/HTTP kontroly: 49 úspěšných.
+17 nových TemplatesIT bylo součástí následného uživatelem potvrzeného
+úspěšného PostgreSQL ověření. Ruční API průchod zatím nebyl potvrzen.
+
+
+## Etapa 4b – konfigurace a READY
+
+TemplateReadinessTest a doplněné TemplateServiceTest/TemplateHttpTest ověřují
+GPS + CODE = AND, neúplný DRAFT, povinné parametry, signed sazby, časové hranice,
+CODE normalizaci/ochranu/no-op, plain text a přechody stavů. TemplatesIT doplňuje
+skutečné hashování, nepřítomnost CODE v auditu/ledgeru, state/edit souběh a rollback,
+upgrade V16 -> V17, odstranění statistického verzování a přesné migration guardy.
+Nová 4b PostgreSQL sada zatím není spuštěna ani uživatelem potvrzena. Použijte
+`.\mvnw.cmd -Pit verify` proti rallye_test; Codex ji podle AGENTS.md nespouští.
+Kontrakt a ruční API průchod: [templates-4b.md](templates-4b.md).
+
+Ověření 4b Codexem: Maven Wrapper verify, JDK 21 – **BUILD SUCCESS**, 477 testů,
+0 failures/errors/skipped. Cílený běh měl 60 úspěšných testů. TemplatesIT celkem
+35 případů (18 nových 4b) se pouze zkompilovalo. Uživatel musí potvrdit nové
+PostgreSQL ověření s V17; předchozí úspěch 4a toto ověření nenahrazuje.
+
+
+## Etapa 4c – HTML a obrázky
+
+Uživatel v zadání 4c potvrdil dosavadní PostgreSQL ověření 4a/4b jako úspěšné;
+předchozí poznámky o čekajícím 4b běhu jsou historické. Toto potvrzení neověřuje V18.
+Nové InstructionsHtmlTest, TemplateImageHttpTest a TemplateImageFilesTest spolu
+s upravenými testy šablon kontrolují sanitizaci, URL/limity, HTML kontrakt,
+metadatovou sanitizaci JPEG/PNG a odmítnutí uříznutých souborů. Původní PhotoFilesTest
+zůstává regresí sdíleného dekodéru. CommandAccountsTest kontroluje image digest formát.
+TemplatesIT má 14 nových 4c scénářů pro V18/FK, sdílení, READY/no-op,
+audit/file/ledger rollback, oprávnění, idempotenci, kaskádové smazání a souběhy.
+Uživatel následně potvrdil `.\mvnw.cmd -Pit verify` proti rallye_test jako
+**BUILD SUCCESS**, včetně nových scénářů 4c a V18. API a postup ručního ověření jsou
+v [templates-4c.md](templates-4c.md). Codex PostgreSQL sadu nespouštěl.
+
+
+Závěrečný běh Codexu 4c bez PostgreSQL: Maven Wrapper `verify`, JDK 21.0.12.1,
+**BUILD SUCCESS, 511 testů, 0 failures/errors/skipped**. Sdílené image testy cíleně
+8/8; předchozí cílené HTML/template/facts testy 81/81. `git diff --check` prošel.
+Při jednom meziběhu selhal stávající AuditExportHttpTest kvůli
+ConcurrentModificationException v MockHttpServletResponse/async zápisu security
+hlaviček. Samostatný běh 3/3 i následné úplné verify prošly; exportní produkční kód
+ani jeho test se v rámci 4c neměnily. Jde o zachycenou potenciální nestabilitu testu,
+ne o potvrzenou regresi HTML/obrázků. PostgreSQL část uživatel následně potvrdil jako BUILD SUCCESS;
+Codex tento běh neprováděl. Ruční API průchod 4c zatím nebyl potvrzen.
+
+
+## Etapa 4d – duplikování šablon a stanovišť
+
+Nové TemplateDuplicationServiceTest (10) a TemplateDuplicationHttpTest (6),
+rozšířené InstructionsHtmlTest a CommandAccountsTest ověřují kopírovací kontrakty,
+ADMIN/CSRF, pořadí, Unicode délku názvu, replay/konflikt, bezpečný remap img src
+bez změny jiných textů a úklid souborů. Běžné Maven Wrapper `verify` na JDK
+21.0.12.1 prošlo: **BUILD SUCCESS, 529 testů, 0 failures/errors/skipped**.
+`git diff --check` bez chyb. Žádná nová migrace; V1–V18 se nemění.
+
+TemplatesIT přidává 13 nových PostgreSQL scénářů 4d (12 metod, DRAFT/READY
+parametrizace), včetně všech aktuálních konfiguračních sloupců, CODE funkčnosti,
+kopie použitých/nepoužitých obrázků, nezávislosti, idempotence po smazání zdroje,
+rollbacku auditu/ledgeru/souborů a souběhů. Tyto testy jsou pouze zkompilované,
+neprovedené. Uživatel spustí `.\mvnw.cmd -Pit verify` proti rallye_test.
+Dosavadní potvrzení 4a–4c není potvrzením nové 4d. Ruční API průchod nebyl proveden.
+
+Při prvním běhu se znovu projevila již zaznamenaná nestabilita
+AuditExportHttpTest v MockHttpServletResponse/async security hlavičkách;
+opakované úplné verify prošlo. Nesouvisející exportní kód ani test se neměnil.
+Nový anonymní HTTP POST test byl opraven tak, aby pro ověření 401 měl CSRF;
+bez CSRF je správně odmítnut 403 ještě před autentizací. Bezpečnost se neoslabovala.
+Sjednocená API/editor dokumentace: [templates-4d.md](templates-4d.md).
+
+
+## Oprava nestability AuditExportHttpTest po 4d
+
+Uživatelský příkaz `.\mvnw.cmd -Pit verify` skončil chybou již v běžné sadě
+Surefire (529 testů, 1 error), konkrétně při úvodním MockMvc.perform exportu.
+Tento výsledek nepotvrzuje úspěšné PostgreSQL ověření nové 4d.
+
+Úplný stack trace ukázal ConcurrentModificationException v
+HashMap.computeIfAbsent → LinkedCaseInsensitiveMap →
+MockHttpServletResponse.doAddHeaderValue/setHeader. HeaderWriterFilter zapisoval
+security hlavičky v finally návratu původního requestu; současně je mohl zapisovat
+asynchronní StreamingResponseBody task při flush odpovědi. Rychlý Mockito stream
+umožnil tento souběh na jediné mock odpovědi. Nejde o sdílenou kolekci auditních dat,
+statické měnitelné fixture ani zjištěné paralelní spouštění JUnit testů. V Maven/JUnit
+konfiguraci není zapnuté paralelní provádění. Jediný statický údaj tohoto testu byl
+neměnný URL řetězec; identita/secret jsou instanční, Spring Mockito mocky se resetují.
+
+Oprava je pouze v AuditExportHttpTest: vlastní @TestConfiguration používá řízený
+AsyncTaskExecutor s frontou. Původní request musí dokončit celý řetězec filtrů,
+pak se explicitně provede právě jeden queued stream task a následně asyncDispatch.
+Test před spuštěním tasku ověřuje, že stream ještě nebyl volán, a po každém testu
+kontroluje prázdnou frontu. Není sleep, polling, vypnutí security filtrů, catch/retry
+ConcurrentModificationException ani změna očekávaného HTTP výsledku. Async started,
+CSV UTF-8/BOM, filtry, download hlavičky, no-store, nosniff a DENY se stále ověřují.
+Pozitivní scénář má 20 opakování. Konfigurace je importovaná jen tímto MVC testem,
+nemění ostatní Spring test kontexty ani produkční executor.
+
+Cílené testy AuditExportHttpTest (22), AuditMaintenanceTest (12), AdminHttpTest (10):
+**BUILD SUCCESS, 44 testů bez chyb**. Běžné Maven Wrapper verify bez PostgreSQL:
+**BUILD SUCCESS, 548 testů, 0 failures/errors/skipped**, JDK 21.0.12.1.
+Nárůst proti 529 je 19 dalších opakování existujícího exportního testu.
+`git diff --check` prošel. Produkční implementace exportu ani HTTP kontrakt se nemění;
+z pozorovaného stack trace není doložena chyba produkčního servletového kontejneru.
+Tato mock HTTP regrese nenahrazuje testování souběhu na skutečném serveru.
+
+Kompletní PostgreSQL sadu Codex nespouštěl. Uživatel musí zopakovat
+`.\mvnw.cmd -Pit verify` proti rallye_test; nové 4d integrační ověření zůstává otevřené.
+
+
+## Závěrečné potvrzení 4a–4d
+
+Uživatel potvrdil kompletní `.\mvnw.cmd -Pit verify` proti rallye_test jako
+**BUILD SUCCESS**, včetně 4d a opravy nestability AuditExportHttpTest. Předchozí
+poznámky o čekajícím integračním ověření jsou tím uzavřeny. Jde o uživatelský běh,
+nikoliv běh Codexu. Poslední vlastní běžné verify: 548 testů bez chyb, JDK 21.
+Závěrečná Git kontrola testy neopakuje. Ruční API/editor průchod se netvrdí.

@@ -51,7 +51,7 @@ Vše zůstává pod `cz.mh.rallye.rallye_backend`:
 | --- | --- |
 | `identity` | Samostatný účet s neměnným ID, e-mail/heslo a Google/Apple, ověření adresy, právě jedna neměnná LOCAL/GOOGLE/APPLE identita, obnova LOCAL hesla, relace a anonymizace. |
 | `crews` | Více trvalých posádek na účet, vozidlo, převody kapitána, smazání pouze bez účasti; bez archivace a trvalých členů. |
-| `templates` | Šablony závodů, stanoviště, konfigurace a statistická verze. |
+| `templates` | Šablony akcí, stanoviště, konfigurace a připravenost DRAFT/READY. |
 | `races` | Konkrétní konání a nezávislé kopie stanovišť, start a společný konec. |
 | `participation` | Přihláška přes odkaz, historický název, members_text a children_under_15, kopie z libovolné předchozí účasti, limit členů, uzamčení a pozdní zařazení. |
 | `competition` | Nevratný oficiální start, startovací/náhradní kódy, závodní zařízení, podepsané bodové úpravy, GPS/CODE, přeskočení a zrušení. |
@@ -206,11 +206,11 @@ Implementované fotografie vozidla jsou JPEG/PNG do 5 MiB (5 242 880 bajtů), ma
 | 3a – infrastruktura testů (testovací připojení ověřeno) | Vyhrazená DB/role rallye_test je dostupná a uživatel potvrdil úspěšné IT včetně lokální schránky. Postup a read-only kontroly oprávnění zůstávají v ops/postgresql-test a postgresql-test-setup.md; úspěch IT sám nedokládá provedení všech administrátorských kontrol. Žádné další cloudové změny nespouštět automaticky. |
 | 3b – dokončeno a ověřeno | 3b.1–3b.6 dokončeny; 234 běžných testů bez chyb, 133 PostgreSQL IT podle uživatelem potvrzeného běhu a dostupných reportů, šest potvrzených ručních regresních scénářů. Následuje 3c; bez zahájení implementace. |
 | 3c – 3c.1/3c.2 dokončeny podle tehdejšího rozsahu | Aktuální D09/D10: jedna neměnná identita, LOCAL cancellation s heslem, externí cancellation s relací a potvrzením. 3c.3 konsoliduje invariant a potvrzení; 3c.4 zachová mobilní PKCE a 3c.5 Apple revokaci. Žádné skutečné provider ověření dosud neproběhlo. |
-| 4 – šablony | GPS/CODE, časová pravidla, pořadí a statistické verze. Testy DTO validace, ms hranic bodování a rozsahu; žádné kvízy. |
+| 4 – šablony | GPS/CODE (obě zapnuté znamenají AND), časová pravidla, pořadí a připravenost. Testy DTO validace, ms hranic bodování a rozsahu; žádné kvízy. |
 | 5 – konání a účasti | Kopie šablony, přihláška přes odkaz, historický název, text členů a počet dětí, maximum (výchozí 5), kopie i z nedokončené účasti a uzamčení. Testy počítání řádků, limitů, unikátnosti a souběhu oficiálního startu s úpravami. |
 | 6 – průběh | Ruční nevratný start konání, startovací/náhradní kódy a oprávnění zařízení, podepsané bodové úpravy bez automatické penalizace, GPS/CODE, idempotence, přeskočení, zrušení a uzávěrka. Testy předčasného kódu, výměny až při použití, souběhu vydání/uplatnění, restartu a end_at. |
 | 7 – výsledky | Penalizace a podepsané úpravy, pořadí podle bodů a počtu 15+, 1, 2, 2, 4, ruční remízy platné jen při trvání shody. Průběžné jen adminovi, ruční veřejná publikace a opravy s verzemi. Testy anonymního přístupu, neveřejných členů/důvodů a historie publikací. |
-| 8 – dashboard a statistiky | REST polling, medián od pěti vzorků, statistická verze, očekávané časy a oprávnění. |
+| 8 – dashboard a statistiky | REST polling, medián od pěti vzorků bez statistického verzování stanovišť, očekávané časy a oprávnění. |
 | 9 – provoz | ARM64 image, konfigurace, health checks, zálohování a obnova. Žádné cloudové nasazení bez výslovného zadání. |
 
 Etapa 3 je úmyslně rozdělena na malé části; nedoplňovat ještě všechny závodní moduly. Audit, oprávnění a idempotenci přidávat současně s operacemi, které je vyžadují. Každou část ukončit odpovídajícími automatickými testy a dokumentací. Commit ani push není automatickým krokem.
@@ -472,3 +472,84 @@ Uživatel schválil dokončení bez dalšího dělení; předchozí rozdělení 
 Technická dokumentace je konsolidovaná do [apple-revocation-3c5.md](apple-revocation-3c5.md), bez dalšího rozsáhlého návrhu, provozního API či UI. Uživatel potvrdil závěrečnou PostgreSQL sadu včetně V15 jako BUILD SUCCESS. Skutečné Apple/HTTPS ověření dosud neproběhlo a nelze je odvozovat z mockovaných testů. Nezavádí se další autentizační funkční rozsah; po akceptaci lze pokračovat závody. SMTP/provider konfigurace a klientské HTTPS/platformní vazby zůstávají výslovnými provozními závislostmi, ne záminkou pro další backendové podetapy.
 
 Uzavření 3c.5: implementace a automatické ověření jsou dokončené (Codex verify 386 testů, BUILD SUCCESS; uživatelský PostgreSQL verify BUILD SUCCESS). Další implementační podetapy Apple revokace se nezavádějí; skutečný provider smoke a bezpečná provozní konfigurace zůstávají před nasazením.
+
+
+## Realizace 4a – základ šablon akcí
+
+Implementováno: race_template/template_stage (V16), JDBC modul templates,
+ADMIN CRUD šablon a neúplných stanovišť, přesuny/přečíslování, jedna verze celku,
+no-op bez auditu/verze, transakční audit a společná 24h idempotence vytváření.
+Maximální náhradní penalizace stanoviště je nezáporná; společná sazba přeskočení
+je podepsaná. Podstatné změny invalidují READY,
+změna názvu/popisu šablony nikoliv. Přechod READY doplňuje následující 4b.
+Databázová budoucí GPS/CODE/časová pole nejsou dostupná v API; HTML/obrázky,
+duplikování a konkrétní konání se v 4a nepřidávají. Přesný kontrakt a omezení
+mazání před zavedením konání: [templates-4a.md](templates-4a.md).
+Etapa 4a je implementována a automaticky ověřena: Codex verify bez DB 456 testů,
+BUILD SUCCESS; uživatel následně potvrdil `.\mvnw.cmd -Pit verify` proti
+rallye_test jako BUILD SUCCESS. Codex PostgreSQL sadu nespouštěl. Ruční API
+průchod zatím není potvrzen; commit ani push nebyly provedeny.
+
+
+## Realizace 4b – konfigurace a připravenost
+
+Implementována konfigurace GPS, CODE, časového intervalu a DELAYED, neúplný DRAFT,
+readiness report a transakční DRAFT/READY. Obě aktivní GPS/CODE znamenají AND,
+nepřidává se volba OR ani samotné vyhodnocování pokusů/bodů. CODE je write-only
+Argon2id, bez výskytu v odpovědích, auditu či CommandStore; no-op zachovává hash.
+Uživatel schválil plain text instructions, protože 4a ukládání instrukcí přes API
+neměla; HTML/sanitizace zůstávají v 4c. Statistické verzování je podle nového
+rozhodnutí zrušeno, V17 odstraní původní sloupec; zůstává jen template.version.
+Budoucí odhady se opřou o historii příslušného stanoviště bez statistických verzí.
+V17 zachovává konfigurační data a vrací staré neověřené READY do DRAFT s auditem.
+Přesný kontrakt a změny proti staršímu návrhu: [templates-4b.md](templates-4b.md).
+Uživatel v zadání 4c potvrdil úspěšné PostgreSQL ověření dosavadních 4a/4b.
+
+
+## Realizace 4c – HTML a obrázky stanovišť
+
+Implementovány instrukce `instructionsHtml` místo textového `instructions`,
+jsoup allowlist, limit UTF-8 100 KiB před/po, soukromé template obrázky a jejich
+sdílené použití v HTML. V18 vrací název sloupce po V17 a přidává metadata/vazby
+s FK na společnou šablonu. Upload/download/list/delete používají existující
+PhotoFiles; použité obrázky se nesmějí smazat. HTML+vazby+verze+audit jsou atomické,
+no-op se porovnává po sanitizaci; změna instrukcí invaliduje READY. Samostatný
+upload/delete nepoužitého assetu READY ani verzi nemění. Statistické verze nejsou.
+Přesný API/editor kontrakt a omezení souborového recovery: [templates-4c.md](templates-4c.md).
+4c je implementována a automaticky ověřena; PostgreSQL BUILD SUCCESS potvrdil uživatel.
+Bez frontendu, duplikování 4d či konání; bez commitu a pushe.
+
+Ověření 4c Codexem: JDK 21, běžné `verify` BUILD SUCCESS, 511 testů bez chyb.
+Uživatel následně potvrdil `.\mvnw.cmd -Pit verify` proti rallye_test jako
+BUILD SUCCESS, včetně 14 nových PostgreSQL scénářů 4c a V18. Codex PostgreSQL
+běh neprováděl; ruční API průchod 4c zatím není potvrzen. Detaily v testing.md.
+
+
+## Realizace 4d – duplikování a konsolidace modulu šablon
+
+Implementováno duplikování celé šablony včetně všech použitých/nepoužitých obrázků,
+nových UUID, přepisu img URL, nových vazeb a DRAFT/version=0. Zdroj zůstává beze změny.
+Kopie stanoviště používá stejné obrázky a úplnou konfiguraci, vloží se za zdroj,
+přečísluje pořadí a zvýší verzi jednou s invalidací READY. CODE hash se kopíruje
+přímo INSERT SELECT bez plaintextu či JDBC bind hashe. Audit uchovává jen původ/UUID,
+obě operace používají společný CommandStore s replay před novou kontrolou verze.
+Nová migrace není potřeba. Sjednocený API/editor přehled: [templates-4d.md](templates-4d.md).
+Implementace 4d je dokončena; kompletní PostgreSQL ověření včetně opravy
+AuditExportHttpTest uživatel potvrdil jako BUILD SUCCESS. Konání, frontend ani další modul nezačínají.
+
+Rychlé ověření 4d: běžné verify BUILD SUCCESS, 529 testů bez chyb, JDK 21;
+git diff --check prošel. 13 nových PostgreSQL scénářů (TemplatesIT) se pouze
+zkompilovalo. Příkaz pro uživatele: `.\mvnw.cmd -Pit verify` proti rallye_test.
+Po jejich potvrzení lze uzavřít backendový modul šablon; zatím bez tvrzení o
+ručním průchodu nebo hotovém editoru. Žádný nový funkční modul se nezahajuje.
+
+
+### Uzavření backendového modulu šablon 4a–4d
+
+Etapy 4a–4d jsou dokončené a uživatelem PostgreSQL ověřené příkazem
+`.\mvnw.cmd -Pit verify` proti rallye_test (BUILD SUCCESS), včetně opravy
+AuditExportHttpTest. Poslední verify Codexu bez DB: 548 testů bez chyb.
+Součástí závěrečného commitu jsou související úpravy seznamu posádek (řazení
+bez rozlišení velikosti písmen a aktuální captainDisplayName). Předchozí čekající
+stavy jsou historické. Další funkční modul se nezahajuje a ruční editorový
+průchod není potvrzen. Testy se v závěrečném commit/push kroku neopakují.

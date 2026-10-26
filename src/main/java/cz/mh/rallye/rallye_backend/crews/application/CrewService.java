@@ -26,7 +26,9 @@ import tools.jackson.databind.json.JsonMapper;
 public class CrewService {
     public record View(UUID id,UUID captainAccountId,String name,String registrationPlate,String description,
                        boolean hasPhoto,Instant createdAt,Instant updatedAt,long version) { }
-    public record Page(List<View> items,int page,int size,boolean hasMore) { }
+    public record ListItem(UUID id,UUID captainAccountId,String name,String registrationPlate,String description,
+                           boolean hasPhoto,Instant createdAt,Instant updatedAt,long version,String captainDisplayName) { }
+    public record Page(List<ListItem> items,int page,int size,boolean hasMore) { }
     public record Photo(byte[] bytes,String contentType) { }
     private final CrewStore crews;
     private final CrewTransferStore transfers;
@@ -77,6 +79,11 @@ public class CrewService {
     private static int length(String value) { return value==null?0:value.codePointCount(0,value.length()); }
     public static View view(Crew c) { return new View(c.id(),c.captainAccountId(),c.name(),c.registrationPlate(),c.description(),
             c.photoId()!=null,c.createdAt(),c.updatedAt(),c.version()); }
+    private static ListItem listItem(CrewStore.ListedCrew row) {
+        var c=view(row.crew());
+        return new ListItem(c.id(),c.captainAccountId(),c.name(),c.registrationPlate(),c.description(),c.hasPhoto(),
+                c.createdAt(),c.updatedAt(),c.version(),row.captainDisplayName());
+    }
     private String encode(Object value) { return json.writeValueAsString(value); }
     private View decode(String value) { return json.readValue(value,View.class); }
     public View create(Principal actor,UUID key,String name,String plate,String description,boolean captainSpecified,UUID captain) {
@@ -105,7 +112,7 @@ public class CrewService {
             boolean isAdmin=authorize(actor);
             if(all) admin(isAdmin);
             var rows=crews.list(all?captain:actor.accountId(),all&&captain==null,orphaned,page,size);
-            return new Page(rows.stream().limit(size).map(CrewService::view).toList(),page,size,rows.size()>size);
+            return new Page(rows.stream().limit(size).map(CrewService::listItem).toList(),page,size,rows.size()>size);
         });
     }
     public View detail(Principal actor,UUID id) {

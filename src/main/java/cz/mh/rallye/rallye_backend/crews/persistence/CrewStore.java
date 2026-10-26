@@ -14,6 +14,7 @@ public class CrewStore {
     public record Crew(UUID id, UUID captainAccountId, String name, String registrationPlate, String description,
                        UUID photoId, String photoType, Integer photoSize, Integer photoWidth, Integer photoHeight,
                        Instant createdAt, Instant updatedAt, long version) { }
+    public record ListedCrew(Crew crew,String captainDisplayName) {}
     private final JdbcTemplate jdbc;
     public CrewStore(JdbcTemplate jdbc) { this.jdbc=jdbc; }
     private Crew map(ResultSet r,int n) throws SQLException {
@@ -26,11 +27,13 @@ public class CrewStore {
         var rows=jdbc.query("SELECT * FROM crew WHERE id=? FOR UPDATE",this::map,id);
         return rows.isEmpty()?null:rows.getFirst();
     }
-    public List<Crew> list(UUID owner, boolean all, boolean orphaned, int page, int size) {
+    public List<ListedCrew> list(UUID owner, boolean all, boolean orphaned, int page, int size) {
         return jdbc.query("""
-                SELECT * FROM crew WHERE (? OR captain_account_id=?) AND (NOT ? OR captain_account_id IS NULL)
-                ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?
-                """,this::map,all,owner,orphaned,size+1,(long)page*size);
+                SELECT c.*,a.display_name AS captain_display_name
+                FROM crew c LEFT JOIN user_account a ON a.id=c.captain_account_id
+                WHERE (? OR c.captain_account_id=?) AND (NOT ? OR c.captain_account_id IS NULL)
+                ORDER BY lower(c.name) ASC,c.id ASC LIMIT ? OFFSET ?
+                """,(r,n)->new ListedCrew(map(r,n),r.getString("captain_display_name")),all,owner,orphaned,size+1,(long)page*size);
     }
     public void insert(UUID id,UUID captain,String name,String plate,String description,Instant now) {
         jdbc.update("INSERT INTO crew(id,captain_account_id,name,registration_plate,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
