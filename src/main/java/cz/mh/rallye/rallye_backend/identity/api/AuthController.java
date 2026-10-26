@@ -39,6 +39,14 @@ public class AuthController {
     public record Change(@NotNull @Size(max=256) String currentPassword, @NotNull @Size(max=256) String newPassword) {
         @Override public String toString() { return "Change[redacted]"; }
     }
+    public record ProfileUpdate(@NotBlank @Size(max=100) String displayName) {
+        // Reject mass assignment locally without changing JSON handling of other endpoints.
+        @com.fasterxml.jackson.annotation.JsonAnySetter
+        public void unsupported(String field, Object value) {
+            throw new IllegalArgumentException("Unsupported profile field");
+        }
+        @Override public String toString() { return "ProfileUpdate[redacted]"; }
+    }
     private final AuthService service;
     private final LoginThrottle throttle;
     private final AuthCookies cookies;
@@ -79,6 +87,10 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
     @GetMapping("/me") public AuthService.UserView me(@AuthenticationPrincipal AuthService.Principal principal) { return service.me(principal); }
+    @PatchMapping("/me") public AuthService.UserView updateMe(@AuthenticationPrincipal AuthService.Principal principal,
+            @Valid @RequestBody ProfileUpdate input) {
+        return service.changeDisplayName(principal, input.displayName());
+    }
     @PostMapping("/password-reset-requests") public ResponseEntity<Void> resetRequest(@Valid @RequestBody EmailRequest input, HttpServletRequest request) {
         limit("reset-request", input.email(), request); service.requestReset(input.email());
         return ResponseEntity.accepted().build();

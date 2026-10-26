@@ -156,6 +156,25 @@ public class AuthService {
         store.revokeOthers(account.id(), principal.sessionId(), now);
         audit.record(account.id(), Event.PASSWORD_CHANGED, account.id());
     }
+    @Transactional
+    public UserView changeDisplayName(Principal principal, String displayName) {
+        // Match registration's NotBlank/Size(max=100), including its UTF-16 length bound.
+        if (displayName == null || displayName.isBlank() || displayName.length() > 100)
+            throw new AuthFailure(400, "INVALID_REQUEST");
+        if (principal == null) throw AuthFailure.credentials();
+        // lockAccount takes admin_control -> account, shared with cancellation and role writers.
+        var account = store.lockAccount(principal.accountId());
+        Instant now = now();
+        if (account == null || !"ACTIVE".equals(account.status())
+                || !store.isActiveSession(principal.sessionId(), principal.accountId(), now))
+            throw AuthFailure.credentials();
+        String name = displayName.strip();
+        if (!name.equals(account.name())) {
+            store.displayName(account.id(), name, now);
+            audit.record(account.id(), Event.PROFILE_NAME_CHANGED, account.id());
+        }
+        return new UserView(account.id(), account.email(), name, currentRoles(roles.administrator(account.id())));
+    }
     @Transactional(readOnly = true)
     public UserView me(Principal principal) {
         var account = store.account(principal.accountId());

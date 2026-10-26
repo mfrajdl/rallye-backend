@@ -90,6 +90,9 @@ public class AccountStore {
         jdbc.update("UPDATE user_account SET status='ACTIVE',email_verified_at=?,updated_at=? WHERE id=?",
                 at(now), at(now), id);
     }
+    public void displayName(UUID id, String name, Instant now) {
+        jdbc.update("UPDATE user_account SET display_name=?,updated_at=? WHERE id=?", name, at(now), id);
+    }
     public void password(UUID id, String hash, Instant now) {
         jdbc.update("UPDATE user_identity SET password_hash=? WHERE account_id=? AND provider='LOCAL'", hash, id);
         jdbc.update("UPDATE user_account SET updated_at=? WHERE id=?", at(now), id);

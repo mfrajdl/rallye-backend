@@ -100,3 +100,7 @@ Cloudové nasazení ani Docker konfigurace zatím nejsou připraveny. Nasazení 
 ## Lokální registrace bez SMTP
 
 Profil local ukládá aktivační a resetovací zprávy do soukromé schránky mimo repozitář a poslouchá jen na localhostu. Postup spuštění i celý registrační tok bez webového klienta jsou v [authentication-2a.md](docs/authentication-2a.md#lokální-registrace-bez-smtp-a-bez-webového-klienta). Výběr SMTP poskytovatele a ověření doručování jsou odloženy před nasazení; žádná další infrastruktura nyní není potřeba.
+
+## Změna vlastního zobrazovaného jména
+
+`PATCH /api/v1/auth/me` přijímá pouze `displayName` a vrací aktualizovaný profil. Platí pro LOCAL/GOOGLE/APPLE; e-mail, role a identita se nemění. Kontrakt, CSRF, audit, souběh a příkazy ověření: [docs/own-profile.md](docs/own-profile.md).
