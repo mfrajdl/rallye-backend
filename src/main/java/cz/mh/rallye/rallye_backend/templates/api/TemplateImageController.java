@@ -16,10 +16,10 @@ public class TemplateImageController {
  private final TemplateImageService service;
  public TemplateImageController(TemplateImageService service){this.service=service;}
  @PostMapping(consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
- public ResponseEntity<TemplateService.Created> upload(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@RequestParam long version,@RequestHeader("Idempotency-Key") UUID key,@RequestParam("file") MultipartFile file)throws IOException{
-  try(var input=file.getInputStream()){var result=service.upload(actor,id,version,key,input);return ResponseEntity.created(URI.create(InstructionsHtml.imageUrl(id,result.id()))).body(result);}
+ public ResponseEntity<TemplateImageService.Created> upload(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@RequestParam long version,@RequestHeader("Idempotency-Key") UUID key,@RequestParam("file") MultipartFile file)throws IOException{
+  try(var input=file.getInputStream()){var result=service.upload(actor,id,version,key,file.getOriginalFilename(),input);return ResponseEntity.created(URI.create(result.url())).body(result);}
  }
  @GetMapping public List<TemplateImageService.View> list(@AuthenticationPrincipal Principal actor,@PathVariable UUID id){return service.list(actor,id);}
- @GetMapping("/{imageId}") public ResponseEntity<byte[]> content(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@PathVariable UUID imageId){var c=service.content(actor,id,imageId);return ResponseEntity.ok().header("X-Content-Type-Options","nosniff").cacheControl(CacheControl.noStore()).contentType(MediaType.parseMediaType(c.contentType())).body(c.bytes());}
- @DeleteMapping("/{imageId}") public ResponseEntity<Void> delete(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@PathVariable UUID imageId,@RequestParam long version){service.delete(actor,id,imageId,version);return ResponseEntity.noContent().build();}
+ @GetMapping("/{fileName}") public ResponseEntity<byte[]> content(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@PathVariable String fileName){var c=service.content(actor,id,fileName);return ResponseEntity.ok().header("X-Content-Type-Options","nosniff").cacheControl(CacheControl.noStore()).contentType(MediaType.parseMediaType(c.contentType())).body(c.bytes());}
+ @DeleteMapping("/{fileName}") public ResponseEntity<Void> delete(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@PathVariable String fileName,@RequestParam long version){service.delete(actor,id,fileName,version);return ResponseEntity.noContent().build();}
 }

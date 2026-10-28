@@ -1,5 +1,7 @@
 # Etapa 4a – základ správy šablon akcí
 
+> Aktuální instrukce a obrázky po V19: [templates-markdown.md](templates-markdown.md). Starší popis instrukcí níže zachycuje původní etapu.
+
 Historický rozsah 4a. Aktuální společný kontrakt pro webový editor je
 [templates-4d.md](templates-4d.md); konfiguraci doplňuje 4b, HTML/obrázky 4c,
 duplikování 4d. Statistické verzování bylo v 4b zrušeno.

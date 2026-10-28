@@ -27,7 +27,7 @@ public final class TemplateReadiness {
             if(stage.sequenceNo()!=i+1)invalid(errors,id,"sequenceNo");
             if(stage.name()==null || stage.name().isBlank())required(errors,id,"name");
             else if(stage.name().codePointCount(0,stage.name().length())>100)invalid(errors,id,"name");
-            if(!InstructionsHtml.hasContent(stage.instructionsHtml()))required(errors,id,"instructionsHtml");
+            if(!InstructionsMarkdown.hasContent(stage.instructionsMarkdown()))required(errors,id,"instructionsMarkdown");
             if(stage.expectedDurationMs()==null)required(errors,id,"expectedDurationMs");
             else if(stage.expectedDurationMs()<0)invalid(errors,id,"expectedDurationMs");
             if(stage.maxPenaltyPoints()==null)required(errors,id,"maxPenaltyPoints");

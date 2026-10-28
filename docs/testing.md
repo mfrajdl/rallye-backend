@@ -885,3 +885,95 @@ Uživatel potvrdil kompletní `.\mvnw.cmd -Pit verify` proti rallye_test jako
 poznámky o čekajícím integračním ověření jsou tím uzavřeny. Jde o uživatelský běh,
 nikoliv běh Codexu. Poslední vlastní běžné verify: 548 testů bez chyb, JDK 21.
 Závěrečná Git kontrola testy neopakuje. Ruční API/editor průchod se netvrdí.
+
+## Markdown instrukce a pojmenované obrázky – V19
+
+Nové unit/HTTP testy ověřují CommonMark/GFM, bezpečné HTML, původní zdroj, UTF-8
+limit, Unicode názvy, CSRF a privátní named storage. TemplatesIT obsahuje upravené
+regrese instrukcí/kopií a nové testy V18→V19, unikátnosti, referencí, rollbacku,
+no-op/READY a souběhu. Uživatelský PG běh odhalil chybu V19 popsanou níže; po opravě uživatel zopakuje
+`.\mvnw.cmd -Pit verify` proti rallye_test podle ochranných pravidel výše.
+Detail API a dopady na frontend: [templates-markdown.md](templates-markdown.md).
+
+Ověření této změny Codexem: Maven Wrapper verify na JDK 21.0.12.1, **BUILD SUCCESS, 577 testů, 0 failures/errors/skipped**. Git diff --check prošel. PostgreSQL integrační testy se pouze zkompilovaly a čekají na manuální běh uživatele.
+
+### Oprava upgradu V18 → V19 nad neprázdnými obrázkovými daty
+
+Uživatelův PostgreSQL běh odhalil SQLSTATE 55006 v testu
+`TemplatesIT.upgradeV18ToV19DiscardsOnlyDisposableInstructionAndImageContent`:
+DELETE obrázků vytvořil čekající kontrolní události odloženého FK z V18 a navazující
+ALTER TABLE je odmítl. V19 nyní po DML a před DDL provede
+`SET CONSTRAINTS ALL IMMEDIATE`, tedy skutečné ověření všech čekajících omezení.
+Žádný trigger se nevypíná a celá migrace zůstává transakční.
+Stávající test s původními obrázky i jejich vazbami zůstává beze změny; znovu
+ověří migraci a zachování ostatních dat. Opakovaný PostgreSQL běh čeká na uživatele:
+`.\mvnw.cmd -Pit verify` proti rallye_test.
+
+Pokud již byla původní V19 úspěšně použita v jiném schématu (např. prázdném),
+změna souboru bude mít jiný Flyway checksum. Neprovádět automaticky repair,
+clean ani zásah do historie; případný checksum mismatch je nutné řešit zvlášť
+podle konkrétního prostředí. Samotný neúspěšný transakční upgrade se rollbackne.
+
+## Knihovna souborů šablony a odkazy – V20
+
+Nové TemplateFilesTest, TemplateFileHttpTest a TemplateFileServiceTest pokrývají
+URL protokoly, kotvy, encoding/izolaci, dopředné a cyklické reference, validaci
+UTF-8/PDF/obrázků, limity, DTO/CSRF/ADMIN, attachment/CSP, READY a idempotenci.
+Upravené regrese zachovávají původní obrazové API; chybějící cíle jsou nyní v DRAFT
+záměrně povolené podle schváleného kontraktu. TemplatesIT doplňuje V19→V20,
+bezpečné kopie dokumentů, souběh a skutečný rollback DB/auditu/ledgeru/souborů.
+PostgreSQL sadu Codex nespouštěl; příkaz pro uživatele:
+`.\mvnw.cmd -Pit verify` proti rallye_test. V1–V19 nebyly touto změnou upravené.
+Kontrakt a ruční postup: [template-files.md](template-files.md).
+
+Ověření Codexem: JDK 21.0.12.1, Maven Wrapper verify – **BUILD SUCCESS, 611 testů,
+0 failures, 0 errors, 0 skipped**, včetně unit/HTTP regresí. PostgreSQL testy se
+pouze zkompilovaly; 11 nových scénářů V20 v TemplatesIT čeká na uživatelský běh.
+Git diff --check prošel. Kontrakt API zůstal beze změn.
+
+
+### Oprava regrese souběhu odkazu a odstranění souboru (V20)
+
+Uživatelský PostgreSQL běh odhalil zastaralý assertion v
+`TemplatesIT.concurrentUseAndDeleteNeverLeaveDanglingReferences`: zakazoval
+současný úspěch obou operací i při pořadí DELETE → uložení dopředného odkazu,
+které schválený DRAFT kontrakt dovoluje. Produkční operace sdílejí transakční
+zámek šablony; bariéra v testu spouští obě volání současně, neurčuje vítěze.
+
+Test nyní ověřuje oba serializovatelné výsledky: uložení první zachová soubor
+a odmítne DELETE se starou verzí; DELETE první dovolí uložit zdroj, ale musí
+vrátit přesné FILE_NOT_FOUND varování a zablokovat READY. Kontroluje také
+verzi, DRAFT, fyzický soubor a databázové reference. Dvě deterministické
+sekvenční regrese ověřují obě pořadí nezávisle na plánování vláken; odstranění
+již odkazovaného souboru s aktuální verzí zůstává zakázané.
+
+Produkční kód, API a migrace se touto opravou nemění. Opravené PostgreSQL
+scénáře čekají na nové uživatelské ověření:
+`.\mvnw.cmd -Pit "-Dit.test=TemplatesIT" verify`.
+
+Ověření opravy Codexem: Maven Wrapper verify na JDK 21 – BUILD SUCCESS,
+611 testů bez PostgreSQL, 0 failures/errors/skipped; integrační testy se
+zkompilovaly. Git diff --check bez chyb.
+
+
+## Plánovaná konání – V21
+
+Nové EventServiceTest/EventMarkdownTest/EventHttpTest ověřují autorizaci,
+CSRF/DTO, READY, idempotenci, oddělení úložišť, rollback souborů a přepis
+referenčních Markdown definic. Aktualizované regrese chrání současné šablony
+a přesné migration guardy. EventsIT pokrývá skutečné DB/FS snapshoty,
+nezávislost na zdroji, auditní rollback, souběh se změnou/smazáním zdroje,
+replay, paging/oprávnění, privacy cleanup a upgrade V20→V21.
+
+Uživatel potvrdil PostgreSQL ověření proti rallye_test jako BUILD SUCCESS
+(28. 10. 2026), včetně nových scénářů první etapy konání. Codex běh neprováděl.
+Příkazy a přesný kontrakt:
+[race-events-stage1.md](race-events-stage1.md). Není implementován závodní runtime.
+
+Ověření první etapy Codexem: JDK 21.0.12.1, Maven Wrapper verify – **BUILD SUCCESS,
+639 testů, 0 failures, 0 errors, 0 skipped**, včetně regresí původních modulů.
+Cílený předchozí běh měl 70 testů bez chyb. Uživatel následně potvrdil
+PostgreSQL integrační ověření proti rallye_test jako **BUILD SUCCESS**
+(28. 10. 2026), včetně 19 připravených EventsIT a V21. Codex tento běh
+neprováděl a databázi sám neměnil. Ruční ověření API není tímto potvrzeno.
+Git diff --check prošel; chráněné uživatelské soubory a V1–V20 se neměnily.

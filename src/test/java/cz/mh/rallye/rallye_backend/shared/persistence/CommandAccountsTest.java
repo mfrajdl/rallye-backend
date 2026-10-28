@@ -76,4 +76,17 @@ class CommandAccountsTest {
         assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_STAGE_DUPLICATE",request,result).accounts());
         assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_STAGE_DUPLICATE",request,result.replace("\"version\":8","\"codeHash\":\"secret\",\"version\":8")));
     }
+
+    @Test void namedImageUploadUsesOnlyActorNameAndDigest(){
+        UUID template=UUID.randomUUID();String request="[\""+template+"\",0,\"mapa.png\",\""+"a".repeat(64)+"\"]";
+        String response="{\"fileName\":\"mapa.png\",\"templateId\":\""+template+"\",\"url\":\"/api/v1/race-templates/"+template+"/images/mapa.png\",\"version\":0}";
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_IMAGE_UPLOAD",request,response).accounts());
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_IMAGE_UPLOAD",request.replace("a".repeat(64),"raw-image"),response));
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_IMAGE_UPLOAD",request,response.replace("mapa.png","other.png")));
+    }
+
+    @Test void fileUploadCommandHasClosedMetadataAndNoSourceMaterial(){
+        UUID template=UUID.randomUUID();String request="[\""+template+"\",7,\"guide.md\",\""+"a".repeat(64)+"\"]";String result="{\"fileName\":\"guide.md\",\"templateId\":\""+template+"\",\"url\":\"/api/v1/race-templates/"+template+"/files/guide.md\",\"version\":7,\"status\":\"DRAFT\",\"missingReferences\":[]}";
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_FILE_UPLOAD",request,result).accounts());assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_FILE_UPLOAD",request,result.replace("\"missingReferences\":[]","\"source\":\"private body\",\"missingReferences\":[]")));assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_FILE_UPLOAD",request.replace("a".repeat(64),"private body"),result));
+    }
 }

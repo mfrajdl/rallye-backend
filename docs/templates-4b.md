@@ -1,5 +1,7 @@
 # Etapa 4b – konfigurace stanovišť a připravenost šablon
 
+> Aktuální instrukce a obrázky po V19: [templates-markdown.md](templates-markdown.md). Starší popis instrukcí níže zachycuje původní etapu.
+
 ## Platná rozhodnutí a rozsah
 
 Tento dokument popisuje konfiguraci nad základem 4a; aktuální společný API přehled

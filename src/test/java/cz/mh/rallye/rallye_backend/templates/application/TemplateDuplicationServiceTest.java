@@ -50,12 +50,12 @@ class TemplateDuplicationServiceTest {
  }
  @Test void copiedFilesPreserveBytesAndAreRemovedWhenAuditFails()throws Exception{
   UUID image=UUID.randomUUID();byte[] bytes=cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",2,2);
-  files.files.exclusive(()->{files.files.write(image,new cz.mh.rallye.rallye_backend.crews.application.PhotoFiles.Image(bytes,"image/png",2,2));return null;});
-  when(store.images(source)).thenReturn(List.of(new Image(image,source,"image/png",bytes.length,2,2,now,false)));
+  files.files.exclusive(()->{files.write(source,"mapa.png",new cz.mh.rallye.rallye_backend.crews.application.PhotoFiles.Image(bytes,"image/png",2,2));return null;});
+  when(store.images(source)).thenReturn(List.of(new Image(image,source,"mapa.png","MAPA.PNG","image/png",bytes.length,2,2,now,false)));
   doThrow(new IllegalStateException("Injected")).when(audit).templateCopy(any(),any(),any(),any(),eq(false));
   assertThrows(IllegalStateException.class,()->service.duplicate(actor,source,key));
-  try(var entries=Files.list(directory)){assertEquals(Set.of(image+".photo",".storage.lock"),entries.map(p->p.getFileName().toString()).collect(java.util.stream.Collectors.toSet()));}
-  assertArrayEquals(bytes,files.files.exclusive(()->files.files.read(image)));
+  try(var entries=Files.list(directory)){assertEquals(Set.of("race-templates",".storage.lock"),entries.map(p->p.getFileName().toString()).collect(java.util.stream.Collectors.toSet()));}
+  assertArrayEquals(bytes,files.files.exclusive(()->files.read(source,"mapa.png")));
  }
  @Test void inconsistentUsageFailsClosed(){var original=new Stage(stage,source,1,null,null,null,"<p>Text</p>",StageConfiguration.empty());when(store.stages(source)).thenReturn(List.of(original));when(store.usedImages(stage)).thenReturn(Set.of(UUID.randomUUID()));assertEquals("TEMPLATE_COPY_INCONSISTENT",assertThrows(AuthFailure.class,()->service.duplicateStage(actor,source,stage,7,key)).code());verifyNoInteractions(audit);}
 }

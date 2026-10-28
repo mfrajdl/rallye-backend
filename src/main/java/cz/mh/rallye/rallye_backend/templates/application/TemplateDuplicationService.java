@@ -31,37 +31,42 @@ public class TemplateDuplicationService {
     }
     private void save(Principal actor,UUID key,String operation,String request,TemplateService.Created result){commands.save(actor.accountId(),key,result.id(),operation,request,json.writeValueAsString(result),now());}
     private TemplateStore.Template source(UUID id){var t=store.lock(id);if(t==null)throw new AuthFailure(404,"TEMPLATE_NOT_FOUND");return t;}
-    private InstructionsHtml.Clean instructions(UUID template,Stage stage){
-        var clean=InstructionsHtml.sanitize(template,stage.instructionsHtml());
-        if(!Objects.equals(clean.html(),stage.instructionsHtml())||!clean.images().equals(store.usedImages(stage.id())))throw new AuthFailure(503,"TEMPLATE_COPY_INCONSISTENT");
-        return clean;
+    private Set<UUID> instructions(UUID template,Stage stage,List<TemplateStore.Image> library){
+        var ids=TemplateFileReferences.imageIds(template,stage.instructionsMarkdown(),library);
+        if(!ids.equals(store.usedImages(stage.id())))throw new AuthFailure(503,"TEMPLATE_COPY_INCONSISTENT");return ids;
     }
+    private record Written(UUID id,UUID template,String name){}
     public TemplateService.Created duplicate(Principal actor,UUID source,UUID key){
         // Authorization before touching storage; it is repeated in the actual mutation transaction.
         tx.executeWithoutResult(s->templates.authorize(actor));
         return storage.files.exclusive(()->{
-            var written=new ArrayList<UUID>();
+            var written=new ArrayList<Written>();
             try{return tx.execute(s->{
                 templates.authorize(actor);String request=json.writeValueAsString(List.of(source));
                 var old=replay(actor,key,"TEMPLATE_DUPLICATE",request);if(old!=null)return old;
                 var original=source(source);var stages=store.stages(source);UUID target=UUID.randomUUID();
                 store.insert(target,copyName(original.name()),original.description(),original.skipPenaltyPoints(),now());
                 var mapping=new HashMap<UUID,UUID>();
-                for(var image:store.images(source)){
-                    UUID id=UUID.randomUUID();byte[] bytes=storage.files.read(image.id());
+                var library=store.images(source);for(var image:library){
+                    UUID id=UUID.randomUUID();byte[] bytes=storage.read(source,image.fileName());
                     if(bytes.length!=image.byteSize())throw new AuthFailure(503,"TEMPLATE_COPY_INCONSISTENT");
-                    var content=new PhotoFiles.Image(bytes,image.contentType(),image.width(),image.height());
-                    written.add(id);storage.files.write(id,content);store.image(id,target,content,now());mapping.put(image.id(),id);
+                    String markdown=null;
+                    if(image.isMarkdown()){
+                        if(!Arrays.equals(bytes,image.markdownSource().getBytes(java.nio.charset.StandardCharsets.UTF_8)))throw new AuthFailure(503,"TEMPLATE_COPY_INCONSISTENT");
+                        markdown=InstructionsMarkdown.copy(source,target,image.markdownSource());bytes=markdown.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                    var content=new TemplateFileContent.Validated(bytes,image.contentType(),image.width(),image.height(),markdown);
+                    storage.write(target,image.fileName(),bytes);written.add(new Written(id,target,image.fileName()));store.file(id,target,image.fileName(),content,now());mapping.put(image.id(),id);
                 }
                 for(var stage:stages){
-                    instructions(source,stage);var html=InstructionsHtml.copy(source,target,stage.instructionsHtml(),mapping);
-                    UUID id=UUID.randomUUID();store.copyStage(stage,id,target,stage.sequenceNo(),html.html());store.references(target,id,html.images());
+                    var oldReferences=instructions(source,stage,library);String markdown=InstructionsMarkdown.copy(source,target,stage.instructionsMarkdown());
+                    UUID id=UUID.randomUUID();store.copyStage(stage,id,target,stage.sequenceNo(),markdown);store.references(target,id,oldReferences.stream().map(mapping::get).collect(java.util.stream.Collectors.toSet()));
                 }
                 audit.templateCopy(actor.accountId(),target,source,target,false);
                 var result=new TemplateService.Created(target,target,0);save(actor,key,"TEMPLATE_DUPLICATE",request,result);return result;
             });}catch(RuntimeException failure){
                 // On an uncertain commit, never remove a file still referenced by the database.
-                for(UUID id:written)try{if(!store.imageReferenced(id))storage.files.remove(id);}catch(RuntimeException unavailable){/* Existing 24h locked orphan cleanup will retry. */}
+                for(var item:written)try{if(!store.imageNameReferenced(item.template(),item.name()))storage.remove(item.template(),item.name());}catch(RuntimeException unavailable){/* Existing 24h locked orphan cleanup will retry. */}
                 throw failure;
             }
         });
@@ -73,9 +78,8 @@ public class TemplateDuplicationService {
             var old=replay(actor,key,"TEMPLATE_STAGE_DUPLICATE",request);if(old!=null)return old;
             var parent=source(template);if(parent.version()!=version)throw new AuthFailure(409,"TEMPLATE_VERSION_CONFLICT");
             var stages=store.stages(template);var source=stages.stream().filter(row->row.id().equals(stageId)).findFirst().orElseThrow(()->new AuthFailure(404,"TEMPLATE_STAGE_NOT_FOUND"));
-            var html=instructions(template,source);
-            if(!store.images(template).stream().map(TemplateStore.Image::id).collect(java.util.stream.Collectors.toSet()).containsAll(html.images()))throw new AuthFailure(503,"TEMPLATE_COPY_INCONSISTENT");
-            UUID id=UUID.randomUUID();store.copyStage(source,id,template,stages.size()+1,source.instructionsHtml());store.references(template,id,html.images());
+            var referenced=instructions(template,source,store.images(template));
+            UUID id=UUID.randomUUID();store.copyStage(source,id,template,stages.size()+1,source.instructionsMarkdown());store.references(template,id,referenced);
             var order=new ArrayList<>(stages.stream().map(Stage::id).toList());order.add(source.sequenceNo(),id);store.order(template,order);store.touch(template,now());
             audit.templateCopy(actor.accountId(),id,stageId,template,true);
             var result=new TemplateService.Created(id,template,Math.incrementExact(version));save(actor,key,"TEMPLATE_STAGE_DUPLICATE",request,result);return result;

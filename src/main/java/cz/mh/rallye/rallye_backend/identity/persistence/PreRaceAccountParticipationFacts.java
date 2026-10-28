@@ -28,8 +28,12 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                             && (!"16".equals(rs.getString("version")) || "V16__race_templates.sql".equals(rs.getString("script")))
                             && (!"17".equals(rs.getString("version")) || "V17__stage_configuration_and_readiness.sql".equals(rs.getString("script")))
                             && (!"18".equals(rs.getString("version")) || "V18__template_html_and_images.sql".equals(rs.getString("script")))
+                            && (!"21".equals(rs.getString("version")) || "V21__planned_race_events.sql".equals(rs.getString("script")))
+                            && (!"20".equals(rs.getString("version")) || "V20__template_file_library.sql".equals(rs.getString("script")))
+                            && (!"19".equals(rs.getString("version")) || "V19__template_markdown_and_named_images.sql".equals(rs.getString("script")))
                             ?rs.getString("version"):"unsupported");
-            if(!versions.equals(List.of("1","2","3","4","5","6"))
+            if(!versions.equals(java.util.stream.IntStream.rangeClosed(1,21).mapToObj(Integer::toString).toList())
+                    && !versions.equals(List.of("1","2","3","4","5","6"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9"))
@@ -41,7 +45,9 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17"))
-                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18")))throw unavailable();
+                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18"))
+                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19"))
+                    && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20")))throw unavailable();
             return new Facts(false,false);
         } catch(org.springframework.dao.DataAccessException failure) {throw new AuthFailure(503,"PARTICIPATION_CHECK_UNAVAILABLE",failure);}
     }

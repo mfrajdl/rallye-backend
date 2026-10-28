@@ -36,7 +36,7 @@ class TemplateReadinessTest {
         var report=TemplateReadiness.check(template(),List.of(new Stage(stageId,id,2,null,null,null)));
         assertFalse(report.ready());assertEquals(3,report.version());
         var fields=report.errors().stream().map(TemplateReadiness.Error::field).toList();
-        assertTrue(fields.containsAll(List.of("name","instructionsHtml","sequenceNo","expectedDurationMs","maxPenaltyPoints","checks")));
+        assertTrue(fields.containsAll(List.of("name","instructionsMarkdown","sequenceNo","expectedDurationMs","maxPenaltyPoints","checks")));
         assertTrue(report.errors().stream().allMatch(e->stageId.equals(e.stageId())));
     }
     @Test void allStagesMustBeCompleteAndEnabledTimingRulesAreIndependent(){
@@ -68,6 +68,6 @@ class TemplateReadinessTest {
     }
     @Test void whitespaceInstructionsAndNegativeMaximumCannotBeReady(){
         var report=TemplateReadiness.check(template(),List.of(new Stage(stageId,id,1,"Station",0L,-1L," \n",config(gps,code))));
-        assertTrue(report.errors().stream().anyMatch(e->e.field().equals("instructionsHtml")));assertTrue(report.errors().stream().anyMatch(e->e.field().equals("maxPenaltyPoints")));
+        assertTrue(report.errors().stream().anyMatch(e->e.field().equals("instructionsMarkdown")));assertTrue(report.errors().stream().anyMatch(e->e.field().equals("maxPenaltyPoints")));
     }
 }

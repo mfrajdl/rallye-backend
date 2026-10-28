@@ -42,7 +42,7 @@ class TemplateServiceTest {
     @Test void orderMustBeExactPermutationAndNoOpIsSilent(){when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,null,null,null)));for(var ids:List.of(List.<UUID>of(),List.of(stage,stage),List.of(UUID.randomUUID())))assertEquals(400,assertThrows(AuthFailure.class,()->service.order(principal,id,7,ids)).status());service.order(principal,id,7,List.of(stage));verify(store,never()).touch(any(),any());verifyNoInteractions(audit);}
     @Test void reorderAuditsOnce(){UUID other=UUID.randomUUID();when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,null,null,null),new Stage(other,id,2,null,null,null)));service.order(principal,id,7,List.of(other,stage));verify(store).order(id,List.of(other,stage));verify(audit).template(actor,Event.TEMPLATE_REORDERED,id,false);}
     @Test void cannotPublishReadyAndDraftNoOpIsSilent(){assertThrows(cz.mh.rallye.rallye_backend.templates.application.TemplateReadiness.NotReady.class,()->service.state(principal,id,7,"READY"));when(store.lock(id)).thenReturn(template("DRAFT"));service.state(principal,id,7,"DRAFT");verify(store,never()).state(any(),any(),any());verifyNoInteractions(audit);}
-    @Test void deleteChecksUsageBeforeRemoval(){service.delete(principal,id,7);var order=inOrder(store,audit);order.verify(store).lock(id);order.verify(store).ensureDeletionSupported();order.verify(store).delete(id);order.verify(audit).template(actor,Event.TEMPLATE_DELETED,id,false);}
+    @Test void deleteChecksUsageBeforeRemoval(){service.delete(principal,id,7);var order=inOrder(store,audit);order.verify(store).lock(id);order.verify(store).ensureDeletionSupported(id);order.verify(store).delete(id);order.verify(audit).template(actor,Event.TEMPLATE_DELETED,id,false);}
     @Test void missingTemplateAndForeignStageAre404(){when(store.lock(id)).thenReturn(null);assertEquals(404,assertThrows(AuthFailure.class,()->service.detail(principal,id)).status());when(store.lock(id)).thenReturn(template("DRAFT"));assertEquals(404,assertThrows(AuthFailure.class,()->service.stageDetail(principal,id,stage)).status());}
     @ParameterizedTest @ValueSource(longs={-1,Long.MIN_VALUE}) void negativeDurationAndMaximumAreRejected(long negative){assertEquals(400,assertThrows(AuthFailure.class,()->service.createStage(principal,id,7,UUID.randomUUID(),null,negative,null)).status());assertEquals(400,assertThrows(AuthFailure.class,()->service.createStage(principal,id,7,UUID.randomUUID(),null,null,negative)).status());verify(store,never()).touch(any(),any());}
     @Test void listValidatesFiltersAndHasMore(){for(int[] p:List.of(new int[]{-1,50},new int[]{0,0},new int[]{10001,50},new int[]{0,101}))assertThrows(AuthFailure.class,()->service.list(principal,null,null,p[0],p[1]));assertThrows(AuthFailure.class,()->service.list(principal,null,"OTHER",0,50));when(store.list("Name","DRAFT",0,1)).thenReturn(List.of(template("DRAFT"),template("DRAFT")));var page=service.list(principal," Name ","DRAFT",0,1);assertTrue(page.hasMore());assertEquals(1,page.items().size());}
@@ -86,26 +86,24 @@ class TemplateServiceTest {
     @Test void plainInstructionsSupportPreservationClearingAndNoOps(){
         when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,"Station",0L,0L,"Text",complete())));
         service.updateStage(principal,id,stage,7,"Station",0L,0L);service.updateStage(principal,id,stage,7,"Station",0L,0L,true,"Text");verify(store,never()).touch(any(),any());
-        service.updateStage(principal,id,stage,7,"Station",0L,0L,true,null);verify(store).instructionsHtml(stage,null);verify(store).touch(id,now);
+        service.updateStage(principal,id,stage,7,"Station",0L,0L,true,null);verify(store).instructionsMarkdown(stage,null);verify(store).touch(id,now);
         assertThrows(AuthFailure.class,()->service.updateStage(principal,id,stage,7,"Station",0L,0L,true,"x".repeat(102401)));
     }
 
-    @Test void sanitizedNoOpKeepsReadyAndNoAudit(){
-        when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,"Station",0L,0L,"<p>Text</p>",complete())));
-        service.updateStage(principal,id,stage,7,"Station",0L,0L,true,"<p onclick='bad()'>Text</p>");
-        verify(store,never()).touch(any(),any());verifyNoInteractions(audit);
+    @Test void markdownNoOpPreservesExactSource(){
+        String source="# Title  \r\n\nText & **bold**";
+        when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,"Station",0L,0L,source,complete())));
+        service.updateStage(principal,id,stage,7,"Station",0L,0L,true,source);verify(store,never()).touch(any(),any());verifyNoInteractions(audit);
     }
-    @Test void missingImageIsRejectedInsteadOfSilentlyRemoved(){
+    @Test void missingImageIsPreservedAsForwardReference(){
         when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,"Station",0L,0L)));
-        String html="<img src='"+cz.mh.rallye.rallye_backend.templates.application.InstructionsHtml.imageUrl(id,UUID.randomUUID())+"'>";
-        assertEquals("TEMPLATE_IMAGE_REFERENCE_INVALID",assertThrows(AuthFailure.class,()->service.updateStage(principal,id,stage,7,"Station",0L,0L,true,html)).code());
-        verify(store,never()).instructionsHtml(any(),any());verifyNoInteractions(audit);
+        service.updateStage(principal,id,stage,7,"Station",0L,0L,true,"![x](missing.png)");verify(store).instructionsMarkdown(stage,"![x](missing.png)");verify(store).references(id,stage,Set.of());verify(store).touch(id,now);
     }
-    @Test void htmlAndUniqueReferencesAreSavedInSameOperation(){
-        UUID image=UUID.randomUUID();when(store.images(id)).thenReturn(List.of(new TemplateStore.Image(image,id,"image/png",5,1,1,now,false)));
+    @Test void sourceAndUniqueImageReferencesAreSavedTogether(){
+        UUID image=UUID.randomUUID();when(store.images(id)).thenReturn(List.of(new TemplateStore.Image(image,id,"most.png","MOST.PNG","image/png",5,1,1,now,false)));
         when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,"Station",0L,0L)));
-        String html="<img src=\""+cz.mh.rallye.rallye_backend.templates.application.InstructionsHtml.imageUrl(id,image)+"\">";
-        service.updateStage(principal,id,stage,7,"Station",0L,0L,true,html+html);
-        verify(store).references(id,stage,Set.of(image));verify(store).touch(id,now);verify(audit).template(actor,Event.TEMPLATE_STAGE_UPDATED,stage,true);
+        String markdown="![Most](most.png) ![Most](most.png)";
+        service.updateStage(principal,id,stage,7,"Station",0L,0L,true,markdown);
+        verify(store).instructionsMarkdown(stage,markdown);verify(store).references(id,stage,Set.of(image));verify(store).touch(id,now);
     }
 }

@@ -28,8 +28,8 @@ public class ApiErrors {
         return ResponseEntity.badRequest().body(problem(400, "INVALID_REQUEST"));
     }
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
-    ResponseEntity<ProblemDetail> oversized(Exception ignored) {
-        return ResponseEntity.status(413).body(problem(413,"PHOTO_TOO_LARGE"));
+    ResponseEntity<ProblemDetail> oversized(Exception ignored,jakarta.servlet.http.HttpServletRequest request) {
+        return ResponseEntity.status(413).body(problem(413,request.getRequestURI().substring(request.getContextPath().length()).matches("/api/v1/race-templates/[^/]+/files")?"FILE_TOO_LARGE":"PHOTO_TOO_LARGE"));
     }
     @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ProblemDetail> unsupported(Exception ignored) {

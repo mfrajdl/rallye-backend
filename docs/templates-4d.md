@@ -1,7 +1,9 @@
 # Etapa 4d – duplikování a společný kontrakt editoru šablon
 
+> Aktuální rozšíření V20 a závazný kontrakt knihovny souborů: [template-files.md](template-files.md). Doplňuje odkazy, dopředné reference a read-only varování; původní obrazové endpointy zůstávají.
+
 Tento dokument je aktuální společný přehled implementovaného API etap 4a–4d.
-Detaily HTML a úložiště doplňuje [templates-4c.md](templates-4c.md).
+Aktuální Markdown a pojmenované obrázky popisuje [templates-markdown.md](templates-markdown.md).
 4a–4c byly podle uživatele úspěšně ověřeny nad PostgreSQL. Nové 4d PostgreSQL scénáře včetně opravy AuditExportHttpTest uživatel
 potvrdil jako BUILD SUCCESS; nejde o potvrzení hotového webového editoru.
 
@@ -16,7 +18,7 @@ body DTO odmítají neznámá pole. Číselné řetězce, desetinná celá čís
 verze a přetečení vracejí 400 `INVALID_REQUEST`.
 
 `Created` (201 + Location) je vždy `{id, templateId, version}`. U nové šablony
-jsou obě UUID shodná; u stanoviště/obrázku označuje `id` nový dílčí objekt.
+jsou obě UUID shodná; u stanoviště označuje `id` nový dílčí objekt.
 Po vytvoření použijte GET pro načtení editovatelného detailu.
 
 `View` je `{id, name, description, skipPenaltyPoints, status, version, createdAt,
@@ -24,8 +26,8 @@ updatedAt, stages}`. Časy jsou UTC ISO-8601; `stages` jsou v pořadí 1..N.
 `Summary` má stejná základní pole bez `stages`.
 
 `StageView` je `{id, sequenceNo, name, expectedDurationMs, maxPenaltyPoints,
-instructionsHtml, gps, code, timePenalty, delayed}`. **Stanoviště nemá samostatný
-sloupec/API pole `description`**; formátovaný obsah je v `instructionsHtml`.
+instructionsMarkdown, instructionsRenderedHtml, gps, code, timePenalty, delayed}`. **Stanoviště nemá samostatný
+sloupec/API pole `description`**; formátovaný obsah je v `instructionsMarkdown`.
 Popis šablony existuje a kopíruje se. 4d nepřidává nové obchodní pole.
 Žádné DTO neobsahuje plaintext CODE ani jeho hash.
 
@@ -46,14 +48,14 @@ Cesty v tabulce jsou relativní k základu. Hlavička `Idempotency-Key` je UUID;
 | `GET /{id}/stages` | | 200 StageView[] |
 | `POST /{id}/stages` | `{version, name?, expectedDurationMs?, maxPenaltyPoints?}`, Idempotency-Key | 201 Created |
 | `GET /{id}/stages/{stageId}` | | 200 StageView |
-| `PUT /{id}/stages/{stageId}` | `{version, name?, expectedDurationMs?, maxPenaltyPoints?, instructionsHtml?}` | 200 View |
+| `PUT /{id}/stages/{stageId}` | `{version, name?, expectedDurationMs?, maxPenaltyPoints?, instructionsMarkdown?}` | 200 View |
 | `DELETE /{id}/stages/{stageId}` | query `version` | 200 View |
 | `PUT /{id}/stage-order` | `{version, stageIds: UUID[]}` | 200 View |
 | `PUT /{id}/stages/{stageId}/configuration` | ConfigurationInput níže | 200 View |
-| `POST /{id}/images` | multipart `file`, query `version`, Idempotency-Key | 201 Created |
+| `POST /{id}/images` | multipart `file`, query `version`, Idempotency-Key | 201 ImageCreated (viz Markdown kontrakt) |
 | `GET /{id}/images` | | 200 ImageView[] |
-| `GET /{id}/images/{imageId}` | | 200 binární JPEG/PNG, nosniff |
-| `DELETE /{id}/images/{imageId}` | query `version` | 204 |
+| `GET /{id}/images/{fileName}` | | 200 binární JPEG/PNG, nosniff |
+| `DELETE /{id}/images/{fileName}` | query `version` | 204 |
 | `POST /{id}/duplicate` | bez těla, Idempotency-Key | 201 Created nové šablony |
 | `POST /{id}/stages/{stageId}/duplicate` | `{version}`, Idempotency-Key | 201 Created nového stanoviště |
 
@@ -67,8 +69,8 @@ odstraní, limit se kontroluje před odstraněním. Popis je nepovinný do 2000.
 Názvy nejsou unikátní. Název stanoviště může v DRAFT být null, maximum je 100;
 prázdný/bílý se normalizuje na null. expectedDurationMs a maxPenaltyPoints mohou
 v DRAFT být null, jinak celé >=0. Základní PUT je úplné nahrazení těchto údajů,
-ne PATCH. Výjimkou je vynechané instructionsHtml: zachová obsah; null jej odstraní.
-POST stanoviště zatím nepřijímá HTML ani konfiguraci: následují příslušné PUT.
+ne PATCH. Výjimkou je vynechané instructionsMarkdown: zachová obsah; null jej odstraní.
+POST stanoviště zatím nepřijímá instrukce ani konfiguraci: následují příslušné PUT.
 
 ## Konfigurace stanoviště
 
@@ -101,34 +103,15 @@ Maximum je náhradní penalizace při přeskočení/nedokončení, **nikoliv str
 GPS + CODE znamená AND, časové pravidlo a DELAYED jsou nezávislé.
 Backend zde pouze ukládá a validuje nastavení, nevyhodnocuje pokusy ani výsledky.
 
-## HTML, obrázky a soubory
+## Markdown, obrázky a soubory
 
-Jediné pole je `instructionsHtml`, nikoliv `instructions`. Limit je 100 KiB
-UTF-8 před/po jsoup allowlist sanitizaci. Povolené formátování, tabulky, HTTP/HTTPS
-odkazy, rel pro target=_blank a omezení atributů jsou v [templates-4c.md](templates-4c.md).
-Žádné obecné style, JS, externí/data obrázky. GET vrací uložený sanitizovaný obsah
-beze změny. Prázdné tagy, mezery a neviditelné znaky samy nestačí pro READY;
-samotný platný interní obrázek stačit může.
-
-Zdrojem obrázku je přesně relativní URL:
-`/api/v1/race-templates/{templateId}/images/{imageId}` (kanonické UUID).
-Obrázek patří jedné šabloně; použití se odvozuje z uloženého HTML. Více výskytů
-v jednom stanovišti vytvoří jedinou vazbu, více stanovišť sdílí stejný soubor.
-Použitý obrázek nelze smazat. Platně strukturovaný chybný interní odkaz je 400,
-ne tiché vynechání. Obrázky jiné šablony nelze připojit.
-
-ImageView je `{id, templateId, url, contentType, byteSize, width, height, createdAt, used}`.
-JPEG/PNG se ověřuje z obsahu a přepíše bez EXIF či dalších zdrojových metadat.
-Limit je 5 MiB vstupu/výstupu, 4096 × 4096 px; nebezpečné názvy souborů se nepoužívají.
-Privátní adresář `rallye.templates.image-directory` musí být oddělený od webrootu,
-při více instancích sdílený se souborovými zámky. Bearer klient obrázek stáhne
-s Authorization a lokálně zobrazí (např. blob), token nevkládá do URL.
-
-Upload samostatného obrázku i smazání nepoužitého vyžadují aktuální verzi,
-ale samy ji nezvýší a nevracejí READY do DRAFT. Chybějící soubor neznamená
-povolení vytvořit neúplnou kopii: celá duplikace selže a rollbackne DB.
-Běžný přístup a úklid po přerušení procesu popisuje 4c; nová duplikace používá
-tentýž file lock a stejný mechanismus úklidu nereferencovaných souborů.
+Zdrojové `instructionsMarkdown` se ukládá beze změny (100 KiB UTF-8). Read-only
+`instructionsRenderedHtml` vzniká na backendu pomocí CommonMark/GFM a jsoup.
+Raw HTML je escapované; externí obrázky a nebezpečné URL nejsou povolené.
+Podrobný kontrakt, příklady, názvy, chyby, souborový recovery a V19 jsou v
+[templates-markdown.md](templates-markdown.md). Použití se eviduje z AST a transakčně
+sdílí verzi, DRAFT/READY a audit se zdrojem. Samotný upload/delete nepoužitého obrázku
+nezvýší verzi ani nezmění READY; aktuální verze je přesto povinná.
 
 ## Duplikování
 
@@ -149,16 +132,15 @@ jsou povoleny. Není nový parametr přejmenování ani pravidlo číslovaných 
 
 Každý aktuální sloupec konfigurace stanoviště se kopíruje pomocí INSERT SELECT,
 včetně CODE hashe, bez znalosti plaintextu a bez hashe jako JDBC bind parametru.
-Neměnné identifikátory, šablona, pořadí a HTML mají výslovné cílové hodnoty.
+Neměnné identifikátory, šablona, pořadí a Markdown mají výslovné cílové hodnoty.
 V nové šabloně zůstává původní pořadí. DRAFT může být neúplný i prázdný.
 
-**Všechny** obrázky (použité i nepoužité) se fyzicky kopírují pod novými UUID.
-Bajty a formát jsou stejné, neprovádí se ztrátová JPEG rekomprese. Sdílený původní
-obrázek se kopíruje jednou. Přepíší se pouze src DOM elementů img, nikoliv náhodné
-texty, alt atributy nebo jiné odkazy. Nové HTML a jeho vazby mají výhradně nová UUID
-v nové šabloně. Před zápisem se kontroluje shoda zdrojového sanitizovaného HTML,
-vazeb použití a metadat obrázků. Nekonzistence bezpečně odmítne kopii, neopravuje
-zdroj tiše. Změna/smazání jedné šablony neovlivňuje druhou.
+**Všechny** obrázky (použité i nepoužité) se fyzicky kopírují pod stejnými názvy
+do soukromého adresáře nové šablony. Bajty se nemění. Relativní Markdown zůstává
+přesně stejný; explicitní URL skutečných Image uzlů AST se přepíší na novou šablonu.
+Kód, ostatní text ani odkazy se nepřepisují. Vazby používají nová interní UUID,
+frontend je nepotřebuje. Před zápisem se kontroluje shoda AST, vazeb a knihovny.
+Nekonzistence bezpečně odmítne kopii; změna jedné šablony neovlivní druhou.
 
 Odpověď 201: `{id: newTemplateId, templateId: newTemplateId, version: 0}`,
 Location `/api/v1/race-templates/{newTemplateId}`. Audit TEMPLATE_DUPLICATED má
@@ -175,11 +157,11 @@ Content-Type: application/json
 {"version": 7}
 ```
 
-Nové UUID má stejnou kompletní konfiguraci a přesně stejné uložené HTML. Stanoviště
+Nové UUID má stejnou kompletní konfiguraci a přesně stejný uložený Markdown. Stanoviště
 se vloží hned za zdroj, následující se přečíslují, pořadí je 1..N. Fyzické soubory
 se nekopírují a URL se nemění; nové vazby sdílí původní obrázky téže šablony.
 Šablona přejde do DRAFT a version vzroste právě o 1. Popis stanoviště se nevymýšlí:
-model má name a instructionsHtml, nikoliv samostatné description.
+model má name a instructionsMarkdown, nikoliv samostatné description.
 
 Odpověď 201: `{id: newStageId, templateId: id, version: 8}`,
 Location `/api/v1/race-templates/{id}/stages/{newStageId}`. Audit
@@ -187,7 +169,7 @@ TEMPLATE_STAGE_DUPLICATED má nový target a metadata `{sourceId: oldStageId, te
 
 ## Verze, idempotence a transakce
 
-Verze celého agregátu je společná textům, HTML, konfiguraci, pořadí i stanovištím.
+Verze celého agregátu je společná textům, Markdownu, konfiguraci, pořadí i stanovištím.
 Materiální změna (včetně společné sazby a duplikování stanoviště) invaliduje READY.
 Pouhá změna názvu/popisu šablony stav zachová. No-op nezvyšuje verzi, nemění čas
 ani audit; stale version je konflikt i pro no-op. Statistické verze nejsou.
@@ -208,7 +190,7 @@ odlišná operace nebo parametry vrátí 409 IDEMPOTENCY_CONFLICT.
 Pro kopii šablony je požadavek `[sourceId]`, pro stanoviště `[templateId, stageId, version]`.
 Replay se vyhodnocuje po aktuální autorizaci, před novým vyhledáním zdroje a
 kontrolou verze. Přesný replay přežije změnu či odstranění zdroje během retence;
-není to nový snímek. CODE, jeho hash, HTML ani obrazové bajty se do těchto příkazů
+není to nový snímek. CODE, jeho hash, Markdown ani obrazové bajty se do těchto příkazů
 nezapisují. PUT/DELETE/readiness nevyžadují nový ledger a dodržují verzování.
 
 Pořadí zámků kopie šablony je společný file lock → admin/account → zdrojová šablona;
@@ -218,24 +200,24 @@ obrázky, stanoviště, vazby, audit a ledger se commitnou jako celek. Selhání
 rollbackne a nové nereferencované soubory odstraní. Při nejasném commitu se soubor
 nejprve ověří proti DB; při nedostupné DB zůstane přes API nedostupný pro pozdější
 24hodinový úklid podle 4c. Opuštěný fyzický soubor může po pádu procesu přetrvat do
-úklidu, nevzniká částečná dostupná šablona. Není nový file framework ani migrace V19.
+úklidu, nevzniká částečná dostupná šablona. V19 mění pouze instrukce a identifikaci obrázků; kopírování nepřidává vlastní framework.
 
 ## Chyby a omezení
 
 | HTTP | Kód / význam |
 | --- | --- |
 | 400 | INVALID_REQUEST (typ, rozsah, chybějící parametr, neznámé pole) |
-| 400 | INSTRUCTIONS_HTML_TOO_LARGE, INVALID_INSTRUCTIONS_HTML, TEMPLATE_IMAGE_REFERENCE_INVALID |
+| 400 | INVALID_INSTRUCTIONS_MARKDOWN, INVALID_IMAGE_NAME, TEMPLATE_IMAGE_REFERENCE_INVALID |
 | 401 | UNAUTHENTICATED / neplatná relace |
 | 403 | ADMIN_REQUIRED, ACCESS_DENIED (např. CSRF) |
 | 404 | TEMPLATE_NOT_FOUND, TEMPLATE_STAGE_NOT_FOUND, TEMPLATE_IMAGE_NOT_FOUND |
-| 409 | TEMPLATE_VERSION_CONFLICT, IDEMPOTENCY_CONFLICT, TEMPLATE_NOT_READY, TEMPLATE_IMAGE_IN_USE |
+| 409 | TEMPLATE_VERSION_CONFLICT, IDEMPOTENCY_CONFLICT, TEMPLATE_NOT_READY, TEMPLATE_IMAGE_IN_USE, TEMPLATE_IMAGE_NAME_CONFLICT |
 | 413/415 | PHOTO_TOO_LARGE / PHOTO_UNSUPPORTED_FORMAT |
 | 400 | INVALID_PHOTO, INVALID_PHOTO_DIMENSIONS |
 | 503 | PHOTO_STORAGE_UNAVAILABLE; TEMPLATE_COPY_INCONSISTENT (nesoulad zdrojových dat) |
 | 503 | TEMPLATE_USAGE_CHECK_UNAVAILABLE (neznámé schéma/konání při mazání) |
 
-Přesný migration guard po V18 a budoucí kontrola použití šablony se zachovávají.
+Přesný migration guard po V19 a budoucí kontrola použití šablony se zachovávají.
 Konkrétní konání zatím neexistují. Při jejich zavedení je potřeba explicitně
 napojit pravidlo zákazu mazání použité šablony, nikoliv obejít fail-closed guard.
 Neimplementují se účasti, start, pokusy, výsledky, statistiky ani klientské UI.

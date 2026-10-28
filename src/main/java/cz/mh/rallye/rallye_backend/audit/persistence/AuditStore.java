@@ -48,6 +48,10 @@ public class AuditStore {
                 """,id,Timestamp.from(time),actor==null?"SYSTEM":"USER",actor,event.name(),
                 UUID.fromString("00000000-0000-0000-0000-000000000005"),metadata);
     }
+    public void appendRace(UUID id,Instant time,UUID actor,Event event,UUID target,UUID source,long version){
+        String metadata=tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.Map.of("sourceTemplateId",source,"sourceTemplateVersion",version));
+        jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type,metadata) VALUES (?,?,'USER',?,?,?,'RACE_EVENT',?::jsonb)",id,Timestamp.from(time),actor,event.name(),target,metadata);
+    }
     public void appendTemplate(UUID id,Instant time,UUID actor,Event event,UUID target,boolean stage){
         jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type) VALUES (?,?,'USER',?,?,?,?)",id,Timestamp.from(time),actor,event.name(),target,stage?"TEMPLATE_STAGE":"TEMPLATE");
     }

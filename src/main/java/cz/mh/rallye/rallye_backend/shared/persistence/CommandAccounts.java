@@ -17,6 +17,25 @@ final class CommandAccounts {
             }
             JsonNode req=JSON.readTree(request),res=JSON.readTree(result);
             if(!req.isArray() || !res.isObject()) throw invalid();
+            if(operation.equals("RACE_EVENT_CREATE")){
+                size(req,6);requiredId(req.get(0));if(!req.get(1).isIntegralNumber()||req.get(1).longValue()<0||!req.get(2).isString())throw invalid();
+                for(int i=3;i<6;i++)textOrNull(req.get(i));
+                if(!new HashSet<>(res.propertyNames()).equals(Set.of("id","version"))||!target.equals(requiredId(res.get("id")))||!res.get("version").isIntegralNumber())throw invalid();
+                return new Content(ids,req,res); // source/target are template/event UUIDs, never accounts.
+            }
+            if(operation.equals("TEMPLATE_FILE_UPLOAD")){
+                size(req,4);UUID template=requiredId(req.get(0));
+                if(!req.get(1).isIntegralNumber()||!req.get(2).isString()||!req.get(3).isString()||!req.get(3).asString().matches("[0-9a-f]{64}"))throw invalid();
+                if(!new HashSet<>(res.propertyNames()).equals(Set.of("fileName","templateId","url","version","status","missingReferences"))||!template.equals(requiredId(res.get("templateId")))||!req.get(2).asString().equals(res.get("fileName").asString())||!res.get("url").isString()||!res.get("version").isIntegralNumber()||!Set.of("DRAFT","READY").contains(res.get("status").asString())||!res.get("missingReferences").isArray())throw invalid();
+                for(var warning:res.get("missingReferences")){if(!new HashSet<>(warning.propertyNames()).equals(Set.of("code","sourceType","sourceStageId","sourceFileName","targetFileName","referenceType"))||!warning.get("code").asString().equals("FILE_NOT_FOUND"))throw invalid();}
+                return new Content(ids,req,res);
+            }
+            if(operation.equals("TEMPLATE_IMAGE_UPLOAD")){
+                size(req,4);UUID template=requiredId(req.get(0));
+                if(!req.get(1).isIntegralNumber()||!req.get(2).isString()||!req.get(3).isString()||!req.get(3).asString().matches("[0-9a-f]{64}"))throw invalid();
+                if(!new HashSet<>(res.propertyNames()).equals(Set.of("fileName","templateId","url","version"))||!template.equals(requiredId(res.get("templateId")))||!res.get("fileName").isString()||!res.get("url").isString()||!res.get("version").isIntegralNumber()||!req.get(2).asString().equals(res.get("fileName").asString()))throw invalid();
+                return new Content(ids,req,res);
+            }
             if(operation.equals("TEMPLATE_CREATE") || operation.equals("TEMPLATE_STAGE_CREATE") || operation.equals("TEMPLATE_IMAGE_CREATE") || operation.equals("TEMPLATE_DUPLICATE") || operation.equals("TEMPLATE_STAGE_DUPLICATE")) {
                 if(operation.equals("TEMPLATE_CREATE")){size(req,3);if(!req.get(0).isString() || !req.get(2).isIntegralNumber())throw invalid();textOrNull(req.get(1));}
                 else if(operation.equals("TEMPLATE_DUPLICATE")){size(req,1);requiredId(req.get(0));}

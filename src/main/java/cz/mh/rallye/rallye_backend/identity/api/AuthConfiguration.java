@@ -51,7 +51,7 @@ public class AuthConfiguration {
                         .requestMatchers("/api/v1/auth/external/GOOGLE/requests", "/api/v1/auth/external/APPLE/requests",
                                 "/api/v1/auth/external/GOOGLE/callback", "/api/v1/auth/external/APPLE/callback",
                                 "/api/v1/auth/external/registrations/current", "/api/v1/auth/external/registrations/completions").permitAll()
-                        .requestMatchers("/api/v1/admin/**", "/api/v1/race-templates", "/api/v1/race-templates/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/admin/**", "/api/v1/race-templates", "/api/v1/race-templates/**", "/api/v1/race-events", "/api/v1/race-events/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((request, response, error) -> ApiErrors.write(response, 401, "UNAUTHENTICATED"))

@@ -52,6 +52,7 @@ class TemplatesIT {
     @Autowired cz.mh.rallye.rallye_backend.templates.application.TemplateImageService images;
     @Autowired cz.mh.rallye.rallye_backend.templates.application.TemplateDuplicationService copies;
     @Autowired cz.mh.rallye.rallye_backend.templates.persistence.TemplateStore templateStore;
+    @Autowired cz.mh.rallye.rallye_backend.templates.application.TemplateFileService files;
     @Autowired TemplateService service;@Autowired AuthService auth;@Autowired JdbcTemplate jdbc;
     @Autowired AccountStore accounts;@Autowired PlatformTransactionManager manager;@Autowired MutableClock clock;
     @Autowired PreRaceAccountParticipationFacts facts;@Autowired CommandCleanupStore cleanup;
@@ -72,7 +73,7 @@ class TemplatesIT {
         });
     }
     @BeforeAll void prepare()throws Exception{root=actor();String sql=AdministrationIT.bootstrapBody(root.id());tx().executeWithoutResult(s->jdbc.execute(sql));}
-    @AfterAll void dropOnlyPrivateTestSchema()throws Exception{try(var files=java.nio.file.Files.list(IMAGE_DIR)){for(var file:files.toList())java.nio.file.Files.delete(file);}java.nio.file.Files.delete(IMAGE_DIR);assertTrue(SCHEMA.matches("it_templates_[0-9a-f]{32}"));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_database()",String.class));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_user",String.class));jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");}
+    @AfterAll void dropOnlyPrivateTestSchema()throws Exception{assertTrue(IMAGE_DIR.getFileName().toString().startsWith("it_template_images_"));try(var files=java.nio.file.Files.walk(IMAGE_DIR)){for(var file:files.sorted(java.util.Comparator.reverseOrder()).filter(path->!path.equals(IMAGE_DIR)).toList())java.nio.file.Files.delete(file);}java.nio.file.Files.delete(IMAGE_DIR);assertTrue(SCHEMA.matches("it_templates_[0-9a-f]{32}"));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_database()",String.class));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_user",String.class));jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");}
     UUID create(){return service.create(root.principal(),UUID.randomUUID(),"Template-"+UUID.randomUUID(),null,-3).id();}
     long count(String sql,Object... args){return jdbc.queryForObject(sql,Long.class,args);}
     @Test void crudAndOrderStayContiguousWithSingleAggregateVersion(){
@@ -194,7 +195,7 @@ class TemplatesIT {
         tx().executeWithoutResult(s->assertFalse(facts.forAccount(root.id()).historical()));
         UUID id=create();
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V16__unexpected.sql' WHERE version='16'");assertEquals(503,assertThrows(AuthFailure.class,()->facts.forAccount(root.id())).status());s.setRollbackOnly();});
-        tx().executeWithoutResult(s->{int rank=jdbc.queryForObject("SELECT max(installed_rank)+1 FROM flyway_schema_history",Integer.class);jdbc.update("INSERT INTO flyway_schema_history(installed_rank,version,description,type,script,installed_by,execution_time,success) VALUES (?,'19','Future','SQL','V19__future.sql',current_user,0,true)",rank);assertEquals(503,assertThrows(AuthFailure.class,()->service.delete(root.principal(),id,0)).status());s.setRollbackOnly();});
+        tx().executeWithoutResult(s->{int rank=jdbc.queryForObject("SELECT max(installed_rank)+1 FROM flyway_schema_history",Integer.class);jdbc.update("INSERT INTO flyway_schema_history(installed_rank,version,description,type,script,installed_by,execution_time,success) VALUES (?,'22','Future','SQL','V22__future.sql',current_user,0,true)",rank);assertEquals(503,assertThrows(AuthFailure.class,()->service.delete(root.principal(),id,0)).status());s.setRollbackOnly();});
         assertNotNull(service.detail(root.principal(),id));
     }
     @Test void upgradeFromV15PreservesExistingAccountsAndCreatesEmptyTemplateModel(){
@@ -228,7 +229,7 @@ class TemplatesIT {
     @Test void incompleteReadinessIsReadOnlyAndReturnsFieldErrors(){
         UUID id=create();UUID stage=service.createStage(root.principal(),id,0,UUID.randomUUID(),null,null,null).id();
         var before=service.detail(root.principal(),id);long events=count("SELECT count(*) FROM audit_event");
-        var report=service.readiness(root.principal(),id);assertFalse(report.ready());assertEquals(1,report.version());assertTrue(report.errors().stream().anyMatch(e->stage.equals(e.stageId()) && e.field().equals("instructionsHtml")));
+        var report=service.readiness(root.principal(),id);assertFalse(report.ready());assertEquals(1,report.version());assertTrue(report.errors().stream().anyMatch(e->stage.equals(e.stageId()) && e.field().equals("instructionsMarkdown")));
         var rejected=assertThrows(TemplateReadiness.NotReady.class,()->service.state(root.principal(),id,1,"READY"));assertEquals(report,rejected.report());
         assertEquals(before,service.detail(root.principal(),id));assertEquals(events,count("SELECT count(*) FROM audit_event"));
     }
@@ -306,12 +307,12 @@ class TemplatesIT {
         var change=config(true,true,null,-3);var gps=new Gps(true,90.0,-180.0,2.0,-3L,-3L);
         assertEquals("DRAFT",service.configure(root.principal(),f.template(),f.stage(),5,new TemplateService.ConfigurationChange(gps,change.code(),change.timePenalty(),change.delayed())).status());
     }
-    @Test void htmlInstructionsArePreservedClearedAndRequiredForReady()throws Exception{
+    @Test void markdownInstructionsArePreservedClearedAndRequiredForReady()throws Exception{
         var f=configured(true,false);service.updateStage(root.principal(),f.template(),f.stage(),3,"Station",0L,0L,true,"Literal <b>text</b>.");
-        var stage=service.stageDetail(root.principal(),f.template(),f.stage());assertEquals("Literal <b>text</b>.",stage.instructionsHtml());assertTrue(service.readiness(root.principal(),f.template()).ready());
-        mvc.perform(get("/api/v1/race-templates/"+f.template()+"/stages/"+f.stage()).header("Authorization","Bearer "+root.secret())).andExpect(status().isOk()).andExpect(jsonPath("$.instructionsHtml").value("Literal <b>text</b>.")).andExpect(jsonPath("$.instructions").doesNotExist());
+        var stage=service.stageDetail(root.principal(),f.template(),f.stage());assertEquals("Literal <b>text</b>.",stage.instructionsMarkdown());assertTrue(service.readiness(root.principal(),f.template()).ready());
+        mvc.perform(get("/api/v1/race-templates/"+f.template()+"/stages/"+f.stage()).header("Authorization","Bearer "+root.secret())).andExpect(status().isOk()).andExpect(jsonPath("$.instructionsMarkdown").value("Literal <b>text</b>.")).andExpect(jsonPath("$.instructions").doesNotExist());
         service.updateStage(root.principal(),f.template(),f.stage(),4,"Station",0L,0L,true," ");assertFalse(service.readiness(root.principal(),f.template()).ready());
-        service.updateStage(root.principal(),f.template(),f.stage(),5,"Station",0L,0L,true,null);assertNull(service.stageDetail(root.principal(),f.template(),f.stage()).instructionsHtml());
+        service.updateStage(root.principal(),f.template(),f.stage(),5,"Station",0L,0L,true,null);assertNull(service.stageDetail(root.principal(),f.template(),f.stage()).instructionsMarkdown());
     }
     String publish(Configured f,long v){try{service.state(root.principal(),f.template(),v,"READY");return "OK";}catch(AuthFailure failure){return failure.code();}}
     @Test void publicationAndIncompleteEditRaceCannotLeaveInvalidReady()throws Exception{
@@ -348,228 +349,200 @@ class TemplatesIT {
     }
 
     java.io.InputStream png()throws Exception{return new java.io.ByteArrayInputStream(cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",12,8));}
-    UUID upload(UUID template)throws Exception{return images.upload(root.principal(),template,service.detail(root.principal(),template).version(),UUID.randomUUID(),png()).id();}
-    String imageHtml(UUID template,UUID image){return "<img src=\""+cz.mh.rallye.rallye_backend.templates.application.InstructionsHtml.imageUrl(template,image)+"\">";}
-    void html(Configured f,String html){service.updateStage(root.principal(),f.template(),f.stage(),version(f),"Station",0L,0L,true,html);}
-    @Test void imageUploadReadsActualFormatsAndDoesNotDraftReadyTemplate()throws Exception{
-        var f=configured(true,false);service.state(root.principal(),f.template(),version(f),"READY");long v=version(f);
-        for(String format:List.of("png","jpeg")){
-            var created=images.upload(root.principal(),f.template(),v,UUID.randomUUID(),new java.io.ByteArrayInputStream(cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image(format,12,8)));
-            var content=images.content(root.principal(),f.template(),created.id());assertEquals("image/"+format,content.contentType());assertEquals(12,javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(content.bytes())).getWidth());
-            mvc.perform(get(cz.mh.rallye.rallye_backend.templates.application.InstructionsHtml.imageUrl(f.template(),created.id())).header("Authorization","Bearer "+root.secret())).andExpect(status().isOk()).andExpect(header().string("X-Content-Type-Options","nosniff"));
+    String upload(UUID template,String name)throws Exception{return images.upload(root.principal(),template,service.detail(root.principal(),template).version(),UUID.randomUUID(),name,png()).fileName();}
+    void markdown(Configured f,String source){service.updateStage(root.principal(),f.template(),f.stage(),version(f),"Station",0L,0L,true,source);}
+    UUID imageId(UUID template,String name){return jdbc.queryForObject("SELECT id FROM template_image WHERE race_template_id=? AND name_key=?",UUID.class,template,cz.mh.rallye.rallye_backend.templates.application.ImageNames.key(name));}
+    java.nio.file.Path imagePath(UUID template,String name){return IMAGE_DIR.resolve("race-templates").resolve(template.toString()).resolve("images").resolve(name);}
+    @Test void sourceMarkdownIsStoredExactlyAndReadOnlyHtmlIsSafe()throws Exception{
+        var f=configured(true,false);String source="# Nadpis  \r\n\r\n**Text** & <script>bad()</script>\r\n";markdown(f,source);
+        var stage=service.stageDetail(root.principal(),f.template(),f.stage());assertEquals(source,stage.instructionsMarkdown());assertTrue(stage.instructionsRenderedHtml().contains("<strong>Text</strong>"));assertFalse(stage.instructionsRenderedHtml().contains("<script>"));
+        assertEquals(source,jdbc.queryForObject("SELECT instructions_markdown FROM template_stage WHERE id=?",String.class,f.stage()));
+        mvc.perform(get("/api/v1/race-templates/"+f.template()+"/stages/"+f.stage()).header("Authorization","Bearer "+root.secret())).andExpect(status().isOk()).andExpect(jsonPath("$.instructionsMarkdown").value(source)).andExpect(jsonPath("$.instructionsRenderedHtml").exists()).andExpect(jsonPath("$.instructionsHtml").doesNotExist());
+    }
+    @Test void originalNameStorageAndCaseUnicodeCollisionNeverOverwriteExistingFile()throws Exception{
+        UUID template=create();String name=upload(template,"Česká mapa.png");assertTrue(java.nio.file.Files.exists(imagePath(template,name)));byte[] original=images.content(root.principal(),template,name).bytes();
+        for(String conflict:List.of("ČESKÁ MAPA.PNG","C\u030ceska\u0301 mapa.png"))assertEquals("TEMPLATE_IMAGE_NAME_CONFLICT",assertThrows(AuthFailure.class,()->images.upload(root.principal(),template,0,UUID.randomUUID(),conflict,png())).code());
+        assertArrayEquals(original,images.content(root.principal(),template,name).bytes());assertArrayEquals(original,images.content(root.principal(),template,"ČESKÁ MAPA.PNG").bytes());assertEquals(1,images.list(root.principal(),template).size());
+        UUID other=create();upload(other,name);assertEquals(1,images.list(root.principal(),other).size());
+    }
+    @Test void relativeAndExplicitReferencesShareUsageAndBlockDeletion()throws Exception{
+        var f=configured(true,false);String name=upload(f.template(),"mapa trasy.png");String url=cz.mh.rallye.rallye_backend.templates.application.ImageNames.url(f.template(),name);
+        markdown(f,"![A](mapa%20trasy.png) ![B]("+url+")");assertEquals(Set.of(imageId(f.template(),name)),templateStore.usedImages(f.stage()));
+        assertTrue(service.stageDetail(root.principal(),f.template(),f.stage()).instructionsRenderedHtml().contains(url));assertTrue(service.readiness(root.principal(),f.template()).ready());
+        assertEquals("TEMPLATE_IMAGE_IN_USE",assertThrows(AuthFailure.class,()->images.delete(root.principal(),f.template(),name,version(f))).code());
+        markdown(f,"Text without image");images.delete(root.principal(),f.template(),name,version(f));assertFalse(java.nio.file.Files.exists(imagePath(f.template(),name)));
+    }
+    @Test void rejectsForeignMissingAndUnsafeReferencesWithoutChangingState()throws Exception{
+        var f=configured(true,false);UUID other=create();upload(other,"foreign.png");var before=service.detail(root.principal(),f.template());
+        for(String source:List.of("![x](https://evil.test/a.png)","![x](data:x)","![x]("+cz.mh.rallye.rallye_backend.templates.application.ImageNames.url(other,"foreign.png")+")")){
+            assertThrows(AuthFailure.class,()->markdown(f,source));assertEquals(before,service.detail(root.principal(),f.template()));
         }
-        assertEquals(v,version(f));assertEquals("READY",service.detail(root.principal(),f.template()).status());assertEquals(2,images.list(root.principal(),f.template()).size());
     }
-    @Test void imageOnlyInstructionsAreReadyAndUsageCanBeSharedAndRemoved()throws Exception{
-        var f=configured(true,false);UUID image=upload(f.template());String html=imageHtml(f.template(),image);html(f,html+html);
-        assertEquals(1,count("SELECT count(*) FROM template_stage_image WHERE stage_id=?",f.stage()));assertTrue(service.readiness(root.principal(),f.template()).ready());
-        UUID second=service.createStage(root.principal(),f.template(),version(f),UUID.randomUUID(),"Other",0L,0L).id();
-        service.updateStage(root.principal(),f.template(),second,version(f),"Other",0L,0L,true,html);
-        assertEquals(2,count("SELECT count(*) FROM template_stage_image WHERE image_id=?",image));
-        assertEquals("TEMPLATE_IMAGE_IN_USE",assertThrows(AuthFailure.class,()->images.delete(root.principal(),f.template(),image,version(f))).code());
-        html(f,"<p>No image</p>");assertEquals(1,count("SELECT count(*) FROM template_stage_image WHERE image_id=?",image));
-        service.deleteStage(root.principal(),f.template(),second,version(f));assertEquals(0,count("SELECT count(*) FROM template_stage_image WHERE image_id=?",image));
-        images.delete(root.principal(),f.template(),image,version(f));assertFalse(java.nio.file.Files.exists(IMAGE_DIR.resolve(image+".photo")));
+    @Test void markdownNoOpAndReadyTransitionsKeepExistingRules(){
+        var f=configured(true,false);String source="**Task**";markdown(f,source);service.state(root.principal(),f.template(),version(f),"READY");var before=service.detail(root.principal(),f.template());long events=count("SELECT count(*) FROM audit_event");
+        markdown(f,source);assertEquals(before,service.detail(root.principal(),f.template()));assertEquals(events,count("SELECT count(*) FROM audit_event"));markdown(f,"**Changed**");assertEquals("DRAFT",service.detail(root.principal(),f.template()).status());markdown(f,"# ");assertFalse(service.readiness(root.principal(),f.template()).ready());
     }
-    @Test void htmlRejectsMissingAndForeignImageWithoutChangingInstructions()throws Exception{
-        var f=configured(true,false);UUID other=create(),foreign=upload(other);var before=service.detail(root.principal(),f.template());
-        for(String html:List.of(imageHtml(f.template(),UUID.randomUUID()),imageHtml(other,foreign),imageHtml(f.template(),foreign))){
-            assertEquals("TEMPLATE_IMAGE_REFERENCE_INVALID",assertThrows(AuthFailure.class,()->html(f,html)).code());assertEquals(before,service.detail(root.principal(),f.template()));
-        }
+    @Test void markdownAuditFailureRollsBackSourceReferencesAndVersion()throws Exception{
+        var f=configured(true,false);upload(f.template(),"most.png");var before=service.detail(root.principal(),f.template());
+        failedAudit(Event.TEMPLATE_STAGE_UPDATED,f.stage(),()->markdown(f,"![Most](most.png)"));assertEquals(before,service.detail(root.principal(),f.template()));assertTrue(templateStore.usedImages(f.stage()).isEmpty());
     }
-    @Test void sanitizedNoOpKeepsReadyVersionTimestampAndAudit()throws Exception{
-        var f=configured(true,false);html(f,"<p>Text</p>");service.state(root.principal(),f.template(),version(f),"READY");
-        var before=service.detail(root.principal(),f.template());long events=count("SELECT count(*) FROM audit_event");
-        html(f,"<p onclick='bad()'>Text</p>");assertEquals(before,service.detail(root.principal(),f.template()));assertEquals(events,count("SELECT count(*) FROM audit_event"));
-        html(f,"<p>Changed</p>");assertEquals("DRAFT",service.detail(root.principal(),f.template()).status());assertEquals(before.version()+1,version(f));
+    @Test void uploadReplayAndNameConflictPreserveFileAndAudit()throws Exception{
+        UUID template=create(),key=UUID.randomUUID();var first=images.upload(root.principal(),template,0,key,"most.png",png());
+        assertEquals(first,images.upload(root.principal(),template,0,key,"most.png",png()));
+        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,()->images.upload(root.principal(),template,0,key,"other.png",png())).code());assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_IMAGE_CREATED'",template));
+        String body=mvc.perform(get("/api/v1/race-templates/"+template+"/images").header("Authorization","Bearer "+root.secret())).andExpect(status().isOk()).andExpect(jsonPath("$[0].fileName").value("most.png")).andExpect(jsonPath("$[0].id").doesNotExist()).andReturn().getResponse().getContentAsString();assertFalse(body.contains(imageId(template,"most.png").toString()));
     }
-    @Test void htmlAuditFailureRollsBackHtmlReferencesVersionAndState()throws Exception{
-        var f=configured(true,false);UUID image=upload(f.template());var before=service.detail(root.principal(),f.template());
-        failedAudit(Event.TEMPLATE_STAGE_UPDATED,f.stage(),()->html(f,imageHtml(f.template(),image)));
-        assertEquals(before,service.detail(root.principal(),f.template()));assertEquals(0,count("SELECT count(*) FROM template_stage_image WHERE stage_id=?",f.stage()));
+    @Test void uploadAndDeleteAuditFailuresKeepDatabaseAndFilesystemConsistent()throws Exception{
+        UUID template=create();upload(template,"keep.png");byte[] bytes=cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",2,2);UUID key=UUID.randomUUID();
+        failedAudit(Event.TEMPLATE_IMAGE_CREATED,template,()->images.upload(root.principal(),template,0,key,"failed.png",new java.io.ByteArrayInputStream(bytes)));
+        assertFalse(java.nio.file.Files.exists(imagePath(template,"failed.png")));assertEquals(1,images.list(root.principal(),template).size());assertEquals(0,count("SELECT count(*) FROM admin_role_command WHERE command_key=?",key));
+        failedAudit(Event.TEMPLATE_IMAGE_DELETED,template,()->images.delete(root.principal(),template,"keep.png",0));assertTrue(java.nio.file.Files.exists(imagePath(template,"keep.png")));assertEquals(1,images.list(root.principal(),template).size());
     }
-    @Test void uploadAuditFailureRollsBackMetadataCommandAndFile()throws Exception{
-        UUID template=create(),key=UUID.randomUUID();byte[] bytes=cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",2,2);
-        long before;try(var files=java.nio.file.Files.list(IMAGE_DIR)){before=files.count();}
-        // Initialize the lock file before measuring the failed upload's file effects.
-        upload(template);try(var files=java.nio.file.Files.list(IMAGE_DIR)){before=files.count();}
-        long rows=count("SELECT count(*) FROM template_image WHERE race_template_id=?",template);
-        failedAudit(Event.TEMPLATE_IMAGE_CREATED,template,()->images.upload(root.principal(),template,0,key,new java.io.ByteArrayInputStream(bytes)));
-        assertEquals(rows,count("SELECT count(*) FROM template_image WHERE race_template_id=?",template));assertEquals(0,count("SELECT count(*) FROM admin_role_command WHERE actor_id=? AND command_key=?",root.id(),key));
-        try(var files=java.nio.file.Files.list(IMAGE_DIR)){assertEquals(before,files.count());}
+    @Test void concurrentSameNameUploadsHaveExactlyOneWinner()throws Exception{
+        UUID template=create();Callable<String> upload=()->{try{images.upload(root.principal(),template,0,UUID.randomUUID(),"Most.png",png());return "OK";}catch(AuthFailure e){return e.code();}};
+        var result=race(upload,upload);assertEquals(1,result.stream().filter("OK"::equals).count());assertEquals(1,result.stream().filter("TEMPLATE_IMAGE_NAME_CONFLICT"::equals).count());assertEquals(1,images.list(root.principal(),template).size());assertTrue(images.content(root.principal(),template,"most.PNG").bytes().length>0);
     }
-    @Test void imageDeleteAuditFailureKeepsMetadataAndReadableFile()throws Exception{
-        UUID template=create(),image=upload(template);byte[] bytes=images.content(root.principal(),template,image).bytes();
-        failedAudit(Event.TEMPLATE_IMAGE_DELETED,template,()->images.delete(root.principal(),template,image,0));
-        assertArrayEquals(bytes,images.content(root.principal(),template,image).bytes());assertEquals(1,images.list(root.principal(),template).size());
+    @Test void concurrentUseAndDeleteNeverLeaveDanglingReferences()throws Exception{
+        var f=configured(true,false);upload(f.template(),"most.png");long v=version(f);
+        var result=race(()->{service.updateStage(root.principal(),f.template(),f.stage(),v,"Station",0L,0L,true,"![Most](most.png)");return "USED";},()->{try{images.delete(root.principal(),f.template(),"most.png",v);return "DELETED";}catch(AuthFailure e){return e.code();}});
+        assertEquals("USED",result.getFirst());
+        assertTrue(Set.of("DELETED","TEMPLATE_VERSION_CONFLICT").contains(result.getLast()),result.toString());
+        assertUseAndDeleteOutcome(f,v,result.getLast().equals("DELETED"));
     }
-    @Test void imageUploadReplayAndConflictsUseExistingLedger()throws Exception{
-        UUID template=create(),key=UUID.randomUUID();byte[] bytes=cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",3,2);
-        var first=images.upload(root.principal(),template,0,key,new java.io.ByteArrayInputStream(bytes));
-        assertEquals(first,images.upload(root.principal(),template,0,key,new java.io.ByteArrayInputStream(bytes)));
-        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,()->images.upload(root.principal(),template,1,key,new java.io.ByteArrayInputStream(bytes))).code());
-        assertEquals(1,count("SELECT count(*) FROM template_image WHERE race_template_id=?",template));
+    @ParameterizedTest @ValueSource(booleans={true,false})
+    void useAndDeleteSequentialOrdersMatchForwardReferenceContract(boolean deleteFirst)throws Exception{
+        var f=configured(true,false);upload(f.template(),"most.png");long v=version(f);
+        if(deleteFirst)images.delete(root.principal(),f.template(),"most.png",v);
+        service.updateStage(root.principal(),f.template(),f.stage(),v,"Station",0L,0L,true,"![Most](most.png)");
+        if(!deleteFirst)assertEquals("TEMPLATE_VERSION_CONFLICT",assertThrows(AuthFailure.class,()->images.delete(root.principal(),f.template(),"most.png",v)).code());
+        assertUseAndDeleteOutcome(f,v,deleteFirst);
     }
-    @Test void concurrentUseAndDeletionCannotLeaveDanglingReference()throws Exception{
-        var f=configured(true,false);UUID image=upload(f.template());long v=version(f);
-        var results=race(()->{try{html(f,imageHtml(f.template(),image));return "USED";}catch(AuthFailure e){return e.code();}},
-            ()->{try{images.delete(root.principal(),f.template(),image,v);return "DELETED";}catch(AuthFailure e){return e.code();}});
-        assertFalse(results.contains("USED")&&results.contains("DELETED"));
+    void assertUseAndDeleteOutcome(Configured f,long initialVersion,boolean deleted)throws Exception{
+        var detail=service.detail(root.principal(),f.template());
+        assertEquals(initialVersion+1,detail.version());assertEquals("DRAFT",detail.status());
+        var stage=service.stageDetail(root.principal(),f.template(),f.stage());
+        assertEquals("![Most](most.png)",stage.instructionsMarkdown());
+        assertEquals(deleted?0:1,count("SELECT count(*) FROM template_image WHERE race_template_id=?",f.template()));
+        assertEquals(!deleted,java.nio.file.Files.exists(imagePath(f.template(),"most.png")));
+        assertEquals(deleted?0:1,count("SELECT count(*) FROM template_stage_image WHERE stage_id=?",f.stage()));
         assertEquals(0,count("SELECT count(*) FROM template_stage_image u LEFT JOIN template_image i ON i.id=u.image_id WHERE i.id IS NULL"));
-    }
-    @Test void concurrentSameUploadKeyCreatesOnlyOneImage()throws Exception{
-        UUID template=create(),key=UUID.randomUUID();byte[] bytes=cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",3,2);
-        var result=race(()->images.upload(root.principal(),template,0,key,new java.io.ByteArrayInputStream(bytes)).id().toString(),()->images.upload(root.principal(),template,0,key,new java.io.ByteArrayInputStream(bytes)).id().toString());
-        assertEquals(result.getFirst(),result.getLast());assertEquals(1,images.list(root.principal(),template).size());assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_IMAGE_CREATED'",template));
-    }
-    @Test void deletingTemplateCascadesImageMetadataReferencesAndFiles()throws Exception{
-        var f=configured(true,false);UUID image=upload(f.template());html(f,imageHtml(f.template(),image));
-        service.delete(root.principal(),f.template(),version(f));assertEquals(0,count("SELECT count(*) FROM template_image WHERE id=?",image));assertEquals(0,count("SELECT count(*) FROM template_stage_image WHERE image_id=?",image));assertFalse(java.nio.file.Files.exists(IMAGE_DIR.resolve(image+".photo")));
-    }
-    @Test void imageAccessRemainsAdminOnlyAndOldInstructionsFieldIsRejected()throws Exception{
-        UUID template=create(),image=upload(template);var ordinary=actor();
-        assertEquals(403,assertThrows(AuthFailure.class,()->images.list(ordinary.principal(),template)).status());
-        assertEquals(403,assertThrows(AuthFailure.class,()->images.content(ordinary.principal(),template,image)).status());
-        mvc.perform(put("/api/v1/race-templates/"+template+"/stages/"+UUID.randomUUID()).header("Authorization","Bearer "+root.secret()).contentType("application/json").content("{\"version\":0,\"instructions\":\"old\"}")).andExpect(status().isBadRequest());
-    }
-    @Test void v18PreservesSchemaGuardAndEnforcesImageTemplateForeignKeys()throws Exception{
-        var f=configured(true,false);UUID other=create(),image=upload(other);
-        assertThrows(DataAccessException.class,()->tx().executeWithoutResult(s->jdbc.update("INSERT INTO template_stage_image(stage_id,image_id,race_template_id) VALUES (?,?,?)",f.stage(),image,f.template())));
-        assertEquals(1,count("SELECT count(*) FROM flyway_schema_history WHERE version='18' AND script='V18__template_html_and_images.sql' AND success"));
-        tx().executeWithoutResult(s->{assertFalse(facts.forAccount(root.id()).historical());jdbc.update("UPDATE flyway_schema_history SET script='V18__unknown.sql' WHERE version='18'");assertEquals(503,assertThrows(AuthFailure.class,()->facts.forAccount(root.id())).status());assertEquals(503,assertThrows(AuthFailure.class,()->service.delete(root.principal(),f.template(),version(f))).status());s.setRollbackOnly();});
-    }
-    @Test void upgradeV17ToV18KeepsStageConfigurationAndCreatesEmptyImageRelations(){
-        String upgrade=SCHEMA+"_v18";assertTrue(upgrade.matches("it_templates_[0-9a-f]{32}_v18"));
-        assertEquals("rallye_test",jdbc.queryForObject("SELECT current_database()",String.class));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_user",String.class));
-        UUID template=UUID.randomUUID(),stage=UUID.randomUUID();
-        try{
-            org.flywaydb.core.Flyway.configure().dataSource(jdbc.getDataSource()).schemas(upgrade).defaultSchema(upgrade).target("17").load().migrate();
-            jdbc.update("INSERT INTO "+upgrade+".race_template(id,name,skip_penalty_points,created_at,updated_at) VALUES (?,'Upgrade',-3,now(),now())",template);
-            jdbc.update("INSERT INTO "+upgrade+".template_stage(id,race_template_id,sequence_no,name,instructions,expected_duration_ms,max_penalty_points) VALUES (?,?,1,'Station',NULL,120000,0)",stage,template);
-            org.flywaydb.core.Flyway.configure().dataSource(jdbc.getDataSource()).schemas(upgrade).defaultSchema(upgrade).target("18").load().migrate();
-            assertEquals(120000L,jdbc.queryForObject("SELECT expected_duration_ms FROM "+upgrade+".template_stage WHERE id=?",Long.class,stage));
-            assertNull(jdbc.queryForObject("SELECT instructions_html FROM "+upgrade+".template_stage WHERE id=?",String.class,stage));
-            assertEquals(0L,jdbc.queryForObject("SELECT count(*) FROM "+upgrade+".template_image",Long.class));
-            assertEquals(0L,jdbc.queryForObject("SELECT count(*) FROM "+upgrade+".template_stage_image",Long.class));
-        }finally{jdbc.execute("DROP SCHEMA \""+upgrade+"\" CASCADE");}
-    }
-    record CopyFixture(Configured first,UUID second,UUID used,UUID unused) {}
-    CopyFixture copyFixture()throws Exception{
-        var f=configured(true,true);UUID used=upload(f.template());
-        UUID unused=images.upload(root.principal(),f.template(),version(f),UUID.randomUUID(),new java.io.ByteArrayInputStream(cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("jpeg",3,4))).id();
-        html(f,"<h2>Task</h2>"+imageHtml(f.template(),used)+imageHtml(f.template(),used));
-        UUID second=service.createStage(root.principal(),f.template(),version(f),UUID.randomUUID(),"Second",1000L,10L).id();
-        service.updateStage(root.principal(),f.template(),second,version(f),"Second",1000L,10L,true,imageHtml(f.template(),used));
-        service.configure(root.principal(),f.template(),second,version(f),config(false,true,"second-code",0));
-        return new CopyFixture(f,second,used,unused);
-    }
-    void equalStageConfiguration(UUID original,UUID copy){
-        var first=new HashMap<>(jdbc.queryForMap("SELECT * FROM template_stage WHERE id=?",original));
-        var second=new HashMap<>(jdbc.queryForMap("SELECT * FROM template_stage WHERE id=?",copy));
-        for(String identity:List.of("id","race_template_id","sequence_no","instructions_html")){first.remove(identity);second.remove(identity);}
-        assertTrue(first.equals(second),"Every current stage configuration column must match; sensitive values are not printed");
-    }
-    List<Long> duplicationCounts(){return List.of("race_template","template_stage","template_image","template_stage_image","audit_event","admin_role_command").stream().map(table->count("SELECT count(*) FROM "+table)).toList();}
-    Set<String> imageFiles()throws Exception{try(var files=java.nio.file.Files.list(IMAGE_DIR)){return files.map(file->file.getFileName().toString()).filter(name->!name.equals(".storage.lock")).collect(java.util.stream.Collectors.toSet());}}
-    void failedCopyAudit(UUID source,boolean stage,Runnable operation){
-        var injected=new IllegalStateException("Injected copy audit failure");
-        doAnswer(call->{assertTrue(TransactionSynchronizationManager.isActualTransactionActive());call.callRealMethod();throw injected;})
-            .when(audit).appendTemplateCopy(any(),any(),eq(root.id()),any(),eq(source),any(),eq(stage));
-        try{Throwable failure=assertThrows(RuntimeException.class,operation::run);while(failure.getCause()!=null)failure=failure.getCause();assertSame(injected,failure);}
-        finally{doCallRealMethod().when(audit).appendTemplateCopy(any(),any(),eq(root.id()),any(),eq(source),any(),eq(stage));}
-    }
-    @ParameterizedTest @ValueSource(strings={"DRAFT","READY"})
-    void duplicatesCompleteTemplateAndAllImagesIndependently(String status)throws Exception{
-        var data=copyFixture();var f=data.first();if(status.equals("READY"))service.state(root.principal(),f.template(),version(f),"READY");
-        var original=service.detail(root.principal(),f.template());var created=copies.duplicate(root.principal(),f.template(),UUID.randomUUID());
-        var copy=service.detail(root.principal(),created.id());assertEquals(0,copy.version());assertEquals("DRAFT",copy.status());assertEquals(original.name()+" (kopie)",copy.name());assertEquals(original.description(),copy.description());assertEquals(original.skipPenaltyPoints(),copy.skipPenaltyPoints());assertEquals(2,copy.stages().size());assertEquals(original,service.detail(root.principal(),f.template()));
-        var copiedImages=images.list(root.principal(),copy.id());assertEquals(2,copiedImages.size());assertEquals(1,copiedImages.stream().filter(i->i.used()).count());
-        var used=copiedImages.stream().filter(i->i.used()).findFirst().orElseThrow();var unused=copiedImages.stream().filter(i->!i.used()).findFirst().orElseThrow();
-        assertNotEquals(data.used(),used.id());assertNotEquals(data.unused(),unused.id());
-        assertArrayEquals(images.content(root.principal(),f.template(),data.used()).bytes(),images.content(root.principal(),copy.id(),used.id()).bytes());
-        assertArrayEquals(images.content(root.principal(),f.template(),data.unused()).bytes(),images.content(root.principal(),copy.id(),unused.id()).bytes());
-        for(int i=0;i<2;i++){
-            var old=original.stages().get(i);var next=copy.stages().get(i);assertNotEquals(old.id(),next.id());assertEquals(i+1,next.sequenceNo());equalStageConfiguration(old.id(),next.id());
-            assertFalse(next.instructionsHtml().contains(f.template().toString()));assertTrue(next.instructionsHtml().contains(used.url()));
-            assertEquals(Set.of(used.id()),templateStore.usedImages(next.id()));
+        var readiness=service.readiness(root.principal(),f.template());
+        if(deleted){
+            assertEquals(1,stage.missingReferences().size());var warning=stage.missingReferences().getFirst();
+            assertEquals("FILE_NOT_FOUND",warning.code());assertEquals("most.png",warning.targetFileName());
+            assertEquals(f.stage(),warning.sourceStageId());assertEquals("IMAGE",warning.referenceType());
+            assertFalse(readiness.ready());assertTrue(readiness.errors().stream().anyMatch(e->e.code().equals("MISSING_FILE")));
+            assertThrows(cz.mh.rallye.rallye_backend.templates.application.TemplateReadiness.NotReady.class,()->service.state(root.principal(),f.template(),detail.version(),"READY"));
+        }else{
+            assertTrue(stage.missingReferences().isEmpty());assertTrue(readiness.ready());
+            assertTrue(images.content(root.principal(),f.template(),"most.png").bytes().length>0);
+            assertEquals("TEMPLATE_IMAGE_IN_USE",assertThrows(AuthFailure.class,()->images.delete(root.principal(),f.template(),"most.png",detail.version())).code());
         }
-        assertTrue(passwords.matches("SYNTHETIC-CODE",storedHash(copy.stages().getFirst().id())));
-        assertEquals(2,count("SELECT count(*) FROM template_stage_image WHERE image_id=?",used.id()));
-        long events=count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_DUPLICATED' AND metadata->>'sourceId'=?",copy.id(),f.template().toString());assertEquals(1,events);
-        String ledger=jdbc.queryForObject("SELECT result_data::text FROM admin_role_command WHERE target_id=?",String.class,copy.id());assertFalse(ledger.contains("code"));
-        String auditJson=jdbc.queryForObject("SELECT metadata::text FROM audit_event WHERE target_id=?",String.class,copy.id());assertFalse(auditJson.contains("hash"));
-        service.updateStage(root.principal(),copy.id(),copy.stages().getFirst().id(),0,"Edited",0L,0L,true,"<p>Independent</p>");
-        assertEquals(original,service.detail(root.principal(),f.template()));
+        assertEquals(detail,service.detail(root.principal(),f.template()));
     }
-    @Test void duplicateIncompleteEmptyDraftAndLongUnicodeName(){
-        UUID original=service.create(root.principal(),UUID.randomUUID(),"🚗".repeat(100),"Description",0).id();
-        var copy=copies.duplicate(root.principal(),original,UUID.randomUUID());assertEquals(100,service.detail(root.principal(),copy.id()).name().codePointCount(0,service.detail(root.principal(),copy.id()).name().length()));assertTrue(service.detail(root.principal(),copy.id()).stages().isEmpty());
-        service.createStage(root.principal(),original,0,UUID.randomUUID(),null,null,null);var incomplete=copies.duplicate(root.principal(),original,UUID.randomUUID());assertNull(service.detail(root.principal(),incomplete.id()).stages().getFirst().name());assertFalse(service.readiness(root.principal(),incomplete.id()).ready());
+    @ParameterizedTest @ValueSource(strings={"DRAFT","READY"}) void duplicationKeepsNamesAndRelativeSourceAndRewritesOnlyExplicitImages(String status)throws Exception{
+        var f=configured(true,true);upload(f.template(),"most.png");upload(f.template(),"unused.png");String source="# Task\n\n![relative](most.png)\n\n![explicit]("+cz.mh.rallye.rallye_backend.templates.application.ImageNames.url(f.template(),"most.png")+")\n";markdown(f,source);
+        if(status.equals("READY"))service.state(root.principal(),f.template(),version(f),"READY");var before=service.detail(root.principal(),f.template());var copy=copies.duplicate(root.principal(),f.template(),UUID.randomUUID());var detail=service.detail(root.principal(),copy.id());assertEquals("DRAFT",detail.status());assertEquals(0,detail.version());assertEquals(before,service.detail(root.principal(),f.template()));assertEquals(2,images.list(root.principal(),copy.id()).size());
+        var next=detail.stages().getFirst();assertNotEquals(f.stage(),next.id());assertTrue(next.instructionsMarkdown().contains("![relative](most.png)"));assertFalse(next.instructionsMarkdown().contains(f.template().toString()));assertTrue(next.instructionsRenderedHtml().contains(copy.id().toString()));assertArrayEquals(images.content(root.principal(),f.template(),"most.png").bytes(),images.content(root.principal(),copy.id(),"most.png").bytes());assertTrue(passwords.matches("SYNTHETIC-CODE",storedHash(next.id())));
+        images.delete(root.principal(),copy.id(),"unused.png",0);assertTrue(java.nio.file.Files.exists(imagePath(f.template(),"unused.png")));
     }
-    @Test void stageCopyIsImmediateCompleteSharedAndInvalidatesReady()throws Exception{
-        var data=copyFixture();var f=data.first();service.state(root.principal(),f.template(),version(f),"READY");long v=version(f);var files=imageFiles();
-        var created=copies.duplicateStage(root.principal(),f.template(),f.stage(),v,UUID.randomUUID());var result=service.detail(root.principal(),f.template());
-        assertEquals(List.of(f.stage(),created.id(),data.second()),result.stages().stream().map(TemplateService.StageView::id).toList());assertEquals(List.of(1,2,3),result.stages().stream().map(TemplateService.StageView::sequenceNo).toList());assertEquals(v+1,result.version());assertEquals("DRAFT",result.status());
-        equalStageConfiguration(f.stage(),created.id());assertEquals(result.stages().getFirst().instructionsHtml(),result.stages().get(1).instructionsHtml());assertEquals(Set.of(data.used()),templateStore.usedImages(created.id()));assertEquals(files,imageFiles());assertTrue(passwords.matches("SYNTHETIC-CODE",storedHash(created.id())));
-        assertEquals("TEMPLATE_IMAGE_IN_USE",assertThrows(AuthFailure.class,()->images.delete(root.principal(),f.template(),data.used(),v+1)).code());
-        assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_STAGE_DUPLICATED' AND metadata->>'sourceId'=?",created.id(),f.stage().toString()));
+    @Test void stageCopySharesNamedImagesAndPreservesSourceExactly()throws Exception{
+        var f=configured(true,true);upload(f.template(),"most.png");String source="![Most](most.png)\n";markdown(f,source);long v=version(f);var duplicate=copies.duplicateStage(root.principal(),f.template(),f.stage(),v,UUID.randomUUID());
+        assertEquals(source,service.stageDetail(root.principal(),f.template(),duplicate.id()).instructionsMarkdown());assertEquals(2,count("SELECT count(*) FROM template_stage_image WHERE image_id=?",imageId(f.template(),"most.png")));assertEquals(v+1,version(f));assertEquals(1,images.list(root.principal(),f.template()).size());
     }
-    @Test void duplicatingLastStageOfDraftKeepsContiguousOrder(){
-        var f=configured(false,true);long v=version(f);var first=copies.duplicateStage(root.principal(),f.template(),f.stage(),v,UUID.randomUUID());var second=copies.duplicateStage(root.principal(),f.template(),first.id(),v+1,UUID.randomUUID());
-        assertEquals(List.of(f.stage(),first.id(),second.id()),service.detail(root.principal(),f.template()).stages().stream().map(TemplateService.StageView::id).toList());assertEquals("DRAFT",service.detail(root.principal(),f.template()).status());
+    @Test void deletingTemplateRemovesNamedFilesAndReferences()throws Exception{
+        var f=configured(true,false);upload(f.template(),"mapa.png");markdown(f,"![x](mapa.png)");service.delete(root.principal(),f.template(),version(f));assertFalse(java.nio.file.Files.exists(imagePath(f.template(),"mapa.png")));assertEquals(0,count("SELECT count(*) FROM template_image WHERE race_template_id=?",f.template()));
     }
-    @Test void duplicateReplayConflictAndCrossOperationNamespace(){
-        var f=configured(false,true);UUID fullKey=UUID.randomUUID(),stageKey=UUID.randomUUID();
-        var full=copies.duplicate(root.principal(),f.template(),fullKey);assertEquals(full,copies.duplicate(root.principal(),f.template(),fullKey));
-        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,()->copies.duplicate(root.principal(),create(),fullKey)).code());
-        long v=version(f);var stage=copies.duplicateStage(root.principal(),f.template(),f.stage(),v,stageKey);
-        assertEquals(stage,copies.duplicateStage(root.principal(),f.template(),f.stage(),v,stageKey));
-        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,()->copies.duplicateStage(root.principal(),f.template(),f.stage(),v+1,stageKey)).code());
-        assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,()->copies.duplicateStage(root.principal(),f.template(),f.stage(),v,fullKey)).code());
-        assertEquals("TEMPLATE_VERSION_CONFLICT",assertThrows(AuthFailure.class,()->copies.duplicateStage(root.principal(),f.template(),f.stage(),v,UUID.randomUUID())).code());
-        service.delete(root.principal(),f.template(),version(f));
-        assertEquals(full,copies.duplicate(root.principal(),f.template(),fullKey));
-        assertEquals(stage,copies.duplicateStage(root.principal(),f.template(),f.stage(),v,stageKey));
+    @Test void invalidNamesAndOrdinaryUsersCannotUploadOrRead()throws Exception{
+        UUID template=create();var ordinary=actor();assertEquals(403,assertThrows(AuthFailure.class,()->images.content(ordinary.principal(),template,"mapa.png")).status());
+        for(String name:List.of("../x.png","C:\\x.png","a/b.png","CON.png","a\nb.png"))assertEquals("INVALID_IMAGE_NAME",assertThrows(AuthFailure.class,()->images.upload(root.principal(),template,0,UUID.randomUUID(),name,png())).code());
+        mvc.perform(post("/api/v1/race-templates/"+template+"/images").header("Authorization","Bearer "+ordinary.secret())).andExpect(status().isForbidden());
     }
-    @Test void fullCopyAuditFailureRollsBackAllRowsAndNewFiles()throws Exception{
-        var data=copyFixture();var f=data.first();var counts=duplicationCounts();var files=imageFiles();
-        failedCopyAudit(f.template(),false,()->copies.duplicate(root.principal(),f.template(),UUID.randomUUID()));assertEquals(counts,duplicationCounts());assertEquals(files,imageFiles());
+    @Test void v19GuardAndNameUniquenessAreEnforced()throws Exception{
+        UUID template=create();upload(template,"Most.png");assertThrows(DataAccessException.class,()->jdbc.update("INSERT INTO template_image(id,race_template_id,content_type,byte_size,width,height,created_at,file_name,name_key) SELECT gen_random_uuid(),race_template_id,content_type,byte_size,width,height,created_at,'most.PNG',name_key FROM template_image WHERE race_template_id=?",template));
+        tx().executeWithoutResult(s->{assertFalse(facts.forAccount(root.id()).historical());jdbc.update("UPDATE flyway_schema_history SET script='V19__unknown.sql' WHERE version='19'");assertEquals(503,assertThrows(AuthFailure.class,()->facts.forAccount(root.id())).status());s.setRollbackOnly();});
     }
-    @Test void stageCopyAuditFailureRollsBackOrderVersionUsageAndLedger()throws Exception{
-        var data=copyFixture();var f=data.first();var before=service.detail(root.principal(),f.template());var counts=duplicationCounts();var files=imageFiles();
-        failedCopyAudit(f.stage(),true,()->copies.duplicateStage(root.principal(),f.template(),f.stage(),before.version(),UUID.randomUUID()));assertEquals(before,service.detail(root.principal(),f.template()));assertEquals(counts,duplicationCounts());assertEquals(files,imageFiles());
+
+    @Test void duplicateAuditFailureRollsBackMetadataLedgerAndNamedFiles()throws Exception{
+        var f=configured(true,true);upload(f.template(),"most.png");markdown(f,"![Most](most.png)");var before=service.detail(root.principal(),f.template());long templates=count("SELECT count(*) FROM race_template"),ledger=count("SELECT count(*) FROM admin_role_command"),events=count("SELECT count(*) FROM audit_event");
+        Set<String> files;try(var paths=java.nio.file.Files.walk(IMAGE_DIR)){files=paths.map(IMAGE_DIR::relativize).map(Object::toString).collect(java.util.stream.Collectors.toSet());}
+        var failure=new IllegalStateException("Injected copy audit failure");clearInvocations(audit);
+        doAnswer(invocation->{invocation.callRealMethod();throw failure;}).when(audit).appendTemplateCopy(any(),any(),any(),any(),any(),any(),anyBoolean());
+        try{RuntimeException thrown=assertThrows(RuntimeException.class,()->copies.duplicate(root.principal(),f.template(),UUID.randomUUID()));while(thrown.getCause() instanceof RuntimeException cause)thrown=cause;assertSame(failure,thrown);}finally{reset(audit);}
+        assertEquals(before,service.detail(root.principal(),f.template()));assertEquals(templates,count("SELECT count(*) FROM race_template"));assertEquals(ledger,count("SELECT count(*) FROM admin_role_command"));assertEquals(events,count("SELECT count(*) FROM audit_event"));
+        try(var paths=java.nio.file.Files.walk(IMAGE_DIR)){assertEquals(files,paths.map(IMAGE_DIR::relativize).map(Object::toString).collect(java.util.stream.Collectors.toSet()));}
     }
-    @Test void fullCopyCommandFailureAfterInsertRollsBackAllDataAndFiles()throws Exception{
-        var data=copyFixture();var counts=duplicationCounts();var files=imageFiles();UUID key=UUID.randomUUID();var injected=new IllegalStateException("Injected copy ledger failure");
-        doAnswer(call->{call.callRealMethod();assertEquals(1,count("SELECT count(*) FROM admin_role_command WHERE actor_id=? AND command_key=?",root.id(),key));throw injected;}).when(commands).save(eq(root.id()),eq(key),any(),eq("TEMPLATE_DUPLICATE"),anyString(),anyString(),any());
-        try{Throwable failure=assertThrows(RuntimeException.class,()->copies.duplicate(root.principal(),data.first().template(),key));while(failure.getCause()!=null)failure=failure.getCause();assertSame(injected,failure);assertEquals(counts,duplicationCounts());assertEquals(files,imageFiles());}
-        finally{doCallRealMethod().when(commands).save(eq(root.id()),eq(key),any(),eq("TEMPLATE_DUPLICATE"),anyString(),anyString(),any());}
+    @Test void upgradeV18ToV19DiscardsOnlyDisposableInstructionAndImageContent()throws Exception{
+        String upgrade=SCHEMA+"_v19";assertTrue(upgrade.matches("it_templates_[0-9a-f]{32}_v19"));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_database()",String.class));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_user",String.class));
+        UUID template=UUID.randomUUID(),stage=UUID.randomUUID(),image=UUID.randomUUID();
+        try{
+            org.flywaydb.core.Flyway.configure().dataSource(jdbc.getDataSource()).schemas(upgrade).defaultSchema(upgrade).target("18").load().migrate();
+            jdbc.update("INSERT INTO "+upgrade+".race_template(id,name,skip_penalty_points,status,version,created_at,updated_at) VALUES (?,'Keep name',-3,'READY',4,now(),now())",template);
+            jdbc.update("INSERT INTO "+upgrade+".template_stage(id,race_template_id,sequence_no,name,instructions_html,max_penalty_points) VALUES (?,?,1,'Keep stage','<p>Disposable</p>',7)",stage,template);
+            jdbc.update("INSERT INTO "+upgrade+".template_image VALUES (?,?,'image/png',10,1,1,now())",image,template);
+            jdbc.update("INSERT INTO "+upgrade+".template_stage_image VALUES (?,?,?)",stage,image,template);
+            org.flywaydb.core.Flyway.configure().dataSource(jdbc.getDataSource()).schemas(upgrade).defaultSchema(upgrade).target("19").load().migrate();
+            assertNull(jdbc.queryForObject("SELECT instructions_markdown FROM "+upgrade+".template_stage WHERE id=?",String.class,stage));assertEquals(7,count("SELECT max_penalty_points FROM "+upgrade+".template_stage WHERE id=?",stage));
+            assertEquals("DRAFT",jdbc.queryForObject("SELECT status FROM "+upgrade+".race_template WHERE id=?",String.class,template));assertEquals(5,count("SELECT version FROM "+upgrade+".race_template WHERE id=?",template));assertEquals(0,count("SELECT count(*) FROM "+upgrade+".template_image"));assertEquals(0,count("SELECT count(*) FROM "+upgrade+".template_stage_image"));
+            assertEquals(1,count("SELECT count(*) FROM "+upgrade+".audit_event WHERE target_id=? AND event_type='TEMPLATE_DRAFTED'",template));
+        }finally{jdbc.execute("DROP SCHEMA IF EXISTS "+upgrade+" CASCADE");}
     }
-    @Test void missingSourceImageRollsBackEarlierFileCopies()throws Exception{
-        var data=copyFixture();var ordered=templateStore.images(data.first().template());UUID missing=ordered.getLast().id();var path=IMAGE_DIR.resolve(missing+".photo");byte[] backup=java.nio.file.Files.readAllBytes(path);java.nio.file.Files.delete(path);
-        try{var counts=duplicationCounts();var files=imageFiles();assertEquals(503,assertThrows(AuthFailure.class,()->copies.duplicate(root.principal(),data.first().template(),UUID.randomUUID())).status());assertEquals(counts,duplicationCounts());assertEquals(files,imageFiles());}
-        finally{java.nio.file.Files.write(path,backup);}
+
+    cz.mh.rallye.rallye_backend.templates.application.TemplateFileService.Uploaded file(UUID template,String name,String source){return file(template,name,source.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+    cz.mh.rallye.rallye_backend.templates.application.TemplateFileService.Uploaded file(UUID template,String name,byte[] bytes){return files.upload(root.principal(),template,service.detail(root.principal(),template).version(),UUID.randomUUID(),name,new java.io.ByteArrayInputStream(bytes));}
+    @Test void fileLibraryCyclesMissingTargetsAndReadyGuard()throws Exception{
+        var f=configured(true,false);file(f.template(),"a.md","# A\n[B](b.md) ![Mapa](mapa.png)");var report=files.list(root.principal(),f.template());assertEquals(2,report.missingReferences().size());assertFalse(service.readiness(root.principal(),f.template()).ready());assertEquals("TEMPLATE_NOT_READY",assertThrows(TemplateReadiness.NotReady.class,()->service.state(root.principal(),f.template(),version(f),"READY")).getMessage());
+        file(f.template(),"b.md","[A](a.md)");upload(f.template(),"mapa.png");assertTrue(files.list(root.principal(),f.template()).missingReferences().isEmpty());assertTrue(service.readiness(root.principal(),f.template()).ready());
+        assertEquals("TEMPLATE_FILE_IN_USE",assertThrows(AuthFailure.class,()->files.delete(root.principal(),f.template(),"a.md",version(f))).code());assertEquals("TEMPLATE_IMAGE_IN_USE",assertThrows(AuthFailure.class,()->images.delete(root.principal(),f.template(),"mapa.png",version(f))).code());
+        assertTrue(new String(files.content(root.principal(),f.template(),"a.md").bytes(),java.nio.charset.StandardCharsets.UTF_8).contains("/files/b.md"));
     }
-    @Test void concurrentSameKeyFullCopiesCreateExactlyOneSnapshot()throws Exception{
-        var f=copyFixture().first();UUID key=UUID.randomUUID();long before=count("SELECT count(*) FROM race_template");
-        var result=race(()->copies.duplicate(root.principal(),f.template(),key).id().toString(),()->copies.duplicate(root.principal(),f.template(),key).id().toString());
-        assertEquals(result.getFirst(),result.getLast());assertEquals(before+1,count("SELECT count(*) FROM race_template"));assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_DUPLICATED'",UUID.fromString(result.getFirst())));
+    @Test void newDocumentMissingTargetInvalidatesReadyExactlyOnce(){
+        var f=configured(true,false);service.state(root.principal(),f.template(),version(f),"READY");long v=version(f);UUID key=UUID.randomUUID();String source="[Later](later.pdf)";
+        var first=files.upload(root.principal(),f.template(),v,key,"guide.md",new java.io.ByteArrayInputStream(source.getBytes(java.nio.charset.StandardCharsets.UTF_8)));assertEquals(v+1,first.version());assertEquals("DRAFT",first.status());assertEquals(1,first.missingReferences().size());
+        assertEquals(first,files.upload(root.principal(),f.template(),v,key,"guide.md",new java.io.ByteArrayInputStream(source.getBytes(java.nio.charset.StandardCharsets.UTF_8))));assertEquals(v+1,version(f));
     }
-    @Test void concurrentStageCopiesUseVersionAndIdempotenceWithoutGaps()throws Exception{
-        var f=configured(false,true);long v=version(f);UUID key=UUID.randomUUID();
-        var replay=race(()->copies.duplicateStage(root.principal(),f.template(),f.stage(),v,key).id().toString(),()->copies.duplicateStage(root.principal(),f.template(),f.stage(),v,key).id().toString());assertEquals(replay.getFirst(),replay.getLast());assertEquals(v+1,version(f));
-        Callable<String> copy=()->{try{copies.duplicateStage(root.principal(),f.template(),f.stage(),v+1,UUID.randomUUID());return "OK";}catch(AuthFailure failure){return failure.code();}};
-        var conflict=race(copy,copy);assertEquals(1,conflict.stream().filter("OK"::equals).count());assertEquals(1,conflict.stream().filter("TEMPLATE_VERSION_CONFLICT"::equals).count());assertEquals(List.of(1,2,3),service.detail(root.principal(),f.template()).stages().stream().map(TemplateService.StageView::sequenceNo).toList());
+    @Test void forwardStageLinkBecomesValidAfterUploadAndPreventsDeletion()throws Exception{
+        var f=configured(true,false);markdown(f,"[Rules](pravidla.pdf)");assertEquals(1,service.stageDetail(root.principal(),f.template(),f.stage()).missingReferences().size());file(f.template(),"pravidla.pdf",cz.mh.rallye.rallye_backend.templates.TemplateFilesTest.pdf());assertTrue(service.stageDetail(root.principal(),f.template(),f.stage()).missingReferences().isEmpty());assertEquals("TEMPLATE_FILE_IN_USE",assertThrows(AuthFailure.class,()->files.delete(root.principal(),f.template(),"pravidla.pdf",version(f))).code());
+        mvc.perform(get(cz.mh.rallye.rallye_backend.templates.application.ImageNames.fileUrl(f.template(),"pravidla.pdf")).header("Authorization","Bearer "+root.secret())).andExpect(status().isOk()).andExpect(header().string("Content-Disposition",org.hamcrest.Matchers.startsWith("attachment;")));
     }
-    @Test void copiesCannotBypassCurrentAdminOrRevealSecretsInHttp()throws Exception{
-        var f=configured(true,true);var ordinary=actor();
-        assertEquals(403,assertThrows(AuthFailure.class,()->copies.duplicate(ordinary.principal(),f.template(),UUID.randomUUID())).status());
-        assertEquals(403,assertThrows(AuthFailure.class,()->copies.duplicateStage(ordinary.principal(),f.template(),f.stage(),version(f),UUID.randomUUID())).status());
-        var response=mvc.perform(post("/api/v1/race-templates/"+f.template()+"/duplicate").header("Authorization","Bearer "+root.secret()).header("Idempotency-Key",UUID.randomUUID())).andExpect(status().isCreated()).andReturn();
-        var id=tools.jackson.databind.json.JsonMapper.builder().build().readTree(response.getResponse().getContentAsString()).get("id").asString();
-        var detail=mvc.perform(get("/api/v1/race-templates/"+id).header("Authorization","Bearer "+root.secret())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertFalse(detail.contains(storedHash(f.stage())));assertFalse(detail.contains("newCode"));assertFalse(detail.contains("synthetic-code"));
-        assertEquals("TEMPLATE_NOT_FOUND",assertThrows(AuthFailure.class,()->copies.duplicate(root.principal(),UUID.randomUUID(),UUID.randomUUID())).code());
-        assertEquals("TEMPLATE_STAGE_NOT_FOUND",assertThrows(AuthFailure.class,()->copies.duplicateStage(root.principal(),f.template(),UUID.randomUUID(),version(f),UUID.randomUUID())).code());
+    @Test void aliasesShareOneNamespaceButImagesDoNotExposeDocuments()throws Exception{
+        UUID template=create();upload(template,"mapa.png");assertEquals(1,files.list(root.principal(),template).items().size());assertEquals("TEMPLATE_FILE_NAME_CONFLICT",assertThrows(AuthFailure.class,()->file(template,"MAPA.PNG",cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",12,8))).code());file(template,"pokyny.md","Text");assertEquals(1,images.list(root.principal(),template).size());assertEquals("TEMPLATE_IMAGE_NOT_FOUND",assertThrows(AuthFailure.class,()->images.content(root.principal(),template,"pokyny.md")).code());assertEquals("TEMPLATE_IMAGE_NOT_FOUND",assertThrows(AuthFailure.class,()->images.delete(root.principal(),template,"pokyny.md",0)).code());
+    }
+    @Test void documentsAndPdfCopyWithExplicitAndRelativeReferences()throws Exception{
+        var f=configured(true,false);upload(f.template(),"mapa.png");file(f.template(),"rules.pdf",cz.mh.rallye.rallye_backend.templates.TemplateFilesTest.pdf());file(f.template(),"guide.md","[Rules]("+cz.mh.rallye.rallye_backend.templates.application.ImageNames.fileUrl(f.template(),"rules.pdf")+") ![Map](mapa.png)");markdown(f,"[Guide](guide.md)");
+        var copy=copies.duplicate(root.principal(),f.template(),UUID.randomUUID());assertEquals(3,files.list(root.principal(),copy.id()).items().size());assertTrue(files.list(root.principal(),copy.id()).missingReferences().isEmpty());String html=new String(files.content(root.principal(),copy.id(),"guide.md").bytes(),java.nio.charset.StandardCharsets.UTF_8);assertTrue(html.contains(copy.id().toString()));assertFalse(html.contains(f.template().toString()));assertArrayEquals(files.content(root.principal(),f.template(),"rules.pdf").bytes(),files.content(root.principal(),copy.id(),"rules.pdf").bytes());
+    }
+    @Test void fileUploadAndDeleteRollbackAuditMetadataSourcesAndBytes(){
+        UUID template=create();long countBefore=count("SELECT count(*) FROM template_image WHERE race_template_id=?",template);UUID key=UUID.randomUUID();
+        failedAudit(Event.TEMPLATE_FILE_CREATED,template,()->files.upload(root.principal(),template,0,key,"rollback.md",new java.io.ByteArrayInputStream("[Later](later.md)".getBytes(java.nio.charset.StandardCharsets.UTF_8))));assertEquals(countBefore,count("SELECT count(*) FROM template_image WHERE race_template_id=?",template));assertFalse(java.nio.file.Files.exists(imagePath(template,"rollback.md")));assertEquals(0,count("SELECT count(*) FROM admin_role_command WHERE command_key=?",key));
+        file(template,"keep.md","Text");failedAudit(Event.TEMPLATE_FILE_DELETED,template,()->files.delete(root.principal(),template,"keep.md",0));assertTrue(java.nio.file.Files.exists(imagePath(template,"keep.md")));assertEquals(1,files.list(root.principal(),template).items().size());
+    }
+    @Test void concurrentForwardUploadAndDeleteCannotLoseReferencedTarget()throws Exception{
+        UUID template=create();file(template,"target.md","Text");var results=race(()->{try{file(template,"source.md","[Target](target.md)");return "UPLOADED";}catch(AuthFailure e){return e.code();}},()->{try{files.delete(root.principal(),template,"target.md",0);return "DELETED";}catch(AuthFailure e){return e.code();}});
+        var report=files.list(root.principal(),template);if(results.contains("DELETED"))assertEquals(1,report.missingReferences().size());else assertTrue(report.missingReferences().isEmpty());
+    }
+    @Test void v20RejectsInconsistentTypesAndUnknownMigrationNames()throws Exception{
+        UUID template=create();file(template,"a.md","Text");sqlState("23514",()->jdbc.update("UPDATE template_image SET width=1 WHERE race_template_id=?",template));sqlState("23514",()->jdbc.update("UPDATE template_image SET markdown_source=NULL WHERE race_template_id=?",template));
+        tx().executeWithoutResult(s->{assertFalse(facts.forAccount(root.id()).historical());jdbc.update("UPDATE flyway_schema_history SET script='V20__unknown.sql' WHERE version='20'");assertEquals(503,assertThrows(AuthFailure.class,()->facts.forAccount(root.id())).status());s.setRollbackOnly();});
+    }
+
+    @Test void upgradeV19ToV20PreservesImagesInstructionsAndIdsAndRequiresNewReadyValidation(){
+        String upgrade=SCHEMA+"_v20";assertTrue(upgrade.matches("it_templates_[0-9a-f]{32}_v20"));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_database()",String.class));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_user",String.class));UUID template=UUID.randomUUID(),stage=UUID.randomUUID(),image=UUID.randomUUID();
+        try{
+            org.flywaydb.core.Flyway.configure().dataSource(jdbc.getDataSource()).schemas(upgrade).defaultSchema(upgrade).target("19").load().migrate();
+            jdbc.update("INSERT INTO "+upgrade+".race_template(id,name,skip_penalty_points,status,version,created_at,updated_at) VALUES (?,'Keep',-7,'READY',4,now(),now())",template);
+            jdbc.update("INSERT INTO "+upgrade+".template_stage(id,race_template_id,sequence_no,name,instructions_markdown,max_penalty_points) VALUES (?,?,1,'Keep stage','![Map](mapa.png) [Future](future.md)',7)",stage,template);
+            jdbc.update("INSERT INTO "+upgrade+".template_image(id,race_template_id,content_type,byte_size,width,height,created_at,file_name,name_key) VALUES (?,?,'image/png',10,2,3,now(),'mapa.png','MAPA.PNG')",image,template);
+            jdbc.update("INSERT INTO "+upgrade+".template_stage_image VALUES (?,?,?)",stage,image,template);
+            org.flywaydb.core.Flyway.configure().dataSource(jdbc.getDataSource()).schemas(upgrade).defaultSchema(upgrade).target("20").load().migrate();
+            assertEquals("![Map](mapa.png) [Future](future.md)",jdbc.queryForObject("SELECT instructions_markdown FROM "+upgrade+".template_stage WHERE id=?",String.class,stage));assertEquals("mapa.png",jdbc.queryForObject("SELECT file_name FROM "+upgrade+".template_image WHERE id=?",String.class,image));assertEquals(1,count("SELECT count(*) FROM "+upgrade+".template_stage_image WHERE stage_id=? AND image_id=?",stage,image));assertEquals(3,count("SELECT height FROM "+upgrade+".template_image WHERE id=?",image));assertEquals(-7,count("SELECT skip_penalty_points FROM "+upgrade+".race_template WHERE id=?",template));assertEquals("DRAFT",jdbc.queryForObject("SELECT status FROM "+upgrade+".race_template WHERE id=?",String.class,template));assertEquals(5,count("SELECT version FROM "+upgrade+".race_template WHERE id=?",template));assertEquals(1,count("SELECT count(*) FROM "+upgrade+".audit_event WHERE target_id=? AND event_type='TEMPLATE_DRAFTED'",template));
+        }finally{jdbc.execute("DROP SCHEMA IF EXISTS "+upgrade+" CASCADE");}
+    }
+
+    @Test void concurrentSameFileKeyCreatesOneDocumentAndAudit()throws Exception{
+        UUID template=create(),key=UUID.randomUUID();Callable<String> upload=()->files.upload(root.principal(),template,0,key,"same.md",new java.io.ByteArrayInputStream("Text".getBytes(java.nio.charset.StandardCharsets.UTF_8))).url();var results=race(upload,upload);assertEquals(results.getFirst(),results.getLast());assertEquals(1,count("SELECT count(*) FROM template_image WHERE race_template_id=?",template));assertEquals(1,count("SELECT count(*) FROM admin_role_command WHERE command_key=?",key));assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_FILE_CREATED'",template));
+    }
+    @Test void deletingTemplateRemovesWholeLibraryButNotItsCopy()throws Exception{
+        UUID template=create();file(template,"guide.md","[Self](guide.md) [PDF](rules.pdf)");file(template,"rules.pdf",cz.mh.rallye.rallye_backend.templates.TemplateFilesTest.pdf());var copy=copies.duplicate(root.principal(),template,UUID.randomUUID());service.delete(root.principal(),template,0);assertFalse(java.nio.file.Files.exists(imagePath(template,"guide.md")));assertFalse(java.nio.file.Files.exists(imagePath(template,"rules.pdf")));assertEquals(2,files.list(root.principal(),copy.id()).items().size());assertTrue(java.nio.file.Files.exists(imagePath(copy.id(),"guide.md")));
     }
 }

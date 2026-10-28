@@ -1,6 +1,19 @@
 # Backend: architektura a plán po etapě 2A a rozhodnutích 3b
 
-Aktuální funkční základ je [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md), která přebírá pravidla 3b a nahrazuje D04/D05 rozhodnutím D09 (jedna neměnná identita) a D03 rozhodnutím D10 (LOCAL heslo, externí potvrzení zrušení bez reautentizace). Vydání 0.7.0 a starší i rozpracovaná kopie Rallye_specifikace.md zůstávají beze změny. Potvrzené požadavky mají přednost před technickými návrhy. Etapa 2A i celý blok 3b.1–3b.6 jsou dokončeny a ověřeny. Závěrečné ověření 24. 10. 2026: 234 testů bez DB; dostupné reporty uživatelem potvrzeného PostgreSQL běhu obsahují 133 IT bez chyb. Šest ručních scénářů 3b.6c potvrdil uživatel proti rallye_dev. Etapa 3b.6 byla commitnuta a odeslána do origin/main jako 19f5ad52a5ece6d520206dcebbf382fdfc82b32b. Dokumentace sama nedává oprávnění k databázovým operacím či nasazení.
+## Konsolidace konání – specifikace 0.9.0 (2026-10-28)
+
+Autoritativní funkční pravidla konání jsou v [0.9.0](Zavody_specifikace_v0.9.0.md), zejména kapitolách 3–7 a 14. Starší realizační odstavce tohoto plánu popisují průběh vývoje, nikoliv paralelní pravidla. Nové vydání přebírá aktuální Markdown/knihovnu a stav JDBC bez statistických verzí; žádný runtime konání dosud neexistuje.
+
+Následující práce: technicky navrhnout první etapu **správa plánovaných konání a nezávislý snapshot READY šablony**, s akceptačními cíli v 14.3. Poté postupně přihlášky/účasti, start a závodní zařízení, průběhy/pokusy/uzávěrka, změny trasy/prominutí/restarty a hodnocení/publikace. Toto je doporučené pořadí, nikoliv zahájení implementace nebo schválení API.
+
+Do první etapy nepatří živý závodní runtime. Je třeba navrhnout náhradu TemplateStore.ensureDeletionSupported skutečnou kontrolou použití a zachovat fail-closed kontrolu migrací v PreRaceAccountParticipationFacts; před zavedením účastí nahradit dočasná false/false skutečnými historickými dotazy a chránit mazání posádek. Při zavedení konání nepřebírat 24h CommandStore jako jedinou evidenci závodních pokusů ani bezpečnostní audit jako trvalou závodní historii.
+
+**Rozhodnutí, která nejsou uzavřena:** navržená obnova podle aktuální trasy; detaily běžících časů, odvolání prominutí, globálního rušení, registrace a historického kapitána. Úplný seznam a oddělení potvrzeného návrhu je pouze v 14.2 specifikace, neduplikuje se zde. Obnova dle aktuální trasy není potvrzené funkční pravidlo. Ruční rozhodování úplných remíz je zrušeno, nikoliv odloženo.
+
+Tato změna je výhradně dokumentační: nová specifikace a konsolidace plánu, bez změny produkčního kódu, testů, API, migrací či databáze a bez nového testovacího běhu. Odkazy na dříve provedené testy nedokazují implementaci konání.
+
+
+Aktuální funkční základ je [specifikace 0.9.0](Zavody_specifikace_v0.9.0.md), která přebírá pravidla 3b a nahrazuje D04/D05 rozhodnutím D09 (jedna neměnná identita) a D03 rozhodnutím D10 (LOCAL heslo, externí potvrzení zrušení bez reautentizace). Vydání 0.7.0 a starší i rozpracovaná kopie Rallye_specifikace.md zůstávají beze změny. Potvrzené požadavky mají přednost před technickými návrhy. Etapa 2A i celý blok 3b.1–3b.6 jsou dokončeny a ověřeny. Závěrečné ověření 24. 10. 2026: 234 testů bez DB; dostupné reporty uživatelem potvrzeného PostgreSQL běhu obsahují 133 IT bez chyb. Šest ručních scénářů 3b.6c potvrdil uživatel proti rallye_dev. Etapa 3b.6 byla commitnuta a odeslána do origin/main jako 19f5ad52a5ece6d520206dcebbf382fdfc82b32b. Dokumentace sama nedává oprávnění k databázovým operacím či nasazení.
 
 ## Aktuální stav projektu
 
@@ -55,7 +68,7 @@ Vše zůstává pod `cz.mh.rallye.rallye_backend`:
 | `races` | Konkrétní konání a nezávislé kopie stanovišť, start a společný konec. |
 | `participation` | Přihláška přes odkaz, historický název, members_text a children_under_15, kopie z libovolné předchozí účasti, limit členů, uzamčení a pozdní zařazení. |
 | `competition` | Nevratný oficiální start, startovací/náhradní kódy, závodní zařízení, podepsané bodové úpravy, GPS/CODE, přeskočení a zrušení. |
-| `results` | Průběžné výsledky jen administrátorovi, soutěžní pořadí 1, 2, 2, 4, ruční úplné remízy, verzované ruční publikace a veřejný archiv. |
+| `results` | Průběžné výsledky jen administrátorovi, soutěžní pořadí 1, 2, 2, 4, sdílené úplné remízy bez ručního rozřazování, verzované ruční publikace a veřejný archiv. |
 | `audit` | Historie důležitých změn a bezpečnostních událostí. |
 | `statistics` | Medián dob od pěti platných vzorků, očekávané časy a dashboardové dotazy. |
 | `administration` | Jen skutečně samostatné administrativní případy užití, bez duplikace cizích pravidel. |
@@ -108,7 +121,7 @@ Odstranění aktivačního kódu se týká pouze registrace posádky do závodu.
 | Účast | Trvalý neměnný snímek interního ID kapitána při skutečném zahájení závodu a času jeho pořízení (návrh samostatné vazby nebo polí účasti), nezávislý na pozdějším vlastnictví. crew_name_at_registration jako historický snímek, members_text a children_under_15; počet členů je počet neprázdných řádků, počet 15+ jejich rozdíl. individual_started_at nastavit jednou při úspěšném původním startovacím kódu a nikdy nepřepsat náhradním. Žádná tabulka participant_member ani příznak dítěte u jednotlivých jmen. Kopie z historie není živá vazba. |
 | Limity | max_crew_members v konfiguraci závodu, výchozí 5; návrh kopie šablony do konání. Nejméně jeden člen, children_under_15 mezi 0 a počtem členů. Složení uzamknout při oficiálním startu, u pozdní účasti při zařazení. |
 | Zařízení | participation_code typu START/REPLACEMENT a race_device_authorization oddělené od user_session. Více account relací neznamená více platných oprávnění řídit účast. Token předání mobilní login relace z technického návrhu není startovací/náhradní kód závodu. |
-| Body a remízy | Samostatná score_adjustment s podepsanými body a vazbou na náhradní kód; účinná právě jednou při úspěšném použití náhradního kódu atomicky s převodem závodního oprávnění. Nepoužitý/zneplatněný nepoužitý kód má nulový dopad. tie_decision uchová vzájemné pořadí dvou i více posádek a vazbu na příslušnou úplnou remízu; audit a nepovinný interní důvod. Při přepočtu použít, jen pokud remíza trvá; po jejím zániku rozhodnutí pořadí neovlivňuje. |
+| Body a pořadí | Samostatné podepsané korekce; bodová úprava náhradního kódu právě jednou při jeho použití. Pořadí podle 0.9.0: hodnocená stanoviště, body, počet 15+, společné umístění. tie_decision se nezavádí. |
 | Publikace | result_publication/result_entry pro verze definitivních výsledků, veřejná projekce bez jmen členů. Oprava vytváří novou publikaci při zachování historie. |
 
 Při běžné správě posádky a jejích účastí ověřovat aktuální vlastnictví ze stavu DB; administrátorskou správu povolit podle aktuální role a schváleného rozsahu. Oprávnění neodvozovat dlouhodobě
@@ -132,7 +145,7 @@ Konkrétní dosažené pokrytí 2A a 3b je v coverage-3b6.md; závodní scéná�
 - Text členů s prázdnými řádky, minimum/maximum, agregovaný počet dětí, kopie z nedokončené účasti bez změny historie a uzamčení při startu.
 - Startovací kód před startem není spotřebován; nevratný oficiální start; náhradní kód neodpojí při vydání, ale až při úspěšném použití, včetně souběžných pokusů a opakování HTTP.
 - Bodová úprava přijme kladné, nulové i záporné celé body bez automatické penalizace; projeví se právě jednou až použitím kódu a rollbackuje se spolu s neúspěšnou výměnou zařízení. Nepoužitý/nahrazený nepoužitý kód skóre nemění.
-- Pořadí 1, 2, 2, 4 a tie-break podle počtu 15+, ruční rozřazení dvou i více posádek (např. 1, 2, 2, 4 na 1, 2, 3, 4), zachování přes přepočty jen při trvání remízy a audit; průběžné výsledky jen adminovi.
+- Pořadí: nejprve počet hodnocených stanovišť, potom body a počet 15+; úplná shoda sdílí umístění 1, 2, 2, 4 bez ručního rozřazování. Pracovní výsledky pouze ADMIN.
 - Publikace pouze ručně, oprava novou verzí; anonymní čtení výsledků a archivu bez jmen členů a interních důvodů; přihlášky přes odkaz bez e-mail allowlistu.
 
 ## Idempotence, transakce a čas
@@ -171,7 +184,7 @@ V etapě 3b auditovat změny posádek, převody, administrátorské zásahy vče
 
 CSV export používá read-only snapshot; po jeho dokončení zapíše AUDIT_EXPORT v samostatné transakci best effort. Selhání tohoto zápisu se bezpečně loguje.
 
-Nadále auditovat budoucí start/konec, kódy a závodní zařízení, bodové úpravy, publikace a remízy, pozdní výjimky, uzamčení členů, konfiguraci, zrušení stanovišť a bezpečnostní operace účtů podle aktuální specifikace. Historie pokusů a výsledků není auditní tabulkou určenou k administrativnímu úklidu.
+Nadále auditovat budoucí start/konec, kódy a závodní zařízení, bodové úpravy, publikace, restarty, obnovy a prominutí, pozdní výjimky, uzamčení členů, konfiguraci, zrušení stanovišť a bezpečnostní operace účtů podle aktuální specifikace. Historie pokusů a výsledků není auditní tabulkou určenou k administrativnímu úklidu.
 
 Schválení 3b.5 nahrazuje původní neomezenou retenci a ruční archivaci/mazání bezpečnostního auditu. Automatická retence je výchozích 365 dní, konfigurovatelné minimum 90 dní. Denně v 03:15 Europe/Prague se odstraní pouze události přísně starší než UTC now minus retence v 24hodinových dnech. Historie závodů, posádek a převodů se nemaže. Ruční archivace a dvoukrokové mazání se neimplementují.
 
@@ -206,10 +219,10 @@ Implementované fotografie vozidla jsou JPEG/PNG do 5 MiB (5 242 880 bajtů), ma
 | 3a – infrastruktura testů (testovací připojení ověřeno) | Vyhrazená DB/role rallye_test je dostupná a uživatel potvrdil úspěšné IT včetně lokální schránky. Postup a read-only kontroly oprávnění zůstávají v ops/postgresql-test a postgresql-test-setup.md; úspěch IT sám nedokládá provedení všech administrátorských kontrol. Žádné další cloudové změny nespouštět automaticky. |
 | 3b – dokončeno a ověřeno | 3b.1–3b.6 dokončeny; 234 běžných testů bez chyb, 133 PostgreSQL IT podle uživatelem potvrzeného běhu a dostupných reportů, šest potvrzených ručních regresních scénářů. Následuje 3c; bez zahájení implementace. |
 | 3c – 3c.1/3c.2 dokončeny podle tehdejšího rozsahu | Aktuální D09/D10: jedna neměnná identita, LOCAL cancellation s heslem, externí cancellation s relací a potvrzením. 3c.3 konsoliduje invariant a potvrzení; 3c.4 zachová mobilní PKCE a 3c.5 Apple revokaci. Žádné skutečné provider ověření dosud neproběhlo. |
-| 4 – šablony | GPS/CODE (obě zapnuté znamenají AND), časová pravidla, pořadí a připravenost. Testy DTO validace, ms hranic bodování a rozsahu; žádné kvízy. |
-| 5 – konání a účasti | Kopie šablony, přihláška přes odkaz, historický název, text členů a počet dětí, maximum (výchozí 5), kopie i z nedokončené účasti a uzamčení. Testy počítání řádků, limitů, unikátnosti a souběhu oficiálního startu s úpravami. |
-| 6 – průběh | Ruční nevratný start konání, startovací/náhradní kódy a oprávnění zařízení, podepsané bodové úpravy bez automatické penalizace, GPS/CODE, idempotence, přeskočení, zrušení a uzávěrka. Testy předčasného kódu, výměny až při použití, souběhu vydání/uplatnění, restartu a end_at. |
-| 7 – výsledky | Penalizace a podepsané úpravy, pořadí podle bodů a počtu 15+, 1, 2, 2, 4, ruční remízy platné jen při trvání shody. Průběžné jen adminovi, ruční veřejná publikace a opravy s verzemi. Testy anonymního přístupu, neveřejných členů/důvodů a historie publikací. |
+| 4 – šablony | GPS/CODE mají závazné AND při zapnutí obou kontrol; samotná GPS či CODE vyžaduje jedinou kontrolu. Časová pravidla, pořadí a připravenost. Testy DTO validace, ms hranic bodování a rozsahu; žádné kvízy. |
+| 5 – konání a účasti | Nejprve samostatná správa konání a nezávislý READY snapshot včetně knihovny; poté přihláška přes odkaz, historický název, text členů a počet dětí, maximum (výchozí 5), kopie i z nedokončené účasti a uzamčení. Testy počítání řádků, limitů, unikátnosti a souběhu oficiálního startu s úpravami. |
+| 6 – průběh | Automatický i ruční oficiální start, měnitelný společný konec během běhu (nový čas v budoucnosti), bez znovuotevření ukončeného konání; startovací/náhradní kódy a oprávnění zařízení, podepsané bodové úpravy bez automatické penalizace, GPS/CODE, idempotence průběhu/generace, přeskočení, změny trasy a pravidel, individuální prominutí a jeho odvolání, restarty/obnovy a uzávěrka. Testy předčasného kódu, výměny až při použití, souběhu vydání/uplatnění, restartu a end_at. |
+| 7 – výsledky | Hodnocená stanoviště, podepsané body, počet 15+, sdílená umístění bez ručních remíz. Pracovní výsledky ADMIN, ruční zveřejnění/stažení a nové verze. Testy ochrany členů a historie. |
 | 8 – dashboard a statistiky | REST polling, medián od pěti vzorků bez statistického verzování stanovišť, očekávané časy a oprávnění. |
 | 9 – provoz | ARM64 image, konfigurace, health checks, zálohování a obnova. Žádné cloudové nasazení bez výslovného zadání. |
 
@@ -287,7 +300,7 @@ plánované ruční scénáře. Předchozí překážka opakování IT je tím v
 
 Stav 3c.1: **dokončena a otestována** ve schváleném protokolovém rozsahu; V8 a unit/HTTP/PG testy jsou součástí implementace. Verify prošlo s 250 testy; úspěšné PostgreSQL ověření potvrdil uživatel (`.\mvnw.cmd -Pit verify`, BUILD SUCCESS). Codex PostgreSQL běh neprovedl a skutečný provider nebyl použit. Podrobný stav: [external-auth-3c1.md](external-auth-3c1.md). Část 3c.2 je implementačně dokončena a lokálně otestována: verify 271 testů, uživatelem potvrzený PostgreSQL BUILD SUCCESS a 6/6 asercí Postman složky 16; 3c.3a je implementována a uživatelem integračně ověřena (BUILD SUCCESS); 3c.3b je implementována a uživatelem potvrzeným PG během ověřena; Samostatná 3c.3c je zrušena jako překonaný rozsah po D09/D10 (regrese a dokumentace součástí dokončených 3c.3a/3c.3b); 3c.4–3c.5 zůstávají plánované.
 
-Aktuálně platí specifikace 0.8.0: D09 nahrazuje D04/D05 a D10 nahrazuje D03. Ostatní rozhodnutí zůstávají. Historie 0.7.0 se nepřepisuje; external-auth-3c.md rozlišuje současnou implementaci a navrženou V10.
+Historické rozhodnutí při vydání 0.8.0 (nyní převzaté do 0.9.0): D09 nahrazuje D04/D05 a D10 nahrazuje D03. Ostatní rozhodnutí zůstávají. Historie 0.7.0 se nepřepisuje; external-auth-3c.md rozlišuje současnou implementaci a navrženou V10.
 
 | Část | Funkční rozsah a DB/API | Ověření a dokončení | Závislosti |
 | --- | --- | --- | --- |
@@ -332,7 +345,7 @@ Změněny/vytvořeny: `AGENTS.md`, `README.md`, `docs/Rallye_specifikace.md`, ob
 Změněn pouze tento plán a vytvořeno vydání 0.5.0. Starší vydání a pracovní kopie se nepřepisují; produkční Java, testy, konfigurace a migrace se nemění. Neproběhly databázové operace, commit, push ani deployment. Zbývající obchodní nejasnosti jsou konsolidované v oddílu 14 specifikace 0.5.0; dříve otevřený počet posádek na účet, převod, kopírování nedokončené účasti a publikace výsledků už jsou potvrzené. Těchto šest oblastí je nyní uzavřeno: úprava při úspěšném použití kódu, zachování zařízení při převodu kapitána, individuální start při původním kódu, běžné/prodloužené relace, anonymizace účtu se zachováním historických členů a auditované vzájemné pořadí remizujících posádek. Zbývající otázky oddílu 14 (kvízy, okraje kódů/průběhu, publikace a další dílčí detaily) se řeší před implementací příslušné části, nikoli opětovným otevřením těchto šesti rozhodnutí.
 ## Uzavření šesti rozhodnutí v rámci 0.5.0
 
-Všech šest rozhodnutí je zapracováno do datového modelu, autentizace, transakcí a akceptačních scénářů. Anonymizační postup se týká osobních údajů samotného účtu; historický members_text se nesmí automaticky čistit spolu se jménem účtu. Veřejné DTO ani archiv členy nevystavují. Závodní zařízení je nezávislá autorita pro pokračování účasti a převod kapitána mění pouze správu; závodní operace se nesmějí omylem odmítnout jen kvůli změně captain_user_id. Individuální start je údaj účasti pro výpočet skutečné doby absolvování, ne nový společný limit. Ruční remíza nese vzájemné pořadí dvou i více účastí; audit se zachová i poté, co rozhodnutí po zániku remízy přestane ovlivňovat výsledky.
+Všech šest rozhodnutí je zapracováno do datového modelu, autentizace, transakcí a akceptačních scénářů. Anonymizační postup se týká osobních údajů samotného účtu; historický members_text se nesmí automaticky čistit spolu se jménem účtu. Veřejné DTO ani archiv členy nevystavují. Závodní zařízení je nezávislá autorita pro pokračování účasti a převod kapitána mění pouze správu; závodní operace se nesmějí omylem odmítnout jen kvůli změně captain_user_id. Individuální start je údaj účasti pro výpočet skutečné doby absolvování, ne nový společný limit. Původní ruční rozhodování remíz je zrušeno vydáním 0.9.0; neimplementovat.
 
 Pro první implementační části není otevřená žádná z těchto šesti obchodních otázek. Testovací DB i lokální přihlášení již byly ověřeny v 2A; skutečné doručování zbývá před nasazením. Před implementací příslušných okrajových operací zůstávají otázky aktuální kapitoly 14 specifikace: lhůty jiných budoucích potvrzení e-mailu než registrace 2A, kopírování počtu dětí a textové limity, aktivace prvního stanoviště a hranice uzávěrky, pozdní výjimka, rozsah veřejných historických verzí a rušení závěrečných stanovišť. Kvízy jsou odložené. Nejde o blokaci celého backendu; závislé operace vyžadují rozhodnutí před implementací.
 ## Implementace etapy 2A
@@ -553,3 +566,62 @@ Součástí závěrečného commitu jsou související úpravy seznamu posádek 
 bez rozlišení velikosti písmen a aktuální captainDisplayName). Předchozí čekající
 stavy jsou historické. Další funkční modul se nezahajuje a ruční editorový
 průchod není potvrzen. Testy se v závěrečném commit/push kroku neopakují.
+
+## Schválená následná úprava – Markdown a pojmenované obrázky (V19)
+
+HTML kontrakt 4c/4d nahrazuje jediný zdroj instructionsMarkdown (100 KiB UTF-8)
+a read-only instructionsRenderedHtml (CommonMark/GFM + jsoup). Soukromé soubory
+mají původní NFC názvy, společnou case-insensitive unikátnost a API podle názvu.
+AST řeší použití, relativní/explicitní odkazy a kopie; ostatní 4a–4d pravidla platí.
+V19 zahodí výslovně postradatelné testovací instrukce/obrázková metadata, nikoli
+ostatní konfiguraci. Přesné migration guardy byly rozšířeny pouze o známou V19.
+Přehled kontraktu a omezení: [templates-markdown.md](templates-markdown.md).
+Implementace a testy jsou připravené; PostgreSQL ověření této změny čeká na uživatele.
+Frontend ani konkrétní konání nejsou součástí. Bez commitu/pushe.
+
+Ověření této změny Codexem: Maven Wrapper verify na JDK 21.0.12.1, **BUILD SUCCESS, 577 testů, 0 failures/errors/skipped**. Git diff --check prošel. PostgreSQL integrační testy se pouze zkompilovaly a čekají na manuální běh uživatele.
+
+## Knihovna souborů šablony a Markdown odkazy (V20)
+
+Implementováno podle schváleného veřejného kontraktu [template-files.md](template-files.md):
+společné JPEG/PNG/MD/PDF soubory pod původními názvy, nové ADMIN /files API,
+kompatibilní /images, samostatné bezpečné HTML pro MD a PDF jako attachment.
+Dopředné reference v DRAFT vracejí varování, READY vyžaduje úplnost všech zdrojů.
+Cyklům se nebrání a dokumenty se nevkládají rekurzivně. API kontrakt zůstává
+závazný pro paralelní frontend. V20 zachová data/ID a staré READY vrátí s auditem
+k nové validaci. Nepřepisuje V19 ani starší migrace; nevytváří nový file framework.
+Unit/HTTP testy a PostgreSQL regrese jsou připravené; PG ověření čeká na uživatele.
+Bez commitu/pushe a bez implementace konkrétních konání.
+
+Ověření Codexem: JDK 21.0.12.1, Maven Wrapper verify – **BUILD SUCCESS, 611 testů,
+0 failures, 0 errors, 0 skipped**, včetně unit/HTTP regresí. PostgreSQL testy se
+pouze zkompilovaly; 11 nových scénářů V20 v TemplatesIT čeká na uživatelský běh.
+Git diff --check prošel. Kontrakt API zůstal beze změn.
+
+## První etapa konání – implementovaný PLANNED snapshot (V21)
+
+Implementováno JDBC API vytvoření z READY, seznam/detail, verzovaná úprava
+základních údajů a ADMIN čtení stanovišť a nezávislé knihovny konání.
+V21 přidává race_event/event_stage/event_file; nepřidává účasti ani průběhy.
+Zámky zdroje/storage, povinný audit, společná idempotence a cleanup po rollbacku
+chrání konzistentní snapshot. Použitou šablonu chrání konkrétní kontrola a FK.
+Přesné guardy znají V21; další neznámá schémata stále odmítají.
+
+GPS/CODE AND je uzavřené rozhodnutí, opravené přímo ve specifikaci 0.9.0;
+produkční konfigurace se kvůli tomu nemění. Ostatní otevřené otázky běžícího
+závodu se neřeší předčasně. API, konfigurace a ověření: [race-events-stage1.md](race-events-stage1.md).
+
+Zatím bez skutečného startu, scheduleru, registrací, mobilního závodního API,
+trasových změn, restartů, výpočtu bodů a publikací. Termíny jsou pouze nastavení.
+První etapa konání je implementována a automaticky ověřena: uživatel
+28. 10. 2026 potvrdil PostgreSQL integrační běh proti rallye_test jako
+BUILD SUCCESS. Jde o uživatelský běh, nikoliv běh Codexu. Ruční API průchod
+zatím potvrzen není.
+
+Ověření první etapy Codexem: JDK 21.0.12.1, Maven Wrapper verify – **BUILD SUCCESS,
+639 testů, 0 failures, 0 errors, 0 skipped**, včetně regresí původních modulů.
+Cílený předchozí běh měl 70 testů bez chyb. Uživatel následně potvrdil
+PostgreSQL integrační ověření proti rallye_test jako **BUILD SUCCESS**
+(28. 10. 2026), včetně 19 připravených EventsIT a V21. Codex tento běh
+neprováděl a databázi sám neměnil. Ruční ověření API není tímto potvrzeno.
+Git diff --check prošel; chráněné uživatelské soubory a V1–V20 se neměnily.

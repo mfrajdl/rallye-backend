@@ -25,8 +25,8 @@ import cz.mh.rallye.rallye_backend.shared.persistence.CommandStore;
 public class TemplateService {
     public record CodeView(boolean enabled,boolean codeConfigured,Long wrongAttemptPenaltyPoints) {}
     public record TimePenaltyView(boolean enabled,Long intervalSeconds,Long pointsPerInterval) {}
-    public record StageView(UUID id,int sequenceNo,String name,Long expectedDurationMs,Long maxPenaltyPoints,String instructionsHtml,
-                            Gps gps,CodeView code,TimePenaltyView timePenalty,Delayed delayed) {}
+    public record StageView(UUID id,int sequenceNo,String name,Long expectedDurationMs,Long maxPenaltyPoints,String instructionsMarkdown,String instructionsRenderedHtml,
+                            Gps gps,CodeView code,TimePenaltyView timePenalty,Delayed delayed,List<TemplateFileReferences.Warning> missingReferences) {}
     public record CodeChange(boolean enabled,String newCode,Long wrongAttemptPenaltyPoints) {
         @Override public String toString(){return "CodeChange[redacted]";}
     }
@@ -54,13 +54,14 @@ public class TemplateService {
     private static String name(String value,boolean required){if(value==null || value.isBlank()){if(required)throw invalid();return null;}if(value.codePointCount(0,value.length())>100)throw invalid();return value.strip();}
     private static String description(String value){if(value!=null && value.codePointCount(0,value.length())>2000)throw invalid();return value;}
     private static void stageValues(Long expected,Long max){if(expected!=null && expected<0 || max!=null && max<0)throw invalid();}
-    private static StageView view(Stage s){
+    private static StageView view(Stage s,Map<String,String> names,List<TemplateStore.Image> files){
         var c=s.configuration();var time=c.timePenalty();
-        return new StageView(s.id(),s.sequenceNo(),s.name(),s.expectedDurationMs(),s.maxPenaltyPoints(),s.instructionsHtml(),c.gps(),
+        return new StageView(s.id(),s.sequenceNo(),s.name(),s.expectedDurationMs(),s.maxPenaltyPoints(),s.instructionsMarkdown(),InstructionsMarkdown.render(s.templateId(),s.instructionsMarkdown(),names),c.gps(),
                 new CodeView(c.code().enabled(),c.code().hash()!=null,c.code().wrongAttemptPenaltyPoints()),
-                new TimePenaltyView(time.enabled(),time.intervalMs()==null?null:time.intervalMs()/1000,time.pointsPerInterval()),c.delayed());
+                new TimePenaltyView(time.enabled(),time.intervalMs()==null?null:time.intervalMs()/1000,time.pointsPerInterval()),c.delayed(),TemplateFileReferences.stage(s.templateId(),s,files));
     }
-    private View view(Template t){return new View(t.id(),t.name(),t.description(),t.skipPenaltyPoints(),t.status(),t.version(),t.createdAt(),t.updatedAt(),store.stages(t.id()).stream().map(TemplateService::view).toList());}
+    private Map<String,String> imageNames(UUID template){var names=new HashMap<String,String>();store.images(template).forEach(i->names.put(i.nameKey(),i.fileName()));return names;}
+    private View view(Template t){var files=store.images(t.id());var names=TemplateFileReferences.names(files);return new View(t.id(),t.name(),t.description(),t.skipPenaltyPoints(),t.status(),t.version(),t.createdAt(),t.updatedAt(),store.stages(t.id()).stream().map(s->view(s,names,files)).toList());}
     private Stage stage(UUID template,UUID id){return store.stages(template).stream().filter(s->s.id().equals(id)).findFirst().orElseThrow(()->new AuthFailure(404,"TEMPLATE_STAGE_NOT_FOUND"));}
     private Created replay(Principal actor,UUID key,String op,String request){if(key==null)throw invalid();String result=commands.replay(actor.accountId(),key,op,request,now());return result==null?null:json.readValue(result,Created.class);}
     private void save(Principal actor,UUID key,String op,String request,Created result){commands.save(actor.accountId(),key,result.id(),op,request,json.writeValueAsString(result),now());}
@@ -82,12 +83,12 @@ public class TemplateService {
             store.update(id,name,description,skip,t.skipPenaltyPoints()!=skip,now());audit.template(actor.accountId(),Event.TEMPLATE_UPDATED,id,false);
         }return view(template(id));
     }
-    public void delete(Principal actor,UUID id,long expected){authorize(actor);var t=template(id);version(t,expected);store.ensureDeletionSupported();var images=store.images(id).stream().map(TemplateStore.Image::id).toList();store.delete(id);imageFiles.removeAfterCommit(images);audit.template(actor.accountId(),Event.TEMPLATE_DELETED,id,false);}
-    public TemplateReadiness.Report readiness(Principal actor,UUID id){authorize(actor);var t=template(id);return TemplateReadiness.check(t,store.stages(id));}
+    public void delete(Principal actor,UUID id,long expected){authorize(actor);var t=template(id);version(t,expected);store.ensureDeletionSupported(id);var images=store.images(id);store.delete(id);imageFiles.removeAfterCommit(images);audit.template(actor.accountId(),Event.TEMPLATE_DELETED,id,false);}
+    public TemplateReadiness.Report readiness(Principal actor,UUID id){authorize(actor);var t=template(id);return TemplateFileReferences.readiness(t,store.stages(id),store.images(id));}
     public View state(Principal actor,UUID id,long expected,String status){
         authorize(actor);var t=template(id);version(t,expected);if(status==null || !Set.of("DRAFT","READY").contains(status))throw invalid();
         if(status.equals("READY")){
-            var report=TemplateReadiness.check(t,store.stages(id));
+            var report=TemplateFileReferences.readiness(t,store.stages(id),store.images(id));
             if(!report.ready())throw new TemplateReadiness.NotReady(report);
         }
         if(!status.equals(t.status())){
@@ -102,23 +103,19 @@ public class TemplateService {
         var t=template(template);version(t,expected);UUID id=UUID.randomUUID();store.insertStage(id,template,store.stages(template).size()+1,name,duration,max);store.touch(template,now());audit.template(actor.accountId(),Event.TEMPLATE_STAGE_CREATED,id,true);
         var result=new Created(id,template,Math.incrementExact(t.version()));save(actor,key,"TEMPLATE_STAGE_CREATE",request,result);return result;
     }
-    public StageView stageDetail(Principal actor,UUID template,UUID id){authorize(actor);template(template);return view(stage(template,id));}
+    public StageView stageDetail(Principal actor,UUID template,UUID id){authorize(actor);template(template);return view(stage(template,id),imageNames(template),store.images(template));}
     public View updateStage(Principal actor,UUID template,UUID id,long expected,String rawName,Long duration,Long max){
         return updateStage(actor,template,id,expected,rawName,duration,max,false,null);
     }
-    public View updateStage(Principal actor,UUID template,UUID id,long expected,String rawName,Long duration,Long max,boolean instructionsSpecified,String instructionsHtml){
+    public View updateStage(Principal actor,UUID template,UUID id,long expected,String rawName,Long duration,Long max,boolean instructionsSpecified,String instructionsMarkdown){
         authorize(actor);var t=template(template);version(t,expected);var s=stage(template,id);String name=name(rawName,false);stageValues(duration,max);
-        InstructionsHtml.Clean clean=instructionsSpecified?InstructionsHtml.sanitize(template,instructionsHtml):null;
-        if(clean!=null){
-            var existing=store.images(template).stream().map(TemplateStore.Image::id).collect(java.util.stream.Collectors.toSet());
-            if(!existing.containsAll(clean.images()))throw new AuthFailure(400,"TEMPLATE_IMAGE_REFERENCE_INVALID");
-            instructionsHtml=clean.html();
-        }
+        InstructionsMarkdown.Parsed clean=instructionsSpecified?InstructionsMarkdown.analyze(template,instructionsMarkdown):null;
+        Set<UUID> referenced=clean==null?Set.of():TemplateFileReferences.imageIds(template,instructionsMarkdown,store.images(template));
         boolean baseChanged=!Objects.equals(s.name(),name)||!Objects.equals(s.expectedDurationMs(),duration)||!Objects.equals(s.maxPenaltyPoints(),max);
-        boolean instructionsChanged=instructionsSpecified && !Objects.equals(s.instructionsHtml(),instructionsHtml);
+        boolean instructionsChanged=instructionsSpecified && !Objects.equals(s.instructionsMarkdown(),instructionsMarkdown);
         if(baseChanged || instructionsChanged){
             if(baseChanged)store.updateStage(id,name,duration,max);
-            if(instructionsChanged){store.instructionsHtml(id,instructionsHtml);store.references(template,id,clean.images());}
+            if(instructionsChanged){store.instructionsMarkdown(id,instructionsMarkdown);store.references(template,id,referenced);}
             store.touch(template,now());audit.template(actor.accountId(),Event.TEMPLATE_STAGE_UPDATED,id,true);
         }
         return view(template(template));
