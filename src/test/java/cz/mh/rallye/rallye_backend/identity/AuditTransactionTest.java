@@ -141,4 +141,18 @@ class AuditTransactionTest {
             assertEquals(1,manager.rollbacks);assertEquals(0,manager.commits);
         }
     }
+    @Test void raceAuditsBothRequireAndJoinBusinessTransaction() {
+        try(var context=new AnnotationConfigApplicationContext(Fixtures.class)) {
+            var jdbc=context.getBean(JdbcTemplate.class);var service=context.getBean(AuditService.class);
+            var manager=context.getBean(RecordingTransactions.class);
+            UUID actor=UUID.randomUUID(),event=UUID.randomUUID(),source=UUID.randomUUID(),stage=UUID.randomUUID();
+            clearInvocations(jdbc);
+            assertThrows(IllegalTransactionStateException.class,()->service.race(actor,Event.RACE_EVENT_UPDATED,event,source,1));
+            assertThrows(IllegalTransactionStateException.class,()->service.raceInstructions(actor,event,stage));
+            verifyNoInteractions(jdbc);
+            new TransactionTemplate(manager).executeWithoutResult(status->{service.race(actor,Event.RACE_EVENT_UPDATED,event,source,1);service.raceInstructions(actor,event,stage);});
+            verify(jdbc,times(2)).update(anyString(),any(Object[].class));
+            assertEquals(1,manager.commits);assertEquals(0,manager.rollbacks);
+        }
+    }
 }

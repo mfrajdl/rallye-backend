@@ -33,6 +33,8 @@ Správa účtů, posádek a šablon existuje; správa konání a závodních pr�
 
 ## 1. Cíl a rozsah
 
+Uživatelské označení konkrétního konání závodu je **Akce**. Výraz „konání“ v popisu životního cyklu označuje stejnou Akci; interní názvy ani URL se nemění.
+
 Systém slouží k vytváření opakovaně použitelných definic automobilových etapových závodů, pořádání konkrétních konání, registraci posádek, jejich vedení přes posloupnost stanovišť, evidenci pokusů a penalizací a sledování průběhu organizátorem. Zpočátku Android; později iOS. Správa přes web. Nízké provozní náklady; desítky až nižší stovky souběžných uživatelů.
 
 ## 2. Uživatelské účty, posádky a přihlášky
@@ -121,13 +123,13 @@ Administrátor může spravovat role **ADMIN jiných aktivních uživatelů**. S
 
 První administrátor vznikne jednorázovým SQL bootstrapem konkrétního existujícího aktivního účtu. **Veřejné bootstrap API se nezavádí**, role se neuděluje registrací ani automaticky při startu aplikace. Administrátorské zásahy včetně bootstrapu, správy rolí, změn kapitána a rušení účtů se auditují. Dokončený CSV export má best-effort audit podle 13.1.
 
-## 3. Šablona a konkrétní konání
+## 3. Šablona a Akce
 
 ### 3.1 Šablona a připravenost
 
 Šablona je opakovaně použitelná definice lineárně seřazených stanovišť. Každý ADMIN může spravovat všechny šablony. Nová šablona je DRAFT a může obsahovat neúplná stanoviště. READY vyžaduje alespoň jedno kompletní stanoviště a úplné odkazy ve všech instrukcích i přiložených Markdown dokumentech. Neúplné zapnuté ověřování nelze obejít jinou kompletní kontrolou; otázka kombinace GPS/CODE je v 4.1.
 
-Stanoviště obsahuje název, očekávanou dobu, instrukce a potřebnou konfiguraci. max_penalty_points je nezáporné celé číslo včetně nuly: náhradní penalizace při přeskočení/nedokončení, nikoli průběžný strop. Ostatní bodové sazby mohou být záporné, nulové i kladné. Podstatné změny stanovišť, pořadí a společné penalizace vracejí READY do DRAFT; změna názvu či popisu šablony nikoliv. Skutečný no-op nemění verzi ani stav. Šablony a stanoviště lze duplikovat. Použitou šablonu nelze smazat.
+Stanoviště obsahuje název, očekávanou dobu, instrukce a potřebnou konfiguraci. max_penalty_points je nepovinné nezáporné celé číslo; při nevyplnění znamená 0 a nebrání READY. Je to náhradní penalizace při přeskočení/nedokončení, nikoli průběžný strop. Ostatní bodové sazby mohou být záporné, nulové i kladné. Podstatné změny stanovišť, pořadí a společné penalizace vracejí READY do DRAFT; změna názvu či popisu šablony nikoliv. Skutečný no-op nemění verzi ani stav. Šablony a stanoviště lze duplikovat. Použitou šablonu nelze smazat.
 
 ### 3.2 Markdown a knihovna souborů
 
@@ -135,7 +137,7 @@ Jediným zdrojem instrukcí je Markdown; HTML je bezpečně odvozený obsah, nik
 
 V DRAFT jsou dopředné odkazy dovoleny: vracejí upozornění a chybějící cíl skutečné 404. READY chybějící cíle nedovoluje. Cykly mezi Markdown dokumenty jsou povolené, bez rekurzivního vkládání. PDF se poskytuje jako bezpečná příloha ke stažení. Přesný již schválený kontrakt šablonového API zůstává v template-files.md; tato konsolidace jej nemění.
 
-### 3.3 Nezávislé konání
+### 3.3 Nezávislá Akce
 
 Z jedné šablony lze vytvořit více konání. Konání vzniká **pouze z READY šablony**. Při vytvoření se pořídí nezávislý snapshot všech stanovišť, jejich pořadí, pravidel, instrukcí a knihovny souborů včetně přiložených dokumentů a jejich odkazů. Pozdější změny šablony nesmějí existující konání ovlivnit. Konání nesmí kvůli čtení svého obsahu záviset na aktuálním obsahu zdrojové šablony.
 
@@ -176,7 +178,7 @@ Stanoviště má souřadnice `latitude`, `longitude`, akceptační poloměr `rad
 
 ### 4.3 CODE
 
-Server ověřuje zadaný kód. Správný kód znamená úspěch CODE kontroly; u samostatného CODE dokončí stanoviště a zastaví čas, u kombinace musí být splněna také GPS kontrola. Chybný kód přidá nastavené trestné body a stanoviště zůstává aktivní. Správný kód se neposkytuje klientovi.
+Server ověřuje zadaný kód. Správný kód znamená úspěch CODE kontroly; u samostatného CODE dokončí stanoviště a zastaví čas, u kombinace musí být splněna také GPS kontrola. Chybný kód přidá nastavené trestné body a stanoviště zůstává aktivní. Správný kód se neposkytuje účastnickému klientovi. ADMIN jej může číst a upravovat jako běžnou konfiguraci, v normalizované otevřené podobě (krajní mezery se odstraní, velká písmena bez závislosti na locale, 1–128 znaků). CODE se neukládá do auditu, idempotentních záznamů ani běžných logů. Hashování hesel a autentizačních tokenů zůstává beze změny.
 
 ### 4.4 Časové penalizace
 
@@ -257,7 +259,7 @@ Každá penalizace je samostatný záznam `penalty_event` s typem, body, zdrojem
 
 ### 7.1 Přeskočená a nedokončená stanoviště
 
-**Konfigurace:** `race_template.skip_penalty_points` je společná hodnota pro celý závod, zkopírovaná do `race_event`. Každé stanoviště má své konečné maximum penalizace; jejich součet se zobrazí před přeskočením.
+**Konfigurace:** `race_template.skip_penalty_points` je společná hodnota pro celý závod, zkopírovaná do `race_event`. Každé stanoviště má svou náhradní penalizaci (nevyplněná znamená 0), nikoli průběžný strop; jejich součet se zobrazí před přeskočením.
 
 - Posádka nemusí absolvovat všechna stanoviště.
 - Mobilní aplikace poskytne příkaz **„Přeskočit stanoviště“**. Před potvrzením zobrazí **celkovou penalizaci** (maximum stanoviště + jednotná penalizace závodu). Po potvrzení se stanoviště přeskočí a aktivuje následující. Posádka se nesmí zaseknout na jediném stanovišti.
@@ -480,3 +482,26 @@ Při každé odsouhlasené změně:
 3. Přidat stručný řádek do historie verzí.
 4. Zachovat starší vydání jako samostatný soubor.
 5. Rozlišit potvrzený požadavek od návrhu nebo otevřené otázky.
+
+### Doplnění správy šablon a Akcí
+
+Uživatelské označení konkrétního závodu je **Akce**; interní `race_event`, názvy tříd a URL zůstávají zachované. Šablona má společnou podepsanou sazbu `defaultWrongCodePenaltyPoints` (výchozí 0). Stanoviště ji dědí při `wrongAttemptPenaltyPoints = null`; explicitní 0 ji přepisuje nulou. Obě hodnoty se nezávisle kopírují do Akce. Změna společné sazby je podstatnou změnou a vrací READY do DRAFT; skutečný no-op nikoli.
+
+Akce uchovává kromě zdrojového UUID a verze i název zdrojové šablony z okamžiku vytvoření. U starších Akcí lze doplnit pouze současný název zdroje; API tento případ označí `sourceTemplateNameIsSnapshot = false`, nejde o rekonstruovaný historický název.
+
+Akci lze smazat pouze ve stavu PLANNED a bez aktuálních i historických účastí. Kontrola používá aktuální verzi Akce; při neznámém schématu účastí bezpečně odmítne mazání. Audit a odstranění databázového snapshotu jsou atomické, fyzické soubory se odstraňují až po potvrzení transakce.
+
+Plánované časy přijímají i hodnoty s přesností na minuty a explicitním UTC offsetem, bez posunu okamžiku. Ukládají se v UTC s milisekundovou přesností. To neomezuje přesnost budoucích skutečných časů závodu. Knihovna souborů zůstává dostupná na úrovni šablony bez vazby na konkrétní stanoviště.
+
+Staré hashe CODE nelze převést zpět. V22 je zachová, ale chybějící skutečný kód označí jako nedostupný. Dotčené READY šablony přejdou auditovaně do DRAFT; ADMIN musí zadat skutečný kód znovu. Starší Akce zachovají svůj stav i konfiguraci; samotný hash není platnou konfigurací pro budoucí ověřování CODE.
+
+### Editace instrukcí plánované Akce
+
+ADMIN může samostatně upravit Markdown instrukce stanoviště Akce ve stavu
+PLANNED. Změna se týká výhradně jejího snapshotu; neovlivňuje zdrojovou šablonu,
+jiné Akce ani ostatní konfiguraci stanoviště. Používá společnou version Akce,
+transakční audit a stávající ADMIN/CSRF ochrany. Shodný obsah je no-op, neaktuální
+verze se odmítne. Platí stejná pravidla Markdownu, bezpečného renderování a
+upozornění na chybějící soubory jako u šablon, s odkazy pouze do knihovny dané
+Akce. Samostatný kontrakt je v race-event-stage-instructions-api.md.
+Tato implementace nepovoluje editaci běžících nebo ukončených Akcí.

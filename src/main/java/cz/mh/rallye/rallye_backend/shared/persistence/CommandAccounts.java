@@ -37,7 +37,7 @@ final class CommandAccounts {
                 return new Content(ids,req,res);
             }
             if(operation.equals("TEMPLATE_CREATE") || operation.equals("TEMPLATE_STAGE_CREATE") || operation.equals("TEMPLATE_IMAGE_CREATE") || operation.equals("TEMPLATE_DUPLICATE") || operation.equals("TEMPLATE_STAGE_DUPLICATE")) {
-                if(operation.equals("TEMPLATE_CREATE")){size(req,3);if(!req.get(0).isString() || !req.get(2).isIntegralNumber())throw invalid();textOrNull(req.get(1));}
+                if(operation.equals("TEMPLATE_CREATE")){if(req.size()!=3&&req.size()!=4)throw invalid();if(req.size()==4&&!req.get(3).isIntegralNumber())throw invalid();if(!req.get(0).isString() || !req.get(2).isIntegralNumber())throw invalid();textOrNull(req.get(1));}
                 else if(operation.equals("TEMPLATE_DUPLICATE")){size(req,1);requiredId(req.get(0));}
                 else if(operation.equals("TEMPLATE_STAGE_DUPLICATE")){size(req,3);requiredId(req.get(0));requiredId(req.get(1));if(!req.get(2).isIntegralNumber() || req.get(2).longValue()<0)throw invalid();}
                 else if(operation.equals("TEMPLATE_IMAGE_CREATE")){size(req,3);requiredId(req.get(0));if(!req.get(1).isIntegralNumber() || !req.get(2).isString() || !req.get(2).asString().matches("[0-9a-f]{64}"))throw invalid();}

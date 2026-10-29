@@ -45,7 +45,7 @@ public class TemplateDuplicationService {
                 templates.authorize(actor);String request=json.writeValueAsString(List.of(source));
                 var old=replay(actor,key,"TEMPLATE_DUPLICATE",request);if(old!=null)return old;
                 var original=source(source);var stages=store.stages(source);UUID target=UUID.randomUUID();
-                store.insert(target,copyName(original.name()),original.description(),original.skipPenaltyPoints(),now());
+                store.insert(target,copyName(original.name()),original.description(),original.skipPenaltyPoints(),original.defaultWrongCodePenaltyPoints(),now());
                 var mapping=new HashMap<UUID,UUID>();
                 var library=store.images(source);for(var image:library){
                     UUID id=UUID.randomUUID();byte[] bytes=storage.read(source,image.fileName());

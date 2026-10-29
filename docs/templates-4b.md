@@ -1,3 +1,5 @@
+> Historický popis původní etapy: aktuální pravidla CODE a penalizací níže nahrazují původní hashované/write-only ukládání.
+
 # Etapa 4b – konfigurace stanovišť a připravenost šablon
 
 > Aktuální instrukce a obrázky po V19: [templates-markdown.md](templates-markdown.md). Starší popis instrukcí níže zachycuje původní etapu.
@@ -66,21 +68,13 @@ boolean `enabled` jsou povinné. Ostatní hodnoty mohou být v DRAFT null/neuved
 vynechání běžného parametru jej při tomto úplném PUT vymaže. Neznámá pole,
 `completionMode`, klientský hash či číselné řetězce se odmítají.
 
-Výjimkou je `code.newCode`: při vynechání nebo null **ponechá dosavadní hash**.
-Prázdný/bílý nový kód je chyba, nikoliv příkaz k odstranění. Vypnutí CODE také
-hash nemaže. Nový kód se normalizuje `strip().toUpperCase(Locale.ROOT)`, po této
-normalizaci musí mít 1–128 Unicode code pointů. Ukládá se pouze Argon2id hash přes
-stávající PasswordEncoder. Při stejném normalizovaném kódu se původní hash zachová,
-aby náhodná sůl nezpůsobila falešnou změnu/verzi/audit.
-
-GET detail a GET stanoviště vracejí skupiny `gps`, `code`, `timePenalty`, `delayed`;
-CODE má výhradně:
+Výjimkou je `code.newCode`: vynechání/null ponechá dosavadní hodnotu, vypnutí CODE ji nemaže. Prázdný nový kód je chyba. Normalizace je `strip().toUpperCase(Locale.ROOT)`, 1–128 Unicode code pointů. Ukládá se skutečný text; normalizovaná shoda je no-op. ADMIN čtení vrací například:
 
 ```json
-{"enabled":true,"codeConfigured":true,"wrongAttemptPenaltyPoints":3}
+{"enabled":true,"codeConfigured":true,"value":"KOD","valueUnavailable":false,"wrongAttemptPenaltyPoints":null,"effectiveWrongAttemptPenaltyPoints":0}
 ```
 
-Žádný GET ani úspěšný či chybový PUT nevrací kód, normalizovanou hodnotu ani hash.
+Hash se nevystavuje. Účastnické API skutečný kód vracet nesmí.
 `timePenalty.intervalSeconds` se vrací v sekundách; interní intervalMs není API.
 
 ### Platnost hodnot
@@ -136,10 +130,9 @@ relaci přesto zachovává obvyklou CSRF ochranu POST.
 Vrací 200 i pro neúplnou šablonu. Chyby mají stageId (null u chyby šablony), pole,
 REQUIRED/INVALID a pevnou srozumitelnou zprávu bez citlivých či zadaných hodnot.
 Kontrola vyžaduje platný základ šablony, alespoň jedno stanoviště, pořadí 1..N,
-platný název a neprázdné instrukce každého stanoviště, očekávanou dobu, maximum,
+platný název a neprázdné instrukce každého stanoviště, očekávanou dobu (nevyplněné maximum znamená 0),
 alespoň jednu kontrolu a úplnost všech zapnutých kontrol i časových pravidel.
-U GPS jsou povinné i obě sazby; u CODE existující hash a sazba; nulová sazba
-je vyplněná hodnota. **Kompletní GPS nenahradí nekompletní zapnuté CODE.**
+U GPS jsou povinné i obě sazby; u CODE skutečný kód a účinná sazba (nullable override dědí společnou hodnotu). **Kompletní GPS nenahradí nekompletní zapnuté CODE.**
 
 `PUT /api/v1/race-templates/{id}/status` přijímá:
 
@@ -205,7 +198,7 @@ schématu bez konání; žádné tabulky konání se nepřidávají.
 ## Testy a ruční postup
 
 Unit/HTTP testy pokrývají AND a povinné obě konfigurace, locale/normalizovanou délku
-CODE, hash/no-op, nepřítomnost v DTO a MVC logu, rozsahy/typy, souběžně zapnuté
+CODE, normalizaci/no-op, ADMIN čtení a nepřítomnost v MVC logu, rozsahy/typy, souběžně zapnuté
 časové konfigurace, převod sekund, plain text, report i stavové chyby a CSRF.
 PostgreSQL TemplatesIT navazuje na regresi 4a: skutečný Argon2id a jeho zachování,
 READY/AND, signed sazby, kód mimo audit/ledger, rollback reálných INSERT auditu,
@@ -266,3 +259,18 @@ nahrazuje výhradně HTML polem `instructionsHtml` se serverovou sanitizací a
 vazbami na soukromé obrázky; viz [templates-4c.md](templates-4c.md).
 Statistické verze zůstávají zrušené. Uživatel při zahájení 4c potvrdil úspěšné
 PostgreSQL ověření 4b; nové V18 a 4c scénáře se tím nepovažují za ověřené.
+
+## Aktuální konfigurace po V22
+
+CODE je normalizovaný skutečný text dostupný pouze ADMIN. `code.newCode` zůstává
+vstupem; null zachová hodnotu, normalizovaná shoda je no-op. Čtení vrací `value`,
+`valueUnavailable`, `enabled`, `codeConfigured`, nullable `wrongAttemptPenaltyPoints`
+a `effectiveWrongAttemptPenaltyPoints`. Audit/idempotence neobsahují skutečnou hodnotu.
+Staré hashe se nerekonstruují; postižené READY šablony se vrátí do DRAFT.
+
+Create šablony přijímá `defaultWrongCodePenaltyPoints` (výchozí 0); update při
+vynechání/null zachová původní hodnotu. Seznam i detail pole vracejí. Změna sazby
+vrací READY do DRAFT. Override stanoviště null dědí společnou sazbu, 0 ji přepíše;
+sazby jsou podepsané. `maxPenaltyPoints` může být null, efektivně 0 i v odpovědi;
+nevyplnění nebrání READY. Duplikace šablon/stanovišť zachová skutečný kód a override,
+duplikace celé šablony také společnou sazbu. Snapshot Akce zachová nezávislou kopii.

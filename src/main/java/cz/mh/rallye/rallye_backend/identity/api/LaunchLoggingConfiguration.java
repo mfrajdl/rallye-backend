@@ -17,7 +17,8 @@ public class LaunchLoggingConfiguration implements WebServerFactoryCustomizer<To
             throw new IllegalStateException("Unsafe Tomcat access log pattern. Use the documented path-only pattern; query, request line and header logging are prohibited.");
         var sensitive=java.util.List.of("org.apache.coyote","org.apache.tomcat.util.net","org.apache.tomcat.util.http","org.apache.catalina.connector",
                 "org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver",
-                "org.springframework.web.filter.CommonsRequestLoggingFilter");
+                "org.springframework.web.filter.CommonsRequestLoggingFilter",
+                "org.springframework.jdbc.core.StatementCreatorUtils");
         for(String name:sensitive)
             if(org.slf4j.LoggerFactory.getLogger(name).isDebugEnabled())
                 throw new IllegalStateException("HTTP payload/exception DEBUG/TRACE logging is prohibited for authentication privacy.");

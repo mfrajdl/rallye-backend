@@ -30,8 +30,7 @@ public final class TemplateReadiness {
             if(!InstructionsMarkdown.hasContent(stage.instructionsMarkdown()))required(errors,id,"instructionsMarkdown");
             if(stage.expectedDurationMs()==null)required(errors,id,"expectedDurationMs");
             else if(stage.expectedDurationMs()<0)invalid(errors,id,"expectedDurationMs");
-            if(stage.maxPenaltyPoints()==null)required(errors,id,"maxPenaltyPoints");
-            else if(stage.maxPenaltyPoints()<0)invalid(errors,id,"maxPenaltyPoints");
+            if(stage.maxPenaltyPoints()!=null && stage.maxPenaltyPoints()<0)invalid(errors,id,"maxPenaltyPoints");
             for(String field:config.invalidFields())invalid(errors,id,field);
             if(!config.gps().enabled() && !config.code().enabled())required(errors,id,"checks");
             if(config.gps().enabled()){
@@ -43,8 +42,7 @@ public final class TemplateReadiness {
             }
             // AND: a configured GPS never excuses missing parameters of an enabled CODE, or vice versa.
             if(config.code().enabled()){
-                if(config.code().hash()==null)required(errors,id,"code.codeConfigured");
-                if(config.code().wrongAttemptPenaltyPoints()==null)required(errors,id,"code.wrongAttemptPenaltyPoints");
+                if(config.code().value()==null)required(errors,id,"code.codeConfigured");
             }
             if(config.timePenalty().enabled()){
                 if(config.timePenalty().intervalMs()==null)required(errors,id,"timePenalty.intervalSeconds");

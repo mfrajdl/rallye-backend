@@ -1,3 +1,5 @@
+> Historický popis původní etapy: aktuální pravidla CODE a penalizací níže nahrazují původní hashované/write-only ukládání.
+
 # Etapa 4d – duplikování a společný kontrakt editoru šablon
 
 > Aktuální rozšíření V20 a závazný kontrakt knihovny souborů: [template-files.md](template-files.md). Doplňuje odkazy, dopředné reference a read-only varování; původní obrazové endpointy zůstávají.
@@ -29,7 +31,7 @@ updatedAt, stages}`. Časy jsou UTC ISO-8601; `stages` jsou v pořadí 1..N.
 instructionsMarkdown, instructionsRenderedHtml, gps, code, timePenalty, delayed}`. **Stanoviště nemá samostatný
 sloupec/API pole `description`**; formátovaný obsah je v `instructionsMarkdown`.
 Popis šablony existuje a kopíruje se. 4d nepřidává nové obchodní pole.
-Žádné DTO neobsahuje plaintext CODE ani jeho hash.
+ADMIN DTO vrací skutečný CODE podle doplnění V22; hash nevystavuje.
 
 ## Všechny endpointy
 
@@ -90,9 +92,9 @@ POST stanoviště zatím nepřijímá instrukce ani konfiguraci: následují př
 Všechny čtyři skupiny a jejich boolean enabled jsou povinné. Ostatní parametry
 mohou být v DRAFT null, ale vyplněné musí být validní i u vypnutých kontrol.
 Vynechané běžné parametry se při tomto úplném PUT vynulují na null.
-Výjimkou je code.newCode: vynechání/null zachová hash, vypnutí CODE ho také nemaže.
+Výjimkou je code.newCode: vynechání/null zachová hodnotu, vypnutí CODE ho také nemaže.
 Prázdný nový kód je chyba. Normalizace je strip + uppercase Locale.ROOT, poté
-1–128 code pointů a Argon2id. Stejný normalizovaný kód nezpůsobí falešnou změnu hashe.
+1–128 code pointů a uložení normalizovaného textu. Stejný normalizovaný kód je no-op.
 Odpověď code je pouze `{enabled, codeConfigured, wrongAttemptPenaltyPoints}`.
 
 GPS: konečná latitude -90..90, longitude -180..180, radiusMeters >0.
@@ -131,7 +133,7 @@ aby celek měl nejvýše 100 znaků. Popis a společná sazba se zachovají, kol
 jsou povoleny. Není nový parametr přejmenování ani pravidlo číslovaných kopií.
 
 Každý aktuální sloupec konfigurace stanoviště se kopíruje pomocí INSERT SELECT,
-včetně CODE hashe, bez znalosti plaintextu a bez hashe jako JDBC bind parametru.
+včetně skutečného CODE a případného legacy hashe.
 Neměnné identifikátory, šablona, pořadí a Markdown mají výslovné cílové hodnoty.
 V nové šabloně zůstává původní pořadí. DRAFT může být neúplný i prázdný.
 
@@ -176,7 +178,7 @@ ani audit; stale version je konflikt i pro no-op. Statistické verze nejsou.
 
 READY vyžaduje neprázdný název šablony a alespoň jedno kompletní stanoviště;
 **všechna stanoviště** musejí mít název, skutečný obsah instrukcí, expectedDurationMs,
-maxPenaltyPoints, nejméně jednu zapnutou GPS/CODE kontrolu a úplné parametry všech
+efektivní maxPenaltyPoints (null znamená 0), nejméně jednu zapnutou GPS/CODE kontrolu a úplné parametry všech
 aktivních kontrol i časových pravidel. `POST validations` vrací 200 Report
 `{templateId, version, ready, errors:[{stageId, field, code, message}]}` i při chybách.
 Chybové code je REQUIRED/INVALID, zprávy neobsahují tajemství. Přechod READY při
@@ -274,3 +276,18 @@ Backendový modul šablon 4a–4d je dokončený a automaticky ověřený; ručn
 průchod není tímto potvrzen. Závěrečné uložení do Gitu bylo výslovně schváleno;
 testy se při commitu znovu nespouštějí. Součástí jsou i související změny seznamu
 posádek. Webový frontend ani konkrétní konání tímto nezačínají.
+
+## Aktuální konfigurace po V22
+
+CODE je normalizovaný skutečný text dostupný pouze ADMIN. `code.newCode` zůstává
+vstupem; null zachová hodnotu, normalizovaná shoda je no-op. Čtení vrací `value`,
+`valueUnavailable`, `enabled`, `codeConfigured`, nullable `wrongAttemptPenaltyPoints`
+a `effectiveWrongAttemptPenaltyPoints`. Audit/idempotence neobsahují skutečnou hodnotu.
+Staré hashe se nerekonstruují; postižené READY šablony se vrátí do DRAFT.
+
+Create šablony přijímá `defaultWrongCodePenaltyPoints` (výchozí 0); update při
+vynechání/null zachová původní hodnotu. Seznam i detail pole vracejí. Změna sazby
+vrací READY do DRAFT. Override stanoviště null dědí společnou sazbu, 0 ji přepíše;
+sazby jsou podepsané. `maxPenaltyPoints` může být null, efektivně 0 i v odpovědi;
+nevyplnění nebrání READY. Duplikace šablon/stanovišť zachová skutečný kód a override,
+duplikace celé šablony také společnou sazbu. Snapshot Akce zachová nezávislou kopii.

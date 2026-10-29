@@ -1,3 +1,24 @@
+## Samostatná editace instrukcí stanoviště Akce
+
+Implementovaný PUT /api/v1/race-events/{id}/stages/{stageId}/instructions používá
+společnou verzi Akce, ADMIN/CSRF a stav PLANNED. Zapisuje pouze Markdown
+snapshotu a rodičovskou verzi, s atomickým auditem; kontrakt je v
+[race-event-stage-instructions-api.md](race-event-stage-instructions-api.md).
+Bez nového schématu a bez implementace editace živé trasy. Uživatel potvrdil kompletní PostgreSQL ověření jako BUILD SUCCESS.
+
+## Aktuální doplnění šablon a Akcí (V22)
+
+Implementováno: ADMIN čtení/editace skutečného CODE, null maximum jako 0, společná
+podepsaná sazba chybných kódů s nullable override, nezávislé kopie, zmrazený název
+zdrojové šablony a mazání PLANNED Akcí s verzí a fail-closed guardem. Podrobný
+kontrakt: [správa Akcí](race-events-stage1.md). Interní názvy a URL se nemění.
+Staré popisy hashovaného CODE dokumentují historickou implementaci, nikoli aktuální
+pravidlo; rozhodující je specifikace 0.9.0 a doplnění dokumentace šablon po V22.
+V22 zachovává staré hashe, invaliduje pouze dotčené READY šablony a nemění
+konfiguraci existujících Akcí. Uživatel potvrdil PostgreSQL ověření V22 příkazem `.\mvnw.cmd -Pit verify` proti rallye_test jako BUILD SUCCESS; Codex tento běh neprováděl.
+Před účastmi nahradit guard mazání skutečnými dotazy na aktuální/historické účasti;
+registrace, start, runtime a výsledky nadále nejsou implementované.
+
 # Backend: architektura a plán po etapě 2A a rozhodnutích 3b
 
 ## Konsolidace konání – specifikace 0.9.0 (2026-10-28)

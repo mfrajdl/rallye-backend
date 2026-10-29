@@ -18,8 +18,8 @@ import cz.mh.rallye.rallye_backend.identity.application.AuthService.Principal;
 public class TemplateController {
     // Reject unsupported future configuration and mass assignment rather than silently discarding it.
     public interface Strict { @JsonAnySetter default void unsupported(String field,Object value){throw new IllegalArgumentException("Unsupported template field");} }
-    public record Create(String name,String description,JsonNode skipPenaltyPoints) implements Strict {}
-    public record Update(JsonNode version,String name,String description,JsonNode skipPenaltyPoints) implements Strict {}
+    public record Create(String name,String description,JsonNode skipPenaltyPoints,JsonNode defaultWrongCodePenaltyPoints) implements Strict {}
+    public record Update(JsonNode version,String name,String description,JsonNode skipPenaltyPoints,JsonNode defaultWrongCodePenaltyPoints) implements Strict {}
     public record StageInput(JsonNode version,String name,JsonNode expectedDurationMs,JsonNode maxPenaltyPoints) implements Strict {}
     public record StageUpdateInput(JsonNode version,String name,JsonNode expectedDurationMs,JsonNode maxPenaltyPoints,JsonNode instructionsMarkdown) implements Strict {}
     public record GpsInput(JsonNode enabled,JsonNode latitude,JsonNode longitude,JsonNode radiusMeters,JsonNode outsidePenaltyPoints,JsonNode spoofingPenaltyPoints) implements Strict {}
@@ -43,10 +43,10 @@ public class TemplateController {
         if(!value.isIntegralNumber() || !value.canConvertToLong())throw new AuthFailure(400,"INVALID_REQUEST");
         return value.longValue();
     }
-    @PostMapping public ResponseEntity<TemplateService.Created> create(@AuthenticationPrincipal Principal actor,@RequestHeader("Idempotency-Key") UUID key,@RequestBody Create input){var result=service.create(actor,key,input.name(),input.description(),points(input.skipPenaltyPoints()));return ResponseEntity.created(URI.create("/api/v1/race-templates/"+result.id())).body(result);}
+    @PostMapping public ResponseEntity<TemplateService.Created> create(@AuthenticationPrincipal Principal actor,@RequestHeader("Idempotency-Key") UUID key,@RequestBody Create input){var result=service.create(actor,key,input.name(),input.description(),points(input.skipPenaltyPoints()),input.defaultWrongCodePenaltyPoints()==null||input.defaultWrongCodePenaltyPoints().isNull()?0:points(input.defaultWrongCodePenaltyPoints()));return ResponseEntity.created(URI.create("/api/v1/race-templates/"+result.id())).body(result);}
     @GetMapping public TemplateService.Page list(@AuthenticationPrincipal Principal actor,@RequestParam(required=false) String query,@RequestParam(required=false) String status,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="50") int size){return service.list(actor,query,status,page,size);}
     @GetMapping("/{id}") public TemplateService.View detail(@AuthenticationPrincipal Principal actor,@PathVariable UUID id){return service.detail(actor,id);}
-    @PutMapping("/{id}") public TemplateService.View update(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@RequestBody Update input){return service.update(actor,id,required(input.version()),input.name(),input.description(),points(input.skipPenaltyPoints()));}
+    @PutMapping("/{id}") public TemplateService.View update(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@RequestBody Update input){return service.update(actor,id,required(input.version()),input.name(),input.description(),points(input.skipPenaltyPoints()),number(input.defaultWrongCodePenaltyPoints()));}
     @DeleteMapping("/{id}") public ResponseEntity<Void> delete(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@RequestParam long version){service.delete(actor,id,queryVersion(version));return ResponseEntity.noContent().build();}
     @PutMapping("/{id}/status") public TemplateService.View state(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@RequestBody State input){return service.state(actor,id,required(input.version()),input.status());}
     @GetMapping("/{id}/stages") public List<TemplateService.StageView> stages(@AuthenticationPrincipal Principal actor,@PathVariable UUID id){return service.detail(actor,id).stages();}

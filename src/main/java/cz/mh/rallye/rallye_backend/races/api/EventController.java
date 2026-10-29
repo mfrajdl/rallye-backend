@@ -17,6 +17,7 @@ import cz.mh.rallye.rallye_backend.templates.application.TemplateDocumentHtml;
 public class EventController {
  public interface Strict{@JsonAnySetter default void unsupported(String field,Object value){throw new IllegalArgumentException("Unsupported event field");}}
  public record Create(JsonNode templateVersion,String name,String description,Instant scheduledStartAt,Instant endAt) implements Strict{}
+ public record Instructions(JsonNode version,JsonNode instructionsMarkdown) implements Strict{}
  public record Update(JsonNode version,String name,String description,Instant scheduledStartAt,Instant endAt) implements Strict{}
  private final EventService service;public EventController(EventService service){this.service=service;}
  private static long version(JsonNode v){if(v==null||!v.isIntegralNumber()||!v.canConvertToLong()||v.longValue()<0)throw new AuthFailure(400,"INVALID_REQUEST");return v.longValue();}
@@ -24,6 +25,8 @@ public class EventController {
  @GetMapping("/race-events") public EventService.Page list(@AuthenticationPrincipal Principal actor,@RequestParam(required=false) String query,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="50") int size){return service.list(actor,query,page,size);}
  @GetMapping("/race-events/{id}") public EventService.View detail(@AuthenticationPrincipal Principal actor,@PathVariable UUID id){return service.detail(actor,id);}
  @PutMapping("/race-events/{id}") public EventService.View update(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@RequestBody Update body){return service.update(actor,id,version(body.version()),new EventService.Input(body.name(),body.description(),body.scheduledStartAt(),body.endAt()));}
+ @PutMapping("/race-events/{id}/stages/{stageId}/instructions") public EventService.InstructionsView instructions(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@PathVariable UUID stageId,@RequestBody Instructions body){var text=body.instructionsMarkdown();if(text==null||!text.isNull()&&!text.isString())throw new AuthFailure(400,"INVALID_REQUEST");return service.updateInstructions(actor,id,stageId,version(body.version()),text.isNull()?null:text.stringValue());}
+ @DeleteMapping("/race-events/{id}") public ResponseEntity<Void> delete(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@RequestParam long version){service.delete(actor,id,version);return ResponseEntity.noContent().build();}
  @GetMapping("/race-events/{id}/stages") public List<EventService.StageView> stages(@AuthenticationPrincipal Principal actor,@PathVariable UUID id){return service.stages(actor,id);}
  @GetMapping("/race-events/{id}/stages/{stageId}") public EventService.StageView stage(@AuthenticationPrincipal Principal actor,@PathVariable UUID id,@PathVariable UUID stageId){return service.stage(actor,id,stageId);}
  @GetMapping("/race-events/{id}/files") public List<EventService.FileView> files(@AuthenticationPrincipal Principal actor,@PathVariable UUID id){return service.files(actor,id);}

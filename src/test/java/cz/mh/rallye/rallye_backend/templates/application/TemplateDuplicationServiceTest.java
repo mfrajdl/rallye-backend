@@ -28,7 +28,7 @@ class TemplateDuplicationServiceTest {
  @BeforeEach void setup(){files=new TemplateImageFiles(directory.toString());service=new TemplateDuplicationService(templates,store,files,commands,audit,Clock.fixed(now,ZoneOffset.UTC),manager);when(manager.getTransaction(any())).thenAnswer(c->new SimpleTransactionStatus());when(store.lock(source)).thenReturn(new Template(source,"Original","Description",-5,"READY",7,now,now));}
  @Test void createsIndependentDraftWithoutTouchingSource(){
   var result=service.duplicate(actor,source,key);assertNotEquals(source,result.id());assertEquals(result.id(),result.templateId());assertEquals(0,result.version());
-  verify(store).insert(result.id(),"Original (kopie)","Description",-5,now);verify(store,never()).touch(any(),any());verify(templates,times(2)).authorize(actor);verify(audit).templateCopy(actor.accountId(),result.id(),source,result.id(),false);
+  verify(store).insert(result.id(),"Original (kopie)","Description",-5,0,now);verify(store,never()).touch(any(),any());verify(templates,times(2)).authorize(actor);verify(audit).templateCopy(actor.accountId(),result.id(),source,result.id(),false);
  }
  @Test void unicodeNameTruncationIsWithin100CodePoints(){String name="🚗".repeat(100);String copy=TemplateDuplicationService.copyName(name);assertEquals(100,copy.codePointCount(0,copy.length()));assertTrue(copy.endsWith(" (kopie)"));assertFalse(copy.contains("\uFFFD"));assertEquals("A (kopie)",TemplateDuplicationService.copyName("A"));}
  @Test void replayPrecedesSourceLookupAndDoesNotWriteAnything(){

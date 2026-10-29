@@ -13,17 +13,19 @@ import cz.mh.rallye.rallye_backend.templates.application.TemplateFileContent;
 
 @Repository
 public class TemplateStore {
-    public record Template(UUID id,String name,String description,long skipPenaltyPoints,String status,long version,Instant createdAt,Instant updatedAt) {}
+    public record Template(UUID id,String name,String description,long skipPenaltyPoints,String status,long version,Instant createdAt,Instant updatedAt,long defaultWrongCodePenaltyPoints) {
+        public Template(UUID id,String name,String description,long skip,String status,long version,Instant createdAt,Instant updatedAt){this(id,name,description,skip,status,version,createdAt,updatedAt,0);}
+    }
     public record Stage(UUID id,UUID templateId,int sequenceNo,String name,Long expectedDurationMs,Long maxPenaltyPoints,String instructionsMarkdown,StageConfiguration configuration) {
         public Stage(UUID id,UUID templateId,int sequenceNo,String name,Long expectedDurationMs,Long maxPenaltyPoints){this(id,templateId,sequenceNo,name,expectedDurationMs,maxPenaltyPoints,null,StageConfiguration.empty());}
         @Override public String toString(){return "Stage[id="+id+"]";}
     }
     private final JdbcTemplate jdbc;
     public TemplateStore(JdbcTemplate jdbc){this.jdbc=jdbc;}
-    private static Template template(ResultSet r,int n)throws SQLException{return new Template(r.getObject("id",UUID.class),r.getString("name"),r.getString("description"),r.getLong("skip_penalty_points"),r.getString("status"),r.getLong("version"),r.getTimestamp("created_at").toInstant(),r.getTimestamp("updated_at").toInstant());}
+    private static Template template(ResultSet r,int n)throws SQLException{return new Template(r.getObject("id",UUID.class),r.getString("name"),r.getString("description"),r.getLong("skip_penalty_points"),r.getString("status"),r.getLong("version"),r.getTimestamp("created_at").toInstant(),r.getTimestamp("updated_at").toInstant(),r.getLong("default_wrong_code_penalty_points"));}
     public static Stage stage(ResultSet r,int n)throws SQLException{
         var gps=new Gps(r.getBoolean("gps_enabled"),r.getObject("latitude",Double.class),r.getObject("longitude",Double.class),r.getObject("radius_m",Double.class),r.getObject("outside_penalty_points",Long.class),r.getObject("spoofing_penalty_points",Long.class));
-        var code=new Code(r.getBoolean("code_enabled"),r.getString("code_hash"),r.getObject("wrong_code_penalty_points",Long.class));
+        var code=new Code(r.getBoolean("code_enabled"),r.getString("code_value"),r.getObject("wrong_code_penalty_points",Long.class),r.getString("code_value")==null&&r.getString("code_hash")!=null);
         var time=new TimePenalty(r.getBoolean("time_penalty_enabled"),r.getObject("penalty_interval_ms",Long.class),r.getObject("points_per_interval",Long.class));
         var delayed=new Delayed(r.getBoolean("delayed_enabled"),r.getObject("minimum_duration_ms",Long.class),r.getObject("early_penalty_per_second",Long.class));
         return new Stage(r.getObject("id",UUID.class),r.getObject("race_template_id",UUID.class),r.getInt("sequence_no"),r.getString("name"),r.getObject("expected_duration_ms",Long.class),r.getObject("max_penalty_points",Long.class),r.getString("instructions_markdown"),new StageConfiguration(gps,code,time,delayed));
@@ -36,8 +38,10 @@ public class TemplateStore {
         sql.append(" ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?");args.add(size+1);args.add((long)page*size);
         return jdbc.query(sql.toString(),TemplateStore::template,args.toArray());
     }
-    public void insert(UUID id,String name,String description,long skip,Instant now){jdbc.update("INSERT INTO race_template(id,name,description,skip_penalty_points,created_at,updated_at) VALUES (?,?,?,?,?,?)",id,name,description,skip,Timestamp.from(now),Timestamp.from(now));}
-    public void update(UUID id,String name,String description,long skip,boolean substantial,Instant now){jdbc.update("UPDATE race_template SET name=?,description=?,skip_penalty_points=?,status=CASE WHEN ? THEN 'DRAFT' ELSE status END,version=version+1,updated_at=? WHERE id=?",name,description,skip,substantial,Timestamp.from(now),id);}
+    public void insert(UUID id,String name,String description,long skip,Instant now){insert(id,name,description,skip,0,now);}
+    public void insert(UUID id,String name,String description,long skip,long wrong,Instant now){jdbc.update("INSERT INTO race_template(id,name,description,skip_penalty_points,default_wrong_code_penalty_points,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",id,name,description,skip,wrong,Timestamp.from(now),Timestamp.from(now));}
+    public void update(UUID id,String name,String description,long skip,boolean substantial,Instant now){update(id,name,description,skip,null,substantial,now);}
+    public void update(UUID id,String name,String description,long skip,Long wrong,boolean substantial,Instant now){jdbc.update("UPDATE race_template SET name=?,description=?,skip_penalty_points=?,default_wrong_code_penalty_points=coalesce(?,default_wrong_code_penalty_points),status=CASE WHEN ? THEN 'DRAFT' ELSE status END,version=version+1,updated_at=? WHERE id=?",name,description,skip,wrong,substantial,Timestamp.from(now),id);}
     public void touch(UUID id,Instant now){jdbc.update("UPDATE race_template SET status='DRAFT',version=version+1,updated_at=? WHERE id=?",Timestamp.from(now),id);}
     public void state(UUID id,String status,Instant now){jdbc.update("UPDATE race_template SET status=?,version=version+1,updated_at=? WHERE id=?",status,Timestamp.from(now),id);}
     public void delete(UUID id){jdbc.update("DELETE FROM race_template WHERE id=?",id);}
@@ -45,9 +49,9 @@ public class TemplateStore {
     public void ensureDeletionSupported(){ensureDeletionSupported(null);}
     public void ensureDeletionSupported(UUID template){
         boolean known=Boolean.TRUE.equals(jdbc.queryForObject("""
-            SELECT count(*) IN (20,21) AND bool_and(success AND type='SQL')
-              AND (array_agg(version ORDER BY installed_rank)=ARRAY['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20']::varchar[]
-                OR (array_agg(version ORDER BY installed_rank)=ARRAY['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21']::varchar[] AND count(*) FILTER (WHERE version='21' AND script='V21__planned_race_events.sql')=1))
+            SELECT count(*)=22 AND bool_and(success AND type='SQL')
+              AND array_agg(version ORDER BY installed_rank)=ARRAY['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22']::varchar[]
+              AND count(*) FILTER (WHERE version='22' AND script='V22__action_configuration.sql')=1
               AND count(*) FILTER (WHERE version='16' AND script='V16__race_templates.sql')=1
               AND count(*) FILTER (WHERE version='20' AND script='V20__template_file_library.sql')=1
               AND count(*) FILTER (WHERE version='19' AND script='V19__template_markdown_and_named_images.sql')=1
@@ -68,10 +72,10 @@ public class TemplateStore {
         var gps=config.gps();var code=config.code();var time=config.timePenalty();var delayed=config.delayed();
         jdbc.update("""
             UPDATE template_stage SET gps_enabled=?,latitude=?,longitude=?,radius_m=?,outside_penalty_points=?,spoofing_penalty_points=?,
-              code_enabled=?,code_hash=?,wrong_code_penalty_points=?,time_penalty_enabled=?,penalty_interval_ms=?,points_per_interval=?,
+              code_enabled=?,code_value=?,code_hash=CASE WHEN CAST(? AS text) IS NOT NULL THEN NULL ELSE code_hash END,wrong_code_penalty_points=?,time_penalty_enabled=?,penalty_interval_ms=?,points_per_interval=?,
               delayed_enabled=?,minimum_duration_ms=?,early_penalty_per_second=? WHERE id=?
             """,gps.enabled(),gps.latitude(),gps.longitude(),gps.radiusMeters(),gps.outsidePenaltyPoints(),gps.spoofingPenaltyPoints(),
-            code.enabled(),code.hash(),code.wrongAttemptPenaltyPoints(),time.enabled(),time.intervalMs(),time.pointsPerInterval(),
+            code.enabled(),code.value(),code.value(),code.wrongAttemptPenaltyPoints(),time.enabled(),time.intervalMs(),time.pointsPerInterval(),
             delayed.enabled(),delayed.minimumDurationMs(),delayed.pointsPerSecond(),id);
     }
     public void deleteStage(UUID id){jdbc.update("DELETE FROM template_stage WHERE id=?",id);}
@@ -101,11 +105,11 @@ public class TemplateStore {
         int copied=jdbc.update("""
             INSERT INTO template_stage(id,race_template_id,sequence_no,name,expected_duration_ms,max_penalty_points,instructions_markdown,
                 gps_enabled,latitude,longitude,radius_m,outside_penalty_points,spoofing_penalty_points,
-                code_enabled,code_hash,wrong_code_penalty_points,time_penalty_enabled,penalty_interval_ms,points_per_interval,
+                code_enabled,code_hash,code_value,wrong_code_penalty_points,time_penalty_enabled,penalty_interval_ms,points_per_interval,
                 delayed_enabled,minimum_duration_ms,early_penalty_per_second)
             SELECT ?,?,?,name,expected_duration_ms,max_penalty_points,?,
                 gps_enabled,latitude,longitude,radius_m,outside_penalty_points,spoofing_penalty_points,
-                code_enabled,code_hash,wrong_code_penalty_points,time_penalty_enabled,penalty_interval_ms,points_per_interval,
+                code_enabled,code_hash,code_value,wrong_code_penalty_points,time_penalty_enabled,penalty_interval_ms,points_per_interval,
                 delayed_enabled,minimum_duration_ms,early_penalty_per_second
             FROM template_stage WHERE id=?
             """,id,template,sequence,markdown,source.id());

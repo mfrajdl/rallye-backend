@@ -36,7 +36,7 @@ class TemplateReadinessTest {
         var report=TemplateReadiness.check(template(),List.of(new Stage(stageId,id,2,null,null,null)));
         assertFalse(report.ready());assertEquals(3,report.version());
         var fields=report.errors().stream().map(TemplateReadiness.Error::field).toList();
-        assertTrue(fields.containsAll(List.of("name","instructionsMarkdown","sequenceNo","expectedDurationMs","maxPenaltyPoints","checks")));
+        assertTrue(fields.containsAll(List.of("name","instructionsMarkdown","sequenceNo","expectedDurationMs","checks")));
         assertTrue(report.errors().stream().allMatch(e->stageId.equals(e.stageId())));
     }
     @Test void allStagesMustBeCompleteAndEnabledTimingRulesAreIndependent(){

@@ -195,7 +195,7 @@ class TemplatesIT {
         tx().executeWithoutResult(s->assertFalse(facts.forAccount(root.id()).historical()));
         UUID id=create();
         tx().executeWithoutResult(s->{jdbc.update("UPDATE flyway_schema_history SET script='V16__unexpected.sql' WHERE version='16'");assertEquals(503,assertThrows(AuthFailure.class,()->facts.forAccount(root.id())).status());s.setRollbackOnly();});
-        tx().executeWithoutResult(s->{int rank=jdbc.queryForObject("SELECT max(installed_rank)+1 FROM flyway_schema_history",Integer.class);jdbc.update("INSERT INTO flyway_schema_history(installed_rank,version,description,type,script,installed_by,execution_time,success) VALUES (?,'22','Future','SQL','V22__future.sql',current_user,0,true)",rank);assertEquals(503,assertThrows(AuthFailure.class,()->service.delete(root.principal(),id,0)).status());s.setRollbackOnly();});
+        tx().executeWithoutResult(s->{int rank=jdbc.queryForObject("SELECT max(installed_rank)+1 FROM flyway_schema_history",Integer.class);jdbc.update("INSERT INTO flyway_schema_history(installed_rank,version,description,type,script,installed_by,execution_time,success) VALUES (?,'23','Future','SQL','V23__future.sql',current_user,0,true)",rank);assertEquals(503,assertThrows(AuthFailure.class,()->service.delete(root.principal(),id,0)).status());s.setRollbackOnly();});
         assertNotNull(service.detail(root.principal(),id));
     }
     @Test void upgradeFromV15PreservesExistingAccountsAndCreatesEmptyTemplateModel(){
@@ -225,7 +225,7 @@ class TemplatesIT {
     }
     Configured configured(boolean gps,boolean code){var fixture=bareWithInstructions();service.configure(root.principal(),fixture.template(),fixture.stage(),2,config(gps,code,code?" synthetic-code ":null,-3));return fixture;}
     long version(Configured fixture){return service.detail(root.principal(),fixture.template()).version();}
-    String storedHash(UUID stage){return jdbc.queryForObject("SELECT code_hash FROM template_stage WHERE id=?",String.class,stage);}
+    String storedCode(UUID stage){return jdbc.queryForObject("SELECT code_value FROM template_stage WHERE id=?",String.class,stage);}
     @Test void incompleteReadinessIsReadOnlyAndReturnsFieldErrors(){
         UUID id=create();UUID stage=service.createStage(root.principal(),id,0,UUID.randomUUID(),null,null,null).id();
         var before=service.detail(root.principal(),id);long events=count("SELECT count(*) FROM audit_event");
@@ -249,20 +249,20 @@ class TemplatesIT {
         assertThrows(TemplateReadiness.NotReady.class,()->service.state(root.principal(),f.template(),4,"READY"));assertEquals("DRAFT",service.detail(root.principal(),f.template()).status());
     }
     @Test void codeHashIsNormalizedPreservedAndNeverExposedOrPersistedInCommands()throws Exception{
-        var f=configured(true,true);String hash=storedHash(f.stage());assertTrue(hash.startsWith("$argon2id$"));assertTrue(passwords.matches("SYNTHETIC-CODE",hash));
+        var f=configured(true,true);String hash=storedCode(f.stage());assertEquals("SYNTHETIC-CODE",hash);
         String response=mvc.perform(get("/api/v1/race-templates/"+f.template()).header("Authorization","Bearer "+root.secret())).andExpect(status().isOk()).andExpect(jsonPath("$.stages[0].code.codeConfigured").value(true)).andExpect(jsonPath("$.stages[0].code.newCode").doesNotExist()).andExpect(jsonPath("$.stages[0].code.hash").doesNotExist()).andExpect(jsonPath("$.stages[0].statisticsVersion").doesNotExist()).andReturn().getResponse().getContentAsString();
-        assertFalse(response.contains("synthetic-code"));assertFalse(response.contains("SYNTHETIC-CODE"));assertFalse(response.contains(hash));
+        assertFalse(response.contains("synthetic-code"));assertTrue(response.contains("SYNTHETIC-CODE"));assertTrue(response.contains(hash));
         var before=service.detail(root.principal(),f.template());long events=count("SELECT count(*) FROM audit_event"),commandsBefore=count("SELECT count(*) FROM admin_role_command");
         assertEquals(before,service.configure(root.principal(),f.template(),f.stage(),3,config(true,true,null,-3)));
         assertEquals(before,service.configure(root.principal(),f.template(),f.stage(),3,config(true,true," SyNtHeTiC-CoDe ",-3)));
-        assertTrue(Objects.equals(hash,storedHash(f.stage())),"Equivalent input must preserve the existing hash");assertEquals(events,count("SELECT count(*) FROM audit_event"));assertEquals(commandsBefore,count("SELECT count(*) FROM admin_role_command"));
+        assertTrue(Objects.equals(hash,storedCode(f.stage())),"Equivalent input must preserve the existing hash");assertEquals(events,count("SELECT count(*) FROM audit_event"));assertEquals(commandsBefore,count("SELECT count(*) FROM admin_role_command"));
         assertThrows(AuthFailure.class,()->service.configure(root.principal(),f.template(),f.stage(),3,config(true,true,"x".repeat(129),-3)));
         String ledger=String.join("",jdbc.queryForList("SELECT coalesce(request_data::text,'') || coalesce(result_data::text,'') FROM admin_role_command",String.class));
         String metadata=String.join("",jdbc.queryForList("SELECT metadata::text FROM audit_event",String.class));
         for(String value:List.of("synthetic-code","SYNTHETIC-CODE",hash,"x".repeat(129))){assertFalse(ledger.contains(value));assertFalse(metadata.contains(value));}
     }
     @Test void disabledCodeKeepsItsHashAndExplicitNullViaHttpPreservesIt()throws Exception{
-        var f=configured(true,true);String hash=storedHash(f.stage());
+        var f=configured(true,true);String hash=storedCode(f.stage());
         String body="""
             {"version":3,"gps":{"enabled":true,"latitude":90,"longitude":-180,"radiusMeters":0.5,"outsidePenaltyPoints":-3,"spoofingPenaltyPoints":-3},
              "code":{"enabled":true,"newCode":null,"wrongAttemptPenaltyPoints":-3},
@@ -271,7 +271,7 @@ class TemplatesIT {
         long commandsBefore=count("SELECT count(*) FROM admin_role_command");
         mvc.perform(put("/api/v1/race-templates/"+f.template()+"/stages/"+f.stage()+"/configuration").header("Authorization","Bearer "+root.secret()).header("Idempotency-Key",UUID.randomUUID()).contentType("application/json").content(body)).andExpect(status().isOk()).andExpect(jsonPath("$.version").value(3));
         service.configure(root.principal(),f.template(),f.stage(),3,config(true,false,null,-3));
-        assertTrue(Objects.equals(hash,storedHash(f.stage())));assertTrue(service.detail(root.principal(),f.template()).stages().getFirst().code().codeConfigured());assertEquals(commandsBefore,count("SELECT count(*) FROM admin_role_command"));assertTrue(service.readiness(root.principal(),f.template()).ready());
+        assertTrue(Objects.equals(hash,storedCode(f.stage())));assertTrue(service.detail(root.principal(),f.template()).stages().getFirst().code().codeConfigured());assertEquals(commandsBefore,count("SELECT count(*) FROM admin_role_command"));assertTrue(service.readiness(root.principal(),f.template()).ready());
     }
     @ParameterizedTest @ValueSource(longs={Long.MIN_VALUE,0,Long.MAX_VALUE})
     void allSignedRatesAndNonnegativeMaximumPersist(long rate){
@@ -285,7 +285,7 @@ class TemplatesIT {
         assertThrows(AuthFailure.class,()->service.configure(root.principal(),f.template(),f.stage(),2,new TemplateService.ConfigurationChange(empty.gps(),new TemplateService.CodeChange(false,null,null),new TimePenalty(false,1L,0L),empty.delayed())));
         assertThrows(AuthFailure.class,()->service.configure(root.principal(),f.template(),f.stage(),2,new TemplateService.ConfigurationChange(empty.gps(),new TemplateService.CodeChange(false,null,null),empty.timePenalty(),new Delayed(false,-1L,null))));
         for(String code:List.of("", " ","x".repeat(129)))assertThrows(AuthFailure.class,()->service.configure(root.principal(),f.template(),f.stage(),2,config(false,true,code,0)));
-        assertEquals(before,service.detail(root.principal(),f.template()));assertNull(storedHash(f.stage()));
+        assertEquals(before,service.detail(root.principal(),f.template()));assertNull(storedCode(f.stage()));
     }
     @Test void wholeSecondsConversionHasCheckedOverflowAndDbDivisibility()throws Exception{
         var f=bareWithInstructions();long seconds=Long.MAX_VALUE/1000;
@@ -322,9 +322,9 @@ class TemplatesIT {
         if(service.detail(root.principal(),f.template()).status().equals("READY"))assertTrue(service.readiness(root.principal(),f.template()).ready());
     }
     @Test void configurationAndPublicationAuditFailuresRollbackHashStateVersionAndAudit(){
-        var f=configured(true,true);var before=service.detail(root.principal(),f.template());String hash=storedHash(f.stage());long events=count("SELECT count(*) FROM audit_event"),commandCount=count("SELECT count(*) FROM admin_role_command");
+        var f=configured(true,true);var before=service.detail(root.principal(),f.template());String hash=storedCode(f.stage());long events=count("SELECT count(*) FROM audit_event"),commandCount=count("SELECT count(*) FROM admin_role_command");
         failedAudit(Event.TEMPLATE_STAGE_CONFIGURED,f.stage(),()->service.configure(root.principal(),f.template(),f.stage(),3,config(true,true,"Replacement",9)));
-        assertEquals(before,service.detail(root.principal(),f.template()));assertTrue(Objects.equals(hash,storedHash(f.stage())),"Code hash must roll back");
+        assertEquals(before,service.detail(root.principal(),f.template()));assertTrue(Objects.equals(hash,storedCode(f.stage())),"Code hash must roll back");
         failedAudit(Event.TEMPLATE_READIED,f.template(),()->service.state(root.principal(),f.template(),3,"READY"));assertEquals(before,service.detail(root.principal(),f.template()));
         assertEquals(events,count("SELECT count(*) FROM audit_event"));assertEquals(commandCount,count("SELECT count(*) FROM admin_role_command"));
     }
@@ -443,7 +443,7 @@ class TemplatesIT {
     @ParameterizedTest @ValueSource(strings={"DRAFT","READY"}) void duplicationKeepsNamesAndRelativeSourceAndRewritesOnlyExplicitImages(String status)throws Exception{
         var f=configured(true,true);upload(f.template(),"most.png");upload(f.template(),"unused.png");String source="# Task\n\n![relative](most.png)\n\n![explicit]("+cz.mh.rallye.rallye_backend.templates.application.ImageNames.url(f.template(),"most.png")+")\n";markdown(f,source);
         if(status.equals("READY"))service.state(root.principal(),f.template(),version(f),"READY");var before=service.detail(root.principal(),f.template());var copy=copies.duplicate(root.principal(),f.template(),UUID.randomUUID());var detail=service.detail(root.principal(),copy.id());assertEquals("DRAFT",detail.status());assertEquals(0,detail.version());assertEquals(before,service.detail(root.principal(),f.template()));assertEquals(2,images.list(root.principal(),copy.id()).size());
-        var next=detail.stages().getFirst();assertNotEquals(f.stage(),next.id());assertTrue(next.instructionsMarkdown().contains("![relative](most.png)"));assertFalse(next.instructionsMarkdown().contains(f.template().toString()));assertTrue(next.instructionsRenderedHtml().contains(copy.id().toString()));assertArrayEquals(images.content(root.principal(),f.template(),"most.png").bytes(),images.content(root.principal(),copy.id(),"most.png").bytes());assertTrue(passwords.matches("SYNTHETIC-CODE",storedHash(next.id())));
+        var next=detail.stages().getFirst();assertNotEquals(f.stage(),next.id());assertTrue(next.instructionsMarkdown().contains("![relative](most.png)"));assertFalse(next.instructionsMarkdown().contains(f.template().toString()));assertTrue(next.instructionsRenderedHtml().contains(copy.id().toString()));assertArrayEquals(images.content(root.principal(),f.template(),"most.png").bytes(),images.content(root.principal(),copy.id(),"most.png").bytes());assertEquals("SYNTHETIC-CODE",storedCode(next.id()));
         images.delete(root.principal(),copy.id(),"unused.png",0);assertTrue(java.nio.file.Files.exists(imagePath(f.template(),"unused.png")));
     }
     @Test void stageCopySharesNamedImagesAndPreservesSourceExactly()throws Exception{

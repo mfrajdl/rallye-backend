@@ -977,3 +977,41 @@ PostgreSQL integrační ověření proti rallye_test jako **BUILD SUCCESS**
 (28. 10. 2026), včetně 19 připravených EventsIT a V21. Codex tento běh
 neprováděl a databázi sám neměnil. Ruční ověření API není tímto potvrzeno.
 Git diff --check prošel; chráněné uživatelské soubory a V1–V20 se neměnily.
+
+## Doplnění šablon a Akcí / V22
+
+Nové rychlé testy ověřují plaintext CODE pouze pro ADMIN, normalizaci/no-op,
+null maximum 0, dědění společné sazby i explicitní 0, mazání s verzí a rollbackem
+a minutové časy s offsetem. EventsIT doplňuje upgrade V21→V22 se zachováním
+legacy hashů a konfigurace Akce, nezávislost kopií, oprávnění, souběh mazání,
+rollback souborů a zmrazený/backfill název zdroje.
+
+Uživatel potvrdil ruční PostgreSQL ověření `.\mvnw.cmd -Pit verify` proti
+rallye_test jako **BUILD SUCCESS**, včetně nových scénářů V22. Codex tento
+integrační běh neprováděl.
+
+Aktuální build bez PostgreSQL: **649 testů, BUILD SUCCESS**, bez selhání a přeskočení.
+
+## Editace instrukcí stanoviště Akce
+
+Kontrakt a ruční postup: [race-event-stage-instructions-api.md](race-event-stage-instructions-api.md).
+EventServiceTest a EventHttpTest doplňují 9 rychlých scénářů pro samostatnou
+aktualizaci, no-op/null, konflikty verzí, PLANNED omezení, neplatný Markdown
+a cizí odkazy, ADMIN/CSRF, přesné DTO a vyvolání rollbacku při selhání auditu.
+
+EventsIT přidává 5 PostgreSQL scénářů: izolace vůči šabloně/jiné Akci a zachování
+konfigurace, renderování/reference, HTTP a cizí stageId, rollback obsahu/verze/
+updatedAt/auditu, souběh se změnou základních údajů a validace beze změny dat.
+Tyto nové integrační testy uživatel potvrdil kompletním během proti rallye_test:
+`.\mvnw.cmd -Pit verify` – **BUILD SUCCESS**. Codex tento běh neprováděl.
+
+Ověření Codexem: Maven Wrapper `verify` na JDK 21.0.12.1 bez PostgreSQL –
+**BUILD SUCCESS, 658 testů, 0 failures, 0 errors, 0 skipped**. PostgreSQL
+ověření nových scénářů uživatel potvrdil jako BUILD SUCCESS. `git diff --check` prošel.
+
+Před commitem 29. 10. 2026 byla obnovena anotace MANDATORY také na původní
+AuditService.race (při vložení raceInstructions se přesunula). Obě metody
+nyní vyžadují existující obchodní transakci. Cílený běh AuditTransactionTest
+včetně nové proxy regrese: **7 testů, BUILD SUCCESS**. Kompletní sady se
+při závěrečném commitu znovu nespouštěly; výše uvedené výsledky zůstávají
+výsledky předchozích běhů.
