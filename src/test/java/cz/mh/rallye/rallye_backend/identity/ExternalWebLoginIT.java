@@ -79,6 +79,19 @@ class ExternalWebLoginIT {
         var result=finish(context(ExternalProviders.Provider.GOOGLE,subject,email,verified,name,false),null);
         login.complete(result.registrationSecret(),email,name);return result.registrationSecret();
     }
+    /** Only for tests whose prerequisite is an already registered GOOGLE account. No callback,
+     * registration-completion or Apple lifecycle assertion uses this shortcut. Session issuance
+     * still goes through context()/finish(), including real flow correlation/consumption and audit.
+     */
+    UUID existingGoogleAccount(String subject,String email,String name) {
+        return new TransactionTemplate(manager).execute(s->{
+            external.lock();var at=clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);UUID id=UUID.randomUUID();
+            var identity=new ExternalAccountStore.Registration(UUID.randomUUID(),"GOOGLE",ExternalProviders.issuer(ExternalProviders.Provider.GOOGLE),
+                    subject,email,true,name,false,"https://app.example.test/complete",at.plus(ExternalLoginService.COMPLETION_LIFE),null);
+            assertTrue(external.create(id,identity,email,name,true,at));
+            return id;
+        });
+    }
     @Test void verifiedFirstRegistrationAndRepeatedLoginReuseSameAccountAndExistingSessions() {
         String subject=UUID.randomUUID().toString(),email=email();String registration=signup(subject,email,true,"Name");UUID id=account(subject);
         assertEquals("ACTIVE",jdbc.queryForObject("SELECT status FROM user_account WHERE id=?",String.class,id));
@@ -143,12 +156,12 @@ class ExternalWebLoginIT {
         assertThrows(AuthFailure.class,()->login.profile(tokens.create()));
     }
     @Test void disabledIdentityCannotLoginEvenIfProviderClaimsAreValid() {
-        String subject=UUID.randomUUID().toString(),email=email();signup(subject,email,true,"A");jdbc.update("UPDATE user_account SET status='DISABLED' WHERE id=?",account(subject));
+        String subject=UUID.randomUUID().toString(),email=email();existingGoogleAccount(subject,email,"A");jdbc.update("UPDATE user_account SET status='DISABLED' WHERE id=?",account(subject));
         assertThrows(AuthFailure.class,()->finish(context(ExternalProviders.Provider.GOOGLE,subject,email,true,"A",false),null));
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM user_session WHERE account_id=?",Integer.class,account(subject)));
     }
     @Test void auditFailureRollsBackSessionAndStateConsumption() {
-        String subject=UUID.randomUUID().toString(),email=email();signup(subject,email,true,"A");UUID account=account(subject);
+        String subject=UUID.randomUUID().toString(),email=email();existingGoogleAccount(subject,email,"A");UUID account=account(subject);
         var context=context(ExternalProviders.Provider.GOOGLE,subject,email,true,"A",false);
         doThrow(new IllegalStateException("injected")).when(audit).append(any(),any(),eq(account),eq(AuditService.Event.LOGIN_SUCCEEDED),eq(account));
         try {assertThrows(RuntimeException.class,()->finish(context,null));}
@@ -247,9 +260,30 @@ class ExternalWebLoginIT {
     }
     AuthService.LoginSession externalAccount(ExternalProviders.Provider provider) {
         String subject=UUID.randomUUID().toString(),email=email();
-        var registration=finish(context(provider,subject,email,true,"D10",false),"D10");
-        login.complete(registration.registrationSecret(),email,"D10");
+        if(provider==ExternalProviders.Provider.GOOGLE)existingGoogleAccount(subject,email,"D10");
+        else {
+            // Apple fixtures must retain both real token captures and the registration -> account binding.
+            var registration=finish(context(provider,subject,email,true,"D10",false),"D10");
+            login.complete(registration.registrationSecret(),email,"D10");
+        }
         return finish(context(provider,subject,email,true,null,false),null).session();
+    }
+    @Test void existingGoogleFixturesHaveOneIdentityNoSessionAndKeepRealCallbackSecurity() {
+        String subject=UUID.randomUUID().toString(),email=email(),otherSubject=UUID.randomUUID().toString();
+        UUID id=existingGoogleAccount(subject,email,"Existing"),other=existingGoogleAccount(otherSubject,email(),"Other");
+        assertNotEquals(id,other);assertEquals(id,account(subject));assertEquals(other,account(otherSubject));
+        assertEquals(1,count("SELECT count(*) FROM user_account WHERE id=? AND status='ACTIVE' AND email_verified_at IS NOT NULL",id));
+        assertEquals(1,count("SELECT count(*) FROM user_identity WHERE account_id=? AND provider='GOOGLE' AND issuer=? AND subject=?",id,ExternalProviders.issuer(ExternalProviders.Provider.GOOGLE),subject));
+        assertEquals(0,count("SELECT count(*) FROM user_session WHERE account_id IN (?,?)",id,other));
+        assertEquals(0,count("SELECT count(*) FROM audit_event WHERE actor_id=? AND event_type='LOGIN_SUCCEEDED'",id));
+        var ctx=context(ExternalProviders.Provider.GOOGLE,subject,email,true,"Changed",false);
+        assertEquals("EXTERNAL_STATE_INVALID",assertThrows(AuthFailure.class,()->login.callback(ctx.provider(),ctx.state(),tokens.create(),"code",null)).code());
+        assertEquals(0,count("SELECT count(*) FROM user_session WHERE account_id=?",id));
+        var result=finish(ctx,null);assertEquals(id,result.session().principal().accountId());
+        assertNotNull(auth.authenticate(result.session().secret()));assertEquals("Existing",auth.me(result.session().principal()).displayName());
+        assertThrows(AuthFailure.class,()->finish(ctx,null));
+        assertEquals(1,count("SELECT count(*) FROM audit_event WHERE actor_id=? AND event_type='LOGIN_SUCCEEDED'",id));
+        assertEquals(0,count("SELECT count(*) FROM user_session WHERE account_id=?",other));
     }
     @Test void googleD10CancellationRevokesAllSessionsAndAuditsOnce() {
         var session=externalAccount(ExternalProviders.Provider.GOOGLE);UUID id=session.principal().accountId();

@@ -18,7 +18,7 @@ public class TemplateImageFiles {
  public final PhotoFiles files;private final Path root;private final String namespace;
  @org.springframework.beans.factory.annotation.Autowired
  public TemplateImageFiles(@Value("${rallye.templates.image-directory:${user.home}/.rallye/template-images}") String directory){this(directory,"race-templates");}
- public TemplateImageFiles(String directory,String namespace){if(!Set.of("race-templates","race-events").contains(namespace))throw new IllegalArgumentException("Invalid storage namespace");this.namespace=namespace;root=Path.of(directory).toAbsolutePath().normalize();files=new PhotoFiles(directory);}
+ public TemplateImageFiles(String directory,String namespace){if(!Set.of("race-templates","race-events","race-simulations").contains(namespace))throw new IllegalArgumentException("Invalid storage namespace");this.namespace=namespace;root=Path.of(directory).toAbsolutePath().normalize();files=new PhotoFiles(directory);}
  public boolean sameRoot(TemplateImageFiles other){return root.equals(other.root);}
  private Path directory(UUID template,boolean create)throws IOException{
   Path path=root;

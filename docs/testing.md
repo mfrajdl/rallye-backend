@@ -1015,3 +1015,27 @@ nyní vyžadují existující obchodní transakci. Cílený běh AuditTransactio
 včetně nové proxy regrese: **7 testů, BUILD SUCCESS**. Kompletní sady se
 při závěrečném commitu znovu nespouštěly; výše uvedené výsledky zůstávají
 výsledky předchozích běhů.
+
+## Backend simulátoru šablony / V23 a V24
+
+[API, konfigurace a postup](race-simulator-design.md#16-správa-trvale-uložených-simulací).
+Unit/HTTP testy ověřují evaluator, GPS parser, autorizaci/CSRF, DTO, historii,
+replay, obnovu a správu uložených simulací. Poslední běžné verify Codexu na
+JDK 21.0.12.1: **695 testů, 0 failures/errors/skipped, BUILD SUCCESS**.
+
+Uživatel potvrdil cílený PostgreSQL běh **28 SimulationIT, BUILD SUCCESS** po
+opravě izolace testu pořadí. Pokryty jsou V22→V23 a V23→V24, snapshoty a soubory,
+CODE/GPS/časové vstupy, historie a reload, replay, souběhy, rollback,
+cancellation/anonymizace, neomezené uchování, vlastní seznam a explicitní mazání.
+Kompletní PostgreSQL sada prošla před posledním rozšířením správy simulací;
+nejde o nové kompletní ověření po V24. Codex PostgreSQL sadu nespouštěl.
+
+Optimalizované fixture EventsIT, TemplatesIT, SimulationIT, CrewTransfersIT a
+ExternalWebLoginIT uživatel ověřil cílenými běhy. Produkční validace, audit,
+Flyway a databázové invarianty zůstávají zapnuté; nové regrese hlídají izolaci.
+Každá třída má vlastní schéma/adresáře. V profilu it neběží SimulationMaintenance.
+Neznámé budoucí migrace nadále odmítají přesné guardy (fixture V25).
+
+Cíleně: `.\mvnw.cmd -Pit "-Dit.test=SimulationIT" verify`.
+Kompletně: `.\mvnw.cmd -Pit verify`. PostgreSQL běhy provádí uživatel výhradně
+proti rallye_test podle ochranných podmínek výše.

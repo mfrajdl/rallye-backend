@@ -48,6 +48,7 @@ public class AuditStore {
                 """,id,Timestamp.from(time),actor==null?"SYSTEM":"USER",actor,event.name(),
                 UUID.fromString("00000000-0000-0000-0000-000000000005"),metadata);
     }
+    public void appendSimulation(UUID id,Instant at,UUID actor,Event event,UUID target){jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type) VALUES (?,?,?,?,?,?,'SIMULATION')",id,Timestamp.from(at),actor==null?"SYSTEM":"USER",actor,event.name(),target);}
     public void appendRaceInstructions(UUID id,Instant time,UUID actor,UUID target,UUID stage){
         String metadata=tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.Map.of("stageId",stage));
         jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type,metadata) VALUES (?,?,'USER',?,'RACE_EVENT_STAGE_INSTRUCTIONS_UPDATED',?,'RACE_EVENT',?::jsonb)",id,Timestamp.from(time),actor,target,metadata);

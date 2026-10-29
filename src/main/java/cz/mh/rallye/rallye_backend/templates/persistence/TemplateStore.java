@@ -49,8 +49,8 @@ public class TemplateStore {
     public void ensureDeletionSupported(){ensureDeletionSupported(null);}
     public void ensureDeletionSupported(UUID template){
         boolean known=Boolean.TRUE.equals(jdbc.queryForObject("""
-            SELECT count(*)=22 AND bool_and(success AND type='SQL')
-              AND array_agg(version ORDER BY installed_rank)=ARRAY['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22']::varchar[]
+            SELECT count(*) IN (22,23,24) AND bool_and(success AND type='SQL')
+              AND (array_agg(version ORDER BY installed_rank)=ARRAY['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22']::varchar[] OR (array_agg(version ORDER BY installed_rank)=ARRAY['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','23']::varchar[] AND count(*) FILTER(WHERE version='23' AND script='V23__race_simulations.sql')=1) OR (array_agg(version ORDER BY installed_rank)=ARRAY['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24']::varchar[] AND count(*) FILTER(WHERE version='23' AND script='V23__race_simulations.sql')=1 AND count(*) FILTER(WHERE version='24' AND script='V24__persistent_simulation_management.sql')=1))
               AND count(*) FILTER (WHERE version='22' AND script='V22__action_configuration.sql')=1
               AND count(*) FILTER (WHERE version='16' AND script='V16__race_templates.sql')=1
               AND count(*) FILTER (WHERE version='20' AND script='V20__template_file_library.sql')=1

@@ -48,19 +48,35 @@ class CrewTransfersIT {
     @Autowired JdbcTemplate jdbc;
     @Autowired MutableClock clock;
     @Autowired PlatformTransactionManager manager;
+    @Autowired cz.mh.rallye.rallye_backend.identity.persistence.AccountStore fixtureAccounts;
+    @Autowired cz.mh.rallye.rallye_backend.identity.persistence.AdminStore fixtureRoles;
+    @Autowired cz.mh.rallye.rallye_backend.audit.application.AuditService fixtureAudit;
+    @Autowired org.springframework.security.crypto.password.PasswordEncoder fixturePasswords;
     @MockitoSpyBean CrewTransferStore transfers;
     @MockitoSpyBean cz.mh.rallye.rallye_backend.shared.persistence.CommandStore commands;
     @MockitoSpyBean cz.mh.rallye.rallye_backend.audit.persistence.AuditStore audit;
     AuthService.LoginSession administrator;
     AuthService.LoginSession owner,target;
+    // Immutable, genuine Argon2 hash; only transfer fixtures share it, never account/session rows or tokens.
+    String fixturePasswordHash;
+    /** These accounts are prerequisites, not registration/login test subjects. Keep real LOCAL
+     * identities, verified ACTIVE state, independent hashed session secrets and transactional login audit.
+     */
     AuthService.LoginSession account() {
-        String email=UUID.randomUUID()+"@example.test";
-        auth.register(email,"test-password","Captain");
-        auth.verifyEmail(mail.token(email,"EMAIL_VERIFICATION"));
-        return auth.login(email,"test-password",true);
+        return tx(()->{
+            fixtureRoles.lock();UUID id=UUID.randomUUID();String email=id+"@example.test";
+            var at=clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+            assertTrue(fixtureAccounts.create(id,email,"Captain",fixturePasswordHash,at));
+            fixtureAccounts.activate(id,at);
+            var tokens=new SecretTokens();String secret=tokens.create();
+            UUID session=fixtureAccounts.insertSession(id,tokens.hash(secret),true,at,at.plus(AuthService.idle(true)));
+            fixtureAudit.record(id,cz.mh.rallye.rallye_backend.audit.application.AuditService.Event.LOGIN_SUCCEEDED,id);
+            return new AuthService.LoginSession(secret,new AuthService.Principal(id,session,true));
+        });
     }
     @BeforeEach void fixtures() {owner=account();target=account();}
     @BeforeAll void bootstrapAdministrator() throws Exception {
+        fixturePasswordHash=fixturePasswords.encode("test-password");
         administrator=account();
         String sql=AdministrationIT.bootstrapBody(administrator.principal().accountId());
         tx(()->{jdbc.execute(sql);return null;});
@@ -82,6 +98,22 @@ class CrewTransfersIT {
     }
     String targetEmail() {return jdbc.queryForObject("SELECT email FROM user_account WHERE id=?",String.class,target.principal().accountId());}
     long messages() {return mail.deliveries.stream().filter(item->item.purpose.equals("CREW_TRANSFER")).count();}
+    @Test void accountFixturesHaveVerifiedIdentityRealLoginAuditAndIndependentSessions() {
+        assertNotEquals(owner.principal().accountId(),target.principal().accountId());
+        assertNotEquals(owner.principal().sessionId(),target.principal().sessionId());
+        assertFalse(owner.secret().equals(target.secret()));
+        for(var session:java.util.List.of(owner,target)) {
+            UUID id=session.principal().accountId();
+            assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM user_account WHERE id=? AND status='ACTIVE' AND email_verified_at IS NOT NULL",Integer.class,id));
+            assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM user_identity WHERE account_id=? AND provider='LOCAL'",Integer.class,id));
+            assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE actor_id=? AND event_type='LOGIN_SUCCEEDED'",Integer.class,id));
+            assertEquals(session.principal(),auth.authenticate(session.secret()));
+            assertTrue(new SecretTokens().hash(session.secret()).equals(jdbc.queryForObject("SELECT token_hash FROM user_session WHERE id=?",String.class,session.principal().sessionId())));
+        }
+        String email=fixtureAccounts.account(owner.principal().accountId()).email();
+        assertEquals(owner.principal().accountId(),auth.login(email,"test-password",true).principal().accountId());
+        auth.logout(owner.principal());assertNull(auth.authenticate(owner.secret()));assertNotNull(auth.authenticate(target.secret()));
+    }
     @Test void restFoundationCreatesOneDigestAndOneMailForSameIdempotentCommand() {
         var crew=crew();UUID key=UUID.randomUUID();long before=messages();String email=targetEmail();
         var first=service.create(owner.principal(),crew.id(),key,email,0);

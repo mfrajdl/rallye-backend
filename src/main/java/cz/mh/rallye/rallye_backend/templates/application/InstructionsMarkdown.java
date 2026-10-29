@@ -30,24 +30,27 @@ public final class InstructionsMarkdown {
  public static Parsed analyzeStored(UUID template,String source){return parse(template,source,true);}
  public static Parsed analyzeEvent(UUID event,String source){return parse(event,source,false,true);}
  private static Parsed parse(UUID template,String source,boolean stored){return parse(template,source,stored,false);}
- private static Parsed parse(UUID template,String source,boolean stored,boolean event){
+ public static Parsed analyzeSimulation(UUID id,String source){return parse(id,source,false,false,true);}
+ private static Parsed parse(UUID template,String source,boolean stored,boolean event){return parse(template,source,stored,event,false);}
+ private static Parsed parse(UUID template,String source,boolean stored,boolean event,boolean simulation){
   validate(source,1048576);int offset=source!=null&&source.startsWith("\ufeff")?1:0;Node node=PARSER.parse(source==null?"":source.substring(offset));var images=new LinkedHashMap<Image,String>();var references=new LinkedHashMap<Node,Reference>();
   node.accept(new AbstractVisitor(){
-   @Override public void visit(Image image){String name=ImageNames.reference(template,image.getDestination(),event);images.put(image,ImageNames.key(name));references.put(image,new Reference(name,true,""));}
-   @Override public void visit(Link link){try{var ref=link(template,link.getDestination(),event);if(ref!=null)references.put(link,ref);}catch(AuthFailure e){if(!stored)throw e;link.setDestination("");}visitChildren(link);}
+   @Override public void visit(Image image){String name=ImageNames.reference(template,image.getDestination(),event,simulation);images.put(image,ImageNames.key(name));references.put(image,new Reference(name,true,""));}
+   @Override public void visit(Link link){try{var ref=link(template,link.getDestination(),event,simulation);if(ref!=null)references.put(link,ref);}catch(AuthFailure e){if(!stored)throw e;link.setDestination("");}visitChildren(link);}
   });return new Parsed(node,images,references,offset);
  }
  private static String fragment(String raw){
   try{String value=java.net.URLDecoder.decode(raw.replace("+","%2B"),StandardCharsets.UTF_8);if(value.codePoints().anyMatch(c->Character.isISOControl(c)||Character.getType(c)==Character.FORMAT))throw new IllegalArgumentException();return java.net.URLEncoder.encode(value,StandardCharsets.UTF_8).replace("+","%20");}
   catch(RuntimeException e){throw new AuthFailure(400,"TEMPLATE_FILE_REFERENCE_INVALID");}
  }
- private static Reference link(UUID template,String destination,boolean event){
+ private static Reference link(UUID template,String destination,boolean event){return link(template,destination,event,false);}
+ private static Reference link(UUID template,String destination,boolean event,boolean simulation){
   if(destination.startsWith("#")){fragment(destination.substring(1));return null;}
   try{
    var uri=java.net.URI.create(destination);String scheme=uri.getScheme();
    if(scheme!=null){scheme=scheme.toLowerCase(Locale.ROOT);if(!Set.of("http","https","mailto","tel").contains(scheme)||uri.getRawSchemeSpecificPart().isBlank()||((scheme.equals("http")||scheme.equals("https"))&&(uri.getRawAuthority()==null||uri.getRawAuthority().isBlank())))throw new IllegalArgumentException();return null;}
    if(destination.startsWith("//"))throw new IllegalArgumentException();
-   int hash=destination.indexOf('#');String name=ImageNames.reference(template,hash<0?destination:destination.substring(0,hash),event);
+   int hash=destination.indexOf('#');String name=ImageNames.reference(template,hash<0?destination:destination.substring(0,hash),event,simulation);
    return new Reference(name,false,hash<0?"":"#"+fragment(destination.substring(hash+1)));
   }catch(RuntimeException e){throw new AuthFailure(400,"TEMPLATE_FILE_REFERENCE_INVALID");}
  }
@@ -55,9 +58,11 @@ public final class InstructionsMarkdown {
  private static void validate(String source,int max){if(source!=null&&(source.indexOf('\0')>=0||source.getBytes(StandardCharsets.UTF_8).length>max))throw new AuthFailure(400,"INVALID_INSTRUCTIONS_MARKDOWN");}
  public static String render(UUID template,String source,Map<String,String> names){return render(template,source,names,false);}
  public static String renderEvent(UUID event,String source,Map<String,String> names){return render(event,source,names,true);}
- private static String render(UUID template,String source,Map<String,String> names,boolean event){
-  if(source==null)return null;var parsed=parse(template,source,true,event);
-  parsed.references().forEach((node,ref)->{String name=names.getOrDefault(ref.key(),ref.fileName());String destination=(event?ImageNames.eventUrl(template,name):ref.image()?ImageNames.url(template,name):ImageNames.fileUrl(template,name))+ref.fragment();if(node instanceof Image image)image.setDestination(destination);else ((Link)node).setDestination(destination);});
+ public static String renderSimulation(UUID id,String source,Map<String,String> names){return render(id,source,names,false,true);}
+ private static String render(UUID template,String source,Map<String,String> names,boolean event){return render(template,source,names,event,false);}
+ private static String render(UUID template,String source,Map<String,String> names,boolean event,boolean simulation){
+  if(source==null)return null;var parsed=parse(template,source,true,event,simulation);
+  parsed.references().forEach((node,ref)->{String name=names.getOrDefault(ref.key(),ref.fileName());String destination=(simulation?ImageNames.simulationUrl(template,name):event?ImageNames.eventUrl(template,name):ref.image()?ImageNames.url(template,name):ImageNames.fileUrl(template,name))+ref.fragment();if(node instanceof Image image)image.setDestination(destination);else ((Link)node).setDestination(destination);});
   String rendered=HtmlRenderer.builder().extensions(EXT).escapeHtml(true).sanitizeUrls(false).build().render(parsed.node());
   // hrefs originate exclusively from validated AST Link nodes; raw HTML is escaped.
   var safe=new Safelist().addTags("p","br","h1","h2","h3","h4","h5","h6","strong","em","del","ul","ol","li","blockquote","hr","a","img","pre","code","table","thead","tbody","tr","th","td","input")
@@ -67,7 +72,7 @@ public final class InstructionsMarkdown {
   for(var input:doc.select("input")){if(!input.attr("type").equals("checkbox"))input.remove();else input.attr("disabled",true);}
   for(var code:doc.select("code[class]"))if(!code.className().matches("language-[a-zA-Z0-9_+-]+"))code.removeAttr("class");
   for(var cell:doc.select("[align]"))if(!Set.of("left","right","center").contains(cell.attr("align")))cell.removeAttr("align");
-  for(var a:doc.select("a[href]")){if(a.attr("href").isEmpty()){a.removeAttr("href");continue;}String href=a.attr("href").toLowerCase(Locale.ROOT);if(href.startsWith("http:")||href.startsWith("https:")||href.startsWith("/api/v1/race-templates/")||href.startsWith("/api/v1/race-events/"))a.attr("target","_blank").attr("rel","noopener noreferrer");}
+  for(var a:doc.select("a[href]")){if(a.attr("href").isEmpty()){a.removeAttr("href");continue;}String href=a.attr("href").toLowerCase(Locale.ROOT);if(href.startsWith("http:")||href.startsWith("https:")||href.startsWith("/api/v1/race-templates/")||href.startsWith("/api/v1/race-events/")||href.startsWith("/api/v1/admin/race-simulations/"))a.attr("target","_blank").attr("rel","noopener noreferrer");}
   var slugs=new HashSet<String>();for(var heading:doc.select("h1,h2,h3,h4,h5,h6")){
    String base=java.text.Normalizer.normalize(heading.text().toLowerCase(Locale.ROOT),java.text.Normalizer.Form.NFC).replaceAll("[^\\p{L}\\p{N}\\p{M}_ -]","").strip().replaceAll("\\s+","-");if(base.isEmpty())base="section";
    String slug=base;int suffix=1;while(!slugs.add(slug))slug=base+"-"+suffix++;heading.attr("id",slug);
@@ -87,7 +92,9 @@ public final class InstructionsMarkdown {
  }
  public static String copy(UUID sourceTemplate,UUID target,String source){return copy(sourceTemplate,target,source,false);}
  public static String copyToEvent(UUID sourceTemplate,UUID target,String source){return copy(sourceTemplate,target,source,true);}
- private static String copy(UUID sourceTemplate,UUID target,String source,boolean event){
+ public static String copyToSimulation(UUID sourceTemplate,UUID target,String source){return copy(sourceTemplate,target,source,false,true);}
+ private static String copy(UUID sourceTemplate,UUID target,String source,boolean event){return copy(sourceTemplate,target,source,event,false);}
+ private static String copy(UUID sourceTemplate,UUID target,String source,boolean event,boolean simulation){
   if(source==null)return null;var parsed=analyzeStored(sourceTemplate,source);var changed=new LinkedHashSet<Node>();
   // Definitions may remain in the source after their usages become inline links.
   // Rewrite them too, including unused definitions, so snapshots never keep source-library URLs.
@@ -95,7 +102,7 @@ public final class InstructionsMarkdown {
   parsed.references().forEach((node,ref)->{
    String destination=node instanceof Image i?i.getDestination():node instanceof Link link?link.getDestination():((LinkReferenceDefinition)node).getDestination();
    if(!destination.startsWith("/api/v1/race-templates/"+sourceTemplate+"/"))return;
-   String next=(event?ImageNames.eventUrl(target,ref.fileName()):ref.image()?ImageNames.url(target,ref.fileName()):ImageNames.fileUrl(target,ref.fileName()))+ref.fragment();
+   String next=(simulation?ImageNames.simulationUrl(target,ref.fileName()):event?ImageNames.eventUrl(target,ref.fileName()):ref.image()?ImageNames.url(target,ref.fileName()):ImageNames.fileUrl(target,ref.fileName()))+ref.fragment();
    if(node instanceof Image i)i.setDestination(next);else if(node instanceof Link link)link.setDestination(next);else ((LinkReferenceDefinition)node).setDestination(next);changed.add(node);
   });
   record Edit(int start,int end,String text){}var edits=new ArrayList<Edit>();

@@ -23,10 +23,12 @@ public final class ImageNames {
  public static String fileUrl(UUID template,String name){return url(template,name).replace("/images/","/files/");}
  public static String eventUrl(UUID event,String name){return fileUrl(event,name).replace("/race-templates/","/race-events/");}
  public static String reference(UUID template,String destination){return reference(template,destination,false);}
- public static String reference(UUID template,String destination,boolean event){
+ public static String simulationUrl(UUID id,String name){return "/api/v1/admin/race-simulations/"+id+"/files/"+URLEncoder.encode(validate(name),StandardCharsets.UTF_8).replace("+","%20");}
+ public static String reference(UUID template,String destination,boolean event){return reference(template,destination,event,false);}
+ public static String reference(UUID template,String destination,boolean event,boolean simulation){
   try{
-   String prefix="/api/v1/"+(event?"race-events":"race-templates")+"/"+template+"/images/";
-   String filePrefix="/api/v1/"+(event?"race-events":"race-templates")+"/"+template+"/files/";
+   String prefix=simulation?"/api/v1/admin/race-simulations/"+template+"/files/":"/api/v1/"+(event?"race-events":"race-templates")+"/"+template+"/images/";
+   String filePrefix=simulation?prefix:"/api/v1/"+(event?"race-events":"race-templates")+"/"+template+"/files/";
    String raw=destination.startsWith(prefix)?destination.substring(prefix.length()):destination.startsWith(filePrefix)?destination.substring(filePrefix.length()):destination;
    String decoded=URLDecoder.decode(raw.replace("+","%2B"),StandardCharsets.UTF_8);
    return validate(decoded);

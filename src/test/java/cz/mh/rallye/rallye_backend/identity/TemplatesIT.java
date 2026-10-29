@@ -58,6 +58,7 @@ class TemplatesIT {
     @Autowired PreRaceAccountParticipationFacts facts;@Autowired CommandCleanupStore cleanup;
     @Autowired org.springframework.test.web.servlet.MockMvc mvc;
     @MockitoSpyBean AuditStore audit;@MockitoSpyBean CommandStore commands;
+    @Autowired cz.mh.rallye.rallye_backend.audit.application.AuditService fixtureAudit;
     record Actor(UUID id,String secret,AuthService.Principal principal,String email) {}
     @Autowired org.springframework.security.crypto.password.PasswordEncoder passwords;
     Actor root;
@@ -215,16 +216,43 @@ class TemplatesIT {
     }
 
     record Configured(UUID template,UUID stage) {}
+    /** Only the unconfigured starting fixture is shortened. Configuration, publication, Markdown
+     * edits and uploads remain real service operations because this suite explicitly tests them.
+     * Keep version 2 and all three audit events; only the fixture stage-create receipt is omitted.
+     */
     Configured bareWithInstructions(){
-        UUID id=create();UUID stage=service.createStage(root.principal(),id,0,UUID.randomUUID(),"Station",0L,0L).id();
-        service.updateStage(root.principal(),id,stage,1,"Station",0L,0L,true,"Follow the plain text instructions.");return new Configured(id,stage);
+        return tx().execute(s->{
+            UUID id=create(),stage=UUID.randomUUID();var at=clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+            String text="Follow the plain text instructions.";
+            cz.mh.rallye.rallye_backend.templates.application.InstructionsMarkdown.analyze(id,text);
+            templateStore.insertStage(stage,id,1,"Station",0L,0L);templateStore.touch(id,at);
+            fixtureAudit.template(root.id(),Event.TEMPLATE_STAGE_CREATED,stage,true);
+            templateStore.instructionsMarkdown(stage,text);templateStore.references(id,stage,Set.of());templateStore.touch(id,at);
+            fixtureAudit.template(root.id(),Event.TEMPLATE_STAGE_UPDATED,stage,true);
+            return new Configured(id,stage);
+        });
     }
     TemplateService.ConfigurationChange config(boolean gps,boolean code,String newCode,long rate){
         return new TemplateService.ConfigurationChange(gps?new Gps(true,90.0,-180.0,0.5,rate,rate):new Gps(false,null,null,null,null,null),
             new TemplateService.CodeChange(code,newCode,code?rate:null),new TimePenalty(true,60000L,rate),new Delayed(true,0L,rate));
     }
     Configured configured(boolean gps,boolean code){var fixture=bareWithInstructions();service.configure(root.principal(),fixture.template(),fixture.stage(),2,config(gps,code,code?" synthetic-code ":null,-3));return fixture;}
-    long version(Configured fixture){return service.detail(root.principal(),fixture.template()).version();}
+    // An internal fixture only needs the scalar version, not an authorized/rendered aggregate view.
+    long version(UUID template){return jdbc.queryForObject("SELECT version FROM race_template WHERE id=?",Long.class,template);}
+    long version(Configured fixture){return version(fixture.template());}
+    @Test void startingFixturesKeepVersionsAuditAndIndependentRows(){
+        var first=bareWithInstructions();var second=bareWithInstructions();
+        assertNotEquals(first.template(),second.template());assertNotEquals(first.stage(),second.stage());
+        var untouched=service.detail(root.principal(),second.template());
+        for(var f:List.of(first,second)){
+            var view=service.detail(root.principal(),f.template());assertEquals(2,view.version());assertEquals("DRAFT",view.status());
+            assertEquals("Follow the plain text instructions.",view.stages().getFirst().instructionsMarkdown());
+            assertEquals(3,count("SELECT count(*) FROM audit_event WHERE target_id IN (?,?)",f.template(),f.stage()));
+            assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_STAGE_UPDATED'",f.stage()));
+        }
+        service.updateStage(root.principal(),first.template(),first.stage(),2,"Changed",0L,0L,true,"Other instructions");
+        assertEquals(untouched,service.detail(root.principal(),second.template()));
+    }
     String storedCode(UUID stage){return jdbc.queryForObject("SELECT code_value FROM template_stage WHERE id=?",String.class,stage);}
     @Test void incompleteReadinessIsReadOnlyAndReturnsFieldErrors(){
         UUID id=create();UUID stage=service.createStage(root.principal(),id,0,UUID.randomUUID(),null,null,null).id();
@@ -349,7 +377,7 @@ class TemplatesIT {
     }
 
     java.io.InputStream png()throws Exception{return new java.io.ByteArrayInputStream(cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",12,8));}
-    String upload(UUID template,String name)throws Exception{return images.upload(root.principal(),template,service.detail(root.principal(),template).version(),UUID.randomUUID(),name,png()).fileName();}
+    String upload(UUID template,String name)throws Exception{return images.upload(root.principal(),template,version(template),UUID.randomUUID(),name,png()).fileName();}
     void markdown(Configured f,String source){service.updateStage(root.principal(),f.template(),f.stage(),version(f),"Station",0L,0L,true,source);}
     UUID imageId(UUID template,String name){return jdbc.queryForObject("SELECT id FROM template_image WHERE race_template_id=? AND name_key=?",UUID.class,template,cz.mh.rallye.rallye_backend.templates.application.ImageNames.key(name));}
     java.nio.file.Path imagePath(UUID template,String name){return IMAGE_DIR.resolve("race-templates").resolve(template.toString()).resolve("images").resolve(name);}
@@ -489,7 +517,7 @@ class TemplatesIT {
     }
 
     cz.mh.rallye.rallye_backend.templates.application.TemplateFileService.Uploaded file(UUID template,String name,String source){return file(template,name,source.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
-    cz.mh.rallye.rallye_backend.templates.application.TemplateFileService.Uploaded file(UUID template,String name,byte[] bytes){return files.upload(root.principal(),template,service.detail(root.principal(),template).version(),UUID.randomUUID(),name,new java.io.ByteArrayInputStream(bytes));}
+    cz.mh.rallye.rallye_backend.templates.application.TemplateFileService.Uploaded file(UUID template,String name,byte[] bytes){return files.upload(root.principal(),template,version(template),UUID.randomUUID(),name,new java.io.ByteArrayInputStream(bytes));}
     @Test void fileLibraryCyclesMissingTargetsAndReadyGuard()throws Exception{
         var f=configured(true,false);file(f.template(),"a.md","# A\n[B](b.md) ![Mapa](mapa.png)");var report=files.list(root.principal(),f.template());assertEquals(2,report.missingReferences().size());assertFalse(service.readiness(root.principal(),f.template()).ready());assertEquals("TEMPLATE_NOT_READY",assertThrows(TemplateReadiness.NotReady.class,()->service.state(root.principal(),f.template(),version(f),"READY")).getMessage());
         file(f.template(),"b.md","[A](a.md)");upload(f.template(),"mapa.png");assertTrue(files.list(root.principal(),f.template()).missingReferences().isEmpty());assertTrue(service.readiness(root.principal(),f.template()).ready());

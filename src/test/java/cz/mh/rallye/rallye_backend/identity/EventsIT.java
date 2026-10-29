@@ -16,24 +16,79 @@ class EventsIT {
  @DynamicPropertySource static void properties(DynamicPropertyRegistry p){p.add("spring.flyway.schemas",()->SCHEMA);p.add("spring.flyway.default-schema",()->SCHEMA);p.add("spring.datasource.hikari.connection-init-sql",()->"SET search_path TO "+SCHEMA);p.add("rallye.templates.image-directory",()->DIR.resolve("templates").toString());p.add("rallye.races.file-directory",()->DIR.resolve("events").toString());}
  @Autowired cz.mh.rallye.rallye_backend.templates.persistence.TemplateStore templateStore;@Autowired TemplateDuplicationService copies;@Autowired EventService events;@Autowired TemplateService templates;@Autowired TemplateImageService images;@Autowired TemplateFileService files;@Autowired EventFiles eventFiles;@Autowired TemplateImageFiles templateFiles;@Autowired JdbcTemplate jdbc;@Autowired AccountStore accounts;@Autowired MutableClock clock;@Autowired PlatformTransactionManager manager;@Autowired MockMvc mvc;@Autowired PreRaceAccountParticipationFacts facts;
  @MockitoSpyBean AuditStore audit;@MockitoSpyBean EventStore store;
+ @Autowired cz.mh.rallye.rallye_backend.audit.application.AuditService fixtureAudit;
+ @Autowired TemplateFileContent fixtureFormats;
+ byte[] fixturePng,fixturePdf;
  record Actor(UUID id,String token,AuthService.Principal principal){} Actor admin;
  TransactionTemplate tx(){return new TransactionTemplate(manager);}
  Actor actor(){return tx().execute(s->{UUID id=UUID.randomUUID();String email=id+"@example.test",token=new SecretTokens().create();Timestamp at=Timestamp.from(clock.instant());jdbc.update("INSERT INTO user_account(id,email,normalized_email,display_name,status,email_verified_at,created_at,updated_at) VALUES (?,?,?,'Test','ACTIVE',?,?,?)",id,email,email,at,at,at);jdbc.update("INSERT INTO user_identity(id,account_id,provider,issuer,subject,password_hash,created_at) VALUES (?,?,'LOCAL','local',?,'synthetic-test-hash',?)",UUID.randomUUID(),id,id.toString(),at);UUID session=accounts.insertSession(id,new SecretTokens().hash(token),false,clock.instant(),clock.instant().plusSeconds(86400));return new Actor(id,token,new AuthService.Principal(id,session,false));});}
- @BeforeAll void bootstrap()throws Exception{admin=actor();String sql=AdministrationIT.bootstrapBody(admin.id());tx().executeWithoutResult(s->jdbc.execute(sql));}
+ @BeforeAll void bootstrap()throws Exception{
+  admin=actor();String sql=AdministrationIT.bootstrapBody(admin.id());tx().executeWithoutResult(s->jdbc.execute(sql));
+  fixturePng=cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",2,2);
+  try(var pdf=new org.apache.pdfbox.pdmodel.PDDocument();var out=new ByteArrayOutputStream()){
+   pdf.addPage(new org.apache.pdfbox.pdmodel.PDPage());pdf.save(out);fixturePdf=out.toByteArray();
+  }
+ }
  @AfterAll void cleanup()throws Exception{assertTrue(SCHEMA.matches("it_events_[0-9a-f]{32}"));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_database()",String.class));assertEquals("rallye_test",jdbc.queryForObject("SELECT current_user",String.class));jdbc.execute("DROP SCHEMA \""+SCHEMA+"\" CASCADE");assertTrue(DIR.getFileName().toString().startsWith("it_events_"));try(var all=Files.walk(DIR)){for(Path path:all.sorted(Comparator.reverseOrder()).toList())Files.delete(path);}}
  record Fixture(UUID template,UUID stage){}
  long version(UUID template){return templates.detail(admin.principal(),template).version();}
- Fixture ready()throws Exception{
-  UUID template=templates.create(admin.principal(),UUID.randomUUID(),"Source",null,-3).id();UUID stage=templates.createStage(admin.principal(),template,0,UUID.randomUUID(),"Station",60000L,10L).id();
+ /** Only source-template setup is shortened; every event operation under test remains a real service call.
+  * Each call owns fresh rows/files. Keep source version 4 and the original audit event sequence,
+  * but omit fixture-only idempotency receipts and repeated authorization/view queries.
+  * Publish through the real service so the complete READY/reference validation still runs.
+  */
+ Fixture ready(){
+  UUID template=UUID.randomUUID(),stage=UUID.randomUUID();
   String source="![Map]("+ImageNames.url(template,"map.png")+") [Guide]("+ImageNames.fileUrl(template,"guide.md")+"#part) [relative](rules.pdf)";
-  templates.updateStage(admin.principal(),template,stage,1,"Station",60000L,10L,true,source);
-  templates.configure(admin.principal(),template,stage,2,new TemplateService.ConfigurationChange(new Gps(true,50d,14d,100d,-1L,2L),new TemplateService.CodeChange(true,"synthetic-code",-2L),new TimePenalty(true,60000L,3L),new cz.mh.rallye.rallye_backend.templates.domain.StageConfiguration.Delayed(true,1000L,-1L)));
-  byte[] png=cz.mh.rallye.rallye_backend.crews.PhotoFilesTest.image("png",2,2);upload(template,"map.png",png);
-  try(var pdf=new org.apache.pdfbox.pdmodel.PDDocument();var out=new ByteArrayOutputStream()){pdf.addPage(new org.apache.pdfbox.pdmodel.PDPage());pdf.save(out);upload(template,"rules.pdf",out.toByteArray());}
-  upload(template,"guide.md",("# Part\n\n[Self](guide.md) [Rules](rules.pdf) ![Map]("+ImageNames.url(template,"map.png")+")").getBytes(java.nio.charset.StandardCharsets.UTF_8));
-  templates.state(admin.principal(),template,version(template),"READY");return new Fixture(template,stage);
+  var config=new cz.mh.rallye.rallye_backend.templates.domain.StageConfiguration(
+    new Gps(true,50d,14d,100d,-1L,2L),new Code(true,TemplateService.normalizeCode("synthetic-code"),-2L,false),
+    new TimePenalty(true,60000L,3L),new cz.mh.rallye.rallye_backend.templates.domain.StageConfiguration.Delayed(true,1000L,-1L));
+  config.validate();InstructionsMarkdown.analyze(template,source);
+  var contents=new LinkedHashMap<String,TemplateFileContent.Validated>();
+  contents.put("map.png",fixtureFormats.validate("map.png",new ByteArrayInputStream(fixturePng),templateFiles.files));
+  contents.put("rules.pdf",fixtureFormats.validate("rules.pdf",new ByteArrayInputStream(fixturePdf),templateFiles.files));
+  byte[] guide=("# Part\n\n[Self](guide.md) [Rules](rules.pdf) ![Map]("+ImageNames.url(template,"map.png")+")").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  contents.put("guide.md",fixtureFormats.validate("guide.md",new ByteArrayInputStream(guide),templateFiles.files));
+  return templateFiles.files.exclusive(()->{
+   try{return tx().execute(s->{
+    var at=clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+    // Real authorization acquires ADMIN/account locks before any template locks, as in production.
+    // The remaining setup is repository-level, not the subject of this event test suite.
+    templates.list(admin.principal(),null,null,0,1);
+    templateStore.insert(template,"Source",null,-3,at);
+    fixtureAudit.template(admin.id(),Event.TEMPLATE_CREATED,template,false);
+    templateStore.insertStage(stage,template,1,"Station",60000L,10L);templateStore.touch(template,at);
+    fixtureAudit.template(admin.id(),Event.TEMPLATE_STAGE_CREATED,stage,true);
+    templateStore.instructionsMarkdown(stage,source);templateStore.touch(template,at);
+    fixtureAudit.template(admin.id(),Event.TEMPLATE_STAGE_UPDATED,stage,true);
+    templateStore.configureStage(stage,config);templateStore.touch(template,at);
+    fixtureAudit.template(admin.id(),Event.TEMPLATE_STAGE_CONFIGURED,stage,true);
+    contents.forEach((name,content)->{
+     templateFiles.write(template,name,content.bytes());templateStore.file(UUID.randomUUID(),template,name,content,at);
+     fixtureAudit.template(admin.id(),Event.TEMPLATE_FILE_CREATED,template,false);
+    });
+    templateStore.references(template,stage,TemplateFileReferences.imageIds(template,source,templateStore.images(template)));
+    templates.state(admin.principal(),template,3,"READY");
+    return new Fixture(template,stage);
+   });}catch(RuntimeException failure){
+    // Do not unlink a committed file if transaction completion was uncertain; class cleanup owns the directory.
+    for(String name:contents.keySet())try{if(!templateStore.imageNameReferenced(template,name))templateFiles.remove(template,name);}
+    catch(RuntimeException unavailable){/* Guarded class-level cleanup removes only this class's private directory. */}
+    throw failure;
+   }
+  });
  }
- void upload(UUID template,String name,byte[] data){files.upload(admin.principal(),template,version(template),UUID.randomUUID(),name,new ByteArrayInputStream(data));}
+ @Test void readyFixturePreservesReadinessAuditVersionAndPrivateFiles(){
+  var first=ready();var second=ready();assertNotEquals(first.template(),second.template());assertNotEquals(first.stage(),second.stage());
+  for(var f:List.of(first,second)){
+   var detail=templates.detail(admin.principal(),f.template());assertEquals("READY",detail.status());assertEquals(4,detail.version());
+   assertTrue(templates.readiness(admin.principal(),f.template()).ready());assertEquals(3,files.list(admin.principal(),f.template()).items().size());
+   assertEquals(1,count("SELECT count(*) FROM template_stage_image WHERE stage_id=? AND race_template_id=?",f.stage(),f.template()));
+   assertEquals(8,count("SELECT count(*) FROM audit_event WHERE target_id IN (?,?)",f.template(),f.stage()));
+   assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_READIED'",f.template()));
+   assertTrue(Files.isRegularFile(DIR.resolve("templates/race-templates/"+f.template()+"/images/map.png")));
+  }
+ }
  EventService.Input input(String name){return new EventService.Input(name,null,Instant.parse("2026-11-01T10:00:00Z"),Instant.parse("2026-11-01T16:00:00Z"));}
  EventService.Created create(Fixture f){return events.create(admin.principal(),f.template(),version(f.template()),UUID.randomUUID(),input("Event-"+UUID.randomUUID()));}
  long count(String sql,Object... args){return jdbc.queryForObject(sql,Long.class,args);}
@@ -75,7 +130,7 @@ class EventsIT {
  @Test void nonAdministratorCannotReadPlaintextCodeFromTemplateOrAction()throws Exception{var f=ready();var event=create(f);var ordinary=actor();for(String url:List.of("/api/v1/race-templates/"+f.template(),"/api/v1/race-templates/"+f.template()+"/stages/"+f.stage(),"/api/v1/race-events/"+event.id()+"/stages")){String response=mvc.perform(get(url).header("Authorization","Bearer "+ordinary.token())).andExpect(status().isForbidden()).andReturn().getResponse().getContentAsString();assertFalse(response.contains("SYNTHETIC-CODE"));}}
  @Test void deleteActionRemovesSnapshotFilesAndAuditsExactlyOnce()throws Exception{var f=ready();var event=create(f);mvc.perform(delete("/api/v1/race-events/"+event.id()).param("version","0").header("Authorization","Bearer "+admin.token())).andExpect(status().isNoContent()).andExpect(content().string(""));assertEquals(0,count("SELECT count(*) FROM race_event WHERE id=?",event.id()));assertEquals(0,count("SELECT count(*) FROM event_stage WHERE race_event_id=?",event.id()));assertEquals(0,count("SELECT count(*) FROM event_file WHERE race_event_id=?",event.id()));assertFalse(Files.exists(DIR.resolve("events/race-events/"+event.id()+"/images/map.png")));assertTrue(Files.exists(DIR.resolve("templates/race-templates/"+f.template()+"/images/map.png")));assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='RACE_EVENT_DELETED'",event.id()));assertEquals(404,assertThrows(AuthFailure.class,()->events.delete(admin.principal(),event.id(),0)).status());templates.delete(admin.principal(),f.template(),version(f.template()));}
  @Test void failedDeleteAuditPreservesWholeSnapshotAndFiles()throws Exception{var f=ready();var event=create(f);var detail=events.detail(admin.principal(),event.id());byte[] png=events.file(admin.principal(),event.id(),"map.png").bytes();var fail=new AtomicBoolean(true);doAnswer(i->{Object result=i.callRealMethod();if(fail.get())throw new IllegalStateException("Injected delete audit failure");return result;}).when(audit).appendRace(any(),any(),any(),eq(Event.RACE_EVENT_DELETED),eq(event.id()),any(),anyLong());assertThrows(RuntimeException.class,()->events.delete(admin.principal(),event.id(),0));assertEquals(detail,events.detail(admin.principal(),event.id()));assertEquals(3,events.files(admin.principal(),event.id()).size());assertArrayEquals(png,events.file(admin.principal(),event.id(),"map.png").bytes());assertEquals(0,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='RACE_EVENT_DELETED'",event.id()));fail.set(false);events.delete(admin.principal(),event.id(),0);assertEquals(0,count("SELECT count(*) FROM race_event WHERE id=?",event.id()));}
- @Test void concurrentDeletesHaveOneWinnerAndFutureSchemaPreventsDeletion()throws Exception{var f=ready();var event=create(f);Callable<String> deletion=()->{try{events.delete(admin.principal(),event.id(),0);return "DELETED";}catch(AuthFailure failure){return failure.code();}};var results=race(deletion,deletion);assertEquals(1,results.stream().filter("DELETED"::equals).count());assertEquals(1,results.stream().filter("RACE_EVENT_NOT_FOUND"::equals).count());assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='RACE_EVENT_DELETED'",event.id()));var kept=create(f);int rank=jdbc.queryForObject("SELECT max(installed_rank)+1 FROM flyway_schema_history",Integer.class);jdbc.update("INSERT INTO flyway_schema_history(installed_rank,version,description,type,script,installed_by,execution_time,success) VALUES (?,'23','Unknown participation migration','SQL','V23__unknown.sql',current_user,0,true)",rank);try{assertEquals("RACE_EVENT_USAGE_CHECK_UNAVAILABLE",assertThrows(AuthFailure.class,()->events.delete(admin.principal(),kept.id(),0)).code());assertNotNull(events.detail(admin.principal(),kept.id()));assertEquals(3,events.files(admin.principal(),kept.id()).size());}finally{jdbc.update("DELETE FROM flyway_schema_history WHERE installed_rank=?",rank);}}
+ @Test void concurrentDeletesHaveOneWinnerAndFutureSchemaPreventsDeletion()throws Exception{var f=ready();var event=create(f);Callable<String> deletion=()->{try{events.delete(admin.principal(),event.id(),0);return "DELETED";}catch(AuthFailure failure){return failure.code();}};var results=race(deletion,deletion);assertEquals(1,results.stream().filter("DELETED"::equals).count());assertEquals(1,results.stream().filter("RACE_EVENT_NOT_FOUND"::equals).count());assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='RACE_EVENT_DELETED'",event.id()));var kept=create(f);int rank=jdbc.queryForObject("SELECT max(installed_rank)+1 FROM flyway_schema_history",Integer.class);jdbc.update("INSERT INTO flyway_schema_history(installed_rank,version,description,type,script,installed_by,execution_time,success) VALUES (?,'25','Unknown participation migration','SQL','V25__unknown.sql',current_user,0,true)",rank);try{assertEquals("RACE_EVENT_USAGE_CHECK_UNAVAILABLE",assertThrows(AuthFailure.class,()->events.delete(admin.principal(),kept.id(),0)).code());assertNotNull(events.detail(admin.principal(),kept.id()));assertEquals(3,events.files(admin.principal(),kept.id()).size());}finally{jdbc.update("DELETE FROM flyway_schema_history WHERE installed_rank=?",rank);}}
  @Test void minuteTimesRoundTripThroughPostgresAndJson()throws Exception{var f=ready();Instant start=OffsetDateTime.parse("2026-11-01T11:20:00+01:00").toInstant(),end=OffsetDateTime.parse("2026-11-01T17:45:00+01:00").toInstant();var input=new EventService.Input("Minutes",null,start,end);var event=events.create(admin.principal(),f.template(),version(f.template()),UUID.randomUUID(),input);var detail=events.detail(admin.principal(),event.id());assertEquals(start,detail.scheduledStartAt());assertEquals(end,detail.endAt());assertEquals(0,detail.scheduledStartAt().getNano());assertEquals(detail,events.update(admin.principal(),event.id(),0,input));mvc.perform(get("/api/v1/race-events/"+event.id()).header("Authorization","Bearer "+admin.token())).andExpect(status().isOk()).andExpect(jsonPath("$.scheduledStartAt").value("2026-11-01T10:20:00Z")).andExpect(jsonPath("$.endAt").value("2026-11-01T16:45:00Z")).andExpect(jsonPath("$.sourceTemplateName").value("Source"));}
  @Test void upgradeV21ToV22PreservesLegacyHashesAndFlagsUnrecoverableCodes(){String schema=SCHEMA+"_v22";assertTrue(schema.matches("it_events_[0-9a-f]{32}_v22"));var source=jdbc.getDataSource();UUID template=UUID.randomUUID(),stage=UUID.randomUUID(),event=UUID.randomUUID(),eventStage=UUID.randomUUID();try{org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("21").load().migrate();jdbc.update("INSERT INTO "+schema+".race_template(id,name,skip_penalty_points,status,version,created_at,updated_at) VALUES (?,'Legacy name',-3,'READY',7,now(),now())",template);jdbc.update("INSERT INTO "+schema+".template_stage(id,race_template_id,sequence_no,name,instructions_markdown,code_enabled,code_hash,wrong_code_penalty_points,max_penalty_points) VALUES (?,?,1,'Legacy','Original',true,'old-hash-only',-7,NULL)",stage,template);jdbc.update("INSERT INTO "+schema+".race_event(id,source_template_id,source_template_version,name,skip_penalty_points,created_at,updated_at) VALUES (?,?,7,'Legacy action',-3,now(),now())",event,template);jdbc.update("INSERT INTO "+schema+".event_stage(id,race_event_id,source_template_stage_id,sequence_no,name,instructions_markdown,code_enabled,code_hash,wrong_code_penalty_points) VALUES (?,?,?,1,'Snapshot','Snapshot',true,'old-hash-only',-7)",eventStage,event,stage);org.flywaydb.core.Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("22").load().migrate();assertEquals("DRAFT",jdbc.queryForObject("SELECT status FROM "+schema+".race_template WHERE id=?",String.class,template));assertEquals(8,count("SELECT version FROM "+schema+".race_template WHERE id=?",template));assertEquals("PLANNED",jdbc.queryForObject("SELECT status FROM "+schema+".race_event WHERE id=?",String.class,event));assertEquals(0,count("SELECT version FROM "+schema+".race_event WHERE id=?",event));for(String table:List.of("template_stage","event_stage")){assertEquals("old-hash-only",jdbc.queryForObject("SELECT code_hash FROM "+schema+"."+table,String.class));assertNull(jdbc.queryForObject("SELECT code_value FROM "+schema+"."+table,String.class));assertEquals(-7,count("SELECT wrong_code_penalty_points FROM "+schema+"."+table));}assertEquals("Legacy name",jdbc.queryForObject("SELECT source_template_name FROM "+schema+".race_event",String.class));assertFalse(jdbc.queryForObject("SELECT source_template_name_is_snapshot FROM "+schema+".race_event",Boolean.class));assertEquals(0,count("SELECT default_wrong_code_penalty_points FROM "+schema+".race_event"));assertEquals("Snapshot",jdbc.queryForObject("SELECT instructions_markdown FROM "+schema+".event_stage",String.class));assertEquals(1,count("SELECT count(*) FROM "+schema+".audit_event WHERE metadata->>'reason'='CODE_VALUE_REQUIRED'"));}finally{jdbc.execute("DROP SCHEMA "+schema+" CASCADE");}}
 

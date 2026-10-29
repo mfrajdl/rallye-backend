@@ -1,3 +1,18 @@
+## Backend simulátoru šablony – dokončeno a ověřeno
+
+[Schválený kontrakt a skutečný stav](race-simulator-design.md#16-správa-trvale-uložených-simulací).
+Společný deterministický evaluator, offline GPS parser, V23/V24, privátní snapshoty,
+příkazový deník s potvrzenými vstupy, virtuální čas/timeFloor a větvená obnova,
+ADMIN/vlastník/CSRF, idempotence a dashboard jsou implementované bez vytváření
+skutečných Akcí. Simulace nemají automatickou expiraci; dostupný je vlastní
+stránkovaný seznam a explicitní smazání. Kvízy jsou odloženy.
+Běžné verify: **695 testů, BUILD SUCCESS**. Uživatel potvrdil cílených
+**28 SimulationIT, BUILD SUCCESS** po opravě izolace seznamového testu.
+Kompletní PostgreSQL sada prošla před posledním rozšířením správy simulací;
+po něm nebyla kompletní sada znovu spuštěna. Dokončené optimalizace EventsIT,
+TemplatesIT, SimulationIT, CrewTransfersIT a ExternalWebLoginIT byly uživatelem
+ověřeny cílenými běhy. Ostré účasti/runtime/výsledky zůstávají samostatnou etapou.
+
 ## Samostatná editace instrukcí stanoviště Akce
 
 Implementovaný PUT /api/v1/race-events/{id}/stages/{stageId}/instructions používá
