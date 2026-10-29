@@ -1039,3 +1039,39 @@ Neznámé budoucí migrace nadále odmítají přesné guardy (fixture V25).
 Cíleně: `.\mvnw.cmd -Pit "-Dit.test=SimulationIT" verify`.
 Kompletně: `.\mvnw.cmd -Pit verify`. PostgreSQL běhy provádí uživatel výhradně
 proti rallye_test podle ochranných podmínek výše.
+
+
+## Start a konec simulovaného závodu / V25
+
+RaceEvaluatorTest, SimulationServiceTest a SimulationHttpTest ověřují oddělený
+race lifecycle, explicitní start, end, náhradu penalizací a obnovu. Nové SimulationIT
+pokrývají perzistenci, auditní rollback, souběh, vlastníka a upgrade V24→V25 bez
+změny historie/hashů. Starší testy průchodu mají výslovnou legacy fixture implicitně
+odstartované simulace; nové lifecycle scénáře používají skutečné create/start API.
+PostgreSQL ověření tohoto rozšíření zatím není provedeno. Uživatel spustí:
+`.\mvnw.cmd -Pit "-Dit.test=SimulationIT" verify`.
+
+
+Ověření rozšíření start/konec: běžné Maven verify na Microsoft JDK 21.0.12.1
+**704 testů, 0 failures/errors/skipped, BUILD SUCCESS**. Připravených 35 SimulationIT
+je zkompilovaných; PostgreSQL část včetně V25 dosud nebyla spuštěna. Starší úspěšné
+integrační běhy neověřují toto rozšíření.
+
+
+## ZIP přenos šablon
+
+Kontrakt a limity: [template-transfer.md](template-transfer.md). Unit testy
+TemplateArchiveTest/TemplateTransferServiceTest a HTTP TemplateTransferHttpTest
+ověřují formát, nepovolené ZIP/JSON, limity, cesty, hash, kontrolu souborů,
+autorizaci/CSRF, importní audit a kompenzaci. CommandAccountsTest ověřuje bezpečný
+formát idempotence bez CODE. Šest nových TemplatesIT je připravených pro
+PostgreSQL round-trip, nezávislost zdroje, souběh a rollback. První uživatelský běh
+odhalil použití sloupce statistics_version zrušeného V17. SQL i archivní DTO jsou
+opravené podle současného modelu. Uživatel následně potvrdil cílený běh
+`.\mvnw.cmd -Pit "-Dit.test=TemplatesIT" verify`: 73 testů, BUILD SUCCESS.
+Potvrdil také ruční ověření exportu/importu.
+
+ZIP přenos – běžné verify po opravě: **730 testů, BUILD SUCCESS**, bez skipped/failures/errors.
+PostgreSQL TemplatesIT jsou uživatelem potvrzené; nejde o nově provedenou
+kompletní PostgreSQL sadu ani samostatné ověření SimulationIT.
+Nová simulační fixture round-trip testu používá výhradně dočasný adresář TemplatesIT.

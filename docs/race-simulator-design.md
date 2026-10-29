@@ -84,8 +84,9 @@ nepřidáváme domněnkou. Ukončení simulace není náhradou testu uzávěrky 
 
 ### Stav a přechody
 
-Průběh RUNNING má právě jedno ACTIVE stanoviště. Ostatní jsou PENDING,
-COMPLETED nebo SKIPPED. Start aktivuje první a uloží activatedAt. Poslední
+Průběh RUNNING má právě jedno vybrané ACTIVE stanoviště. Před oficiálním startem
+nemá activatedAt a nelze jej absolvovat. Ostatní jsou PENDING, COMPLETED, SKIPPED
+nebo ENDED (nedokončeno při konci závodu). Start závodu uloží activatedAt. Poslední
 vyžadovaný úspěch dokončí stanoviště ihned, spočítá časové položky právě jednou
 a aktivuje další ve stejném přechodu. Po posledním je průběh COMPLETED.
 
@@ -292,7 +293,9 @@ Version simulace se při restartu neresetuje.
 
 ## 5. Životní cyklus a úklid
 
-Create vytvoří snapshot a první RUNNING run. Poslední stanoviště -> COMPLETED.
+Create vytvoří snapshot a první RUNNING run se samostatným race.status=NOT_STARTED.
+Příkazy stanovišť čekají na explicitní RACE_START. Poslední stanoviště -> COMPLETED,
+avšak závod nadále běží až do RACE_END. Podrobný kontrakt a kompatibilita jsou v §17.
 Close -> CLOSED bez nové penalizace (není skutečný end_at). Restart i z CLOSED
 vytvoří nový run nad týmž snapshotem, ne novější šablonou. Historie runů zůstává.
 Novější šablona vyžaduje novou simulaci. DELETE odstraní vlastní simulaci.
@@ -307,7 +310,7 @@ Zrušení/anonymizace vlastníka musí ve své transakci odstranit simulace a je
 replay vazby; fyzické soubory po commitu. FK CASCADE nestačí pro anonymizaci.
 Simulace není historická účast a nesmí změnit cancellation pravidla. Příkaz i
 cancellation sdílejí account zámek. Odebrání ADMIN okamžitě zamezí dalšímu přístupu.
-Audit jen SIMULATION_CREATED/RESTARTED/RESTORED/CLOSED/DELETED/EXPIRED s ID, nikdy
+Audit SIMULATION_CREATED/RESTARTED/RESTORED/CLOSED/DELETED a SIMULATION_RACE_STARTED/ENDED s ID, nikdy
 obsah/CODE; herní penalizace nejsou skutečné bezpečnostní události posádky.
 
 ## 6. Virtuální čas: změna hodin není undo (schváleno Q3)
@@ -576,6 +579,8 @@ Společné ADMIN/vlastník/CSRF/replay/version pravidlo §9.1 platí pro každou
 | POST /{id}/restarts | `{version,runId}` | 200 State, nový runId, stejný snapshot |
 | POST /{id}/restorations | `{version,runId,throughSequence}` | 200 State, nová větev |
 | GET /{id}/dashboard | bez těla | 200 `{simulationId,runId,version,status,clock,position,gpsPreview,dashboard}` |
+| POST /{id}/race-starts | `{version,runId}` | 200 State, race.status=RUNNING, čas ze současného virtualNow |
+| POST /{id}/race-ends | `{version,runId}` | 200 State, race.status=ENDED, náhrada penalizací nedokončených stanovišť |
 | POST /{id}/closures | `{version,runId}` | 200 State, CLOSED |
 | DELETE /{id}?version=V | bez těla, bez Idempotency-Key | 204; opakování po smazání 404 |
 | GET /{id}/files | bez těla | 200 FileView[] |
@@ -609,8 +614,10 @@ CodeAccepted/GpsAccepted fakt. Dosavadní splnění zůstává, nejde o další 
 ani opětovné dokončení. Síťový replay stejného klíče neprovede ani tento příkaz znovu.
 
 Clock a position lze měnit i po COMPLETED pro diagnostiku, nemění potvrzené body.
-Po CLOSED pouze čtení/restart/restore/delete, close se správnou verzí je no-op.
-CODE/GPS/skip jen RUNNING. Restore je prefix aktuální větve, musí odkazovat na
+Po CLOSED pouze čtení/restart/restore/delete, případně race-end dosud neukončeného
+závodu; close se správnou verzí je no-op. Close není konec závodu.
+CODE/GPS/skip/complete jen při RUNNING průchodu a race.status=RUNNING
+(včetně dřívějšího no-op potvrzení dokončení, které je po konci závodu zakázané). Restore je prefix aktuální větve, musí odkazovat na
 platný bod této větve, ne budoucí sequence nebo cizí run. Sequence 0 je její
 initial_state; zděděný prefix se obnovuje z parent run + bodu větvení, nikoli
 kopírováním bodovaných pokusů do nového příkazového logu.
@@ -898,6 +905,7 @@ jako stávající souborové moduly; nesdílené lokální kopie nejsou distribu
 ### Ruční ověření
 
 1. ADMIN načte templateVersion a úplnou DRAFT/READY šablonu s knihovnou.
+   Po vytvoření simulace nejprve zavolá race-starts s aktuální version/runId.
 2. POST base dle §9; použít samostatný Idempotency-Key, uložit id/runId/version.
 3. Každou další mutaci posílat s aktuální verzí a runId; stejný klíč jen pro retry.
 4. Nastavit INPUT/TARGET/OUTSIDE polohu; samostatně provést GPS pokus. CODE/GPS
@@ -1142,3 +1150,121 @@ Kompletní PostgreSQL sada byla úspěšná před posledním rozšířením spr�
 po něm nebyla nově spuštěna. Historické počty testů v předchozích kapitolách
 popisují tehdejší běhy, nikoli aktuální počet. Závěrečné uložení do Gitu testy
 znovu nespouští a nemění produkční kód ani migrace.
+
+
+## 17. Organizátorský start a konec závodu v simulaci
+
+### Dvě nezávislé osy stavu
+
+Stávající `status` průchodu zůstává RUNNING/COMPLETED/CLOSED a filtry seznamu
+se nemění. Nové `race` je samostatný objekt v detailu `State`, v `dashboard`
+a u každé položky historie. Samostatný GET dashboardu jej vrací v `dashboard.race`.
+
+```json
+{"status":"RUNNING","startedAt":"2026-10-29T10:05:00Z","endedAt":null}
+```
+
+Uvnitř `race` platí stavy:
+
+| Stav | startedAt | endedAt | Význam |
+|---|---|---|---|
+| NOT_STARTED | null | null | Nový nebo restartovaný průchod před startem závodu |
+| RUNNING | Instant UTC | null | Závod probíhá; posádka již může být COMPLETED |
+| ENDED | Instant UTC nebo null | Instant UTC | Organizátor ukončil závod, případně ještě před startem |
+
+Nová simulace má `status=RUNNING`, `race.status=NOT_STARTED`; první stanoviště
+je vybrané, ale `activatedAt` a `activeStageElapsedMs` jsou null a
+`businessActionsAllowed=false`. Je možné nastavovat polohu a virtuální hodiny.
+CODE/GPS/SKIP/COMPLETE jsou před startem odmítnuty. Start v aktuálním virtualNow
+zahájí měření prvního stanoviště; předstartovní čekání se nezapočte do jeho doby.
+`elapsedSimulationMs` nadále označuje čas od vytvoření virtuálního průchodu,
+nikoli dobu od startu závodu. Tu lze určit z `race.startedAt`.
+
+### API pro frontend
+
+- `POST /api/v1/admin/race-simulations/{id}/race-starts`
+- `POST /api/v1/admin/race-simulations/{id}/race-ends`
+
+Oba endpointy vyžadují aktuální ADMIN roli, vlastnictví simulace,
+`Idempotency-Key: UUID`, JSON Content-Type a pro cookie relaci platnou CSRF
+hlavičku. Bearer používá dosavadní pravidla. Tělo má právě tato povinná pole:
+
+```json
+{"version":0,"runId":"33333333-3333-4333-8333-333333333333"}
+```
+
+Čas, stageId ani jiné parametry nejsou přijímány. Odpověď je HTTP 200 se
+stávajícím úplným State DTO, rozšířeným o `race` a `dashboard.race`. Verze
+vzroste o jedna; runId se nemění. Příklad vybraných polí po konci:
+
+```json
+{"version":2,"status":"CLOSED",
+ "race":{"status":"ENDED","startedAt":"2026-10-29T10:05:00Z","endedAt":"2026-10-29T10:05:00Z"}}
+```
+
+Stejný klíč a stejné parametry vracejí původní odpověď, nikoli nový přechod.
+Jiný obsah se stejným klíčem vrací 409 IDEMPOTENCY_CONFLICT před kontrolou verze.
+Nový klíč s aktuální verzí pro opakovaný start/konec vrací
+409 SIMULATION_RACE_ALREADY_STARTED / SIMULATION_RACE_ALREADY_ENDED.
+Start po konci a odpovědi stanovišť po konci vrací 409 SIMULATION_RACE_ENDED;
+pokus stanoviště před startem 409 SIMULATION_RACE_NOT_STARTED.
+Při staré version nebo runId nadále platí 409 SIMULATION_VERSION_CONFLICT /
+SIMULATION_RUN_CONFLICT. Cizí či neexistující ID vrací 404 SIMULATION_NOT_FOUND,
+neautentizovaný 401, bez ADMIN 403. Chybný obsah nebo chybějící klíč vrací 400.
+
+### Konec a penalizace
+
+Konec lze provést před startem, během průchodu i po COMPLETED. Pro každé dosud
+ACTIVE/PENDING stanoviště se přesně jednou vytvoří `UNFINISHED` s hodnotou
+`max_penalty_points` (null znamená nula) + společná `skip_penalty_points`.
+Dosavadní účinné penalizace tohoto stanoviště zůstanou v historii jako neúčinné,
+se `supersededBy` odkazujícím na novou událost. Každá náhrada má samostatné ID.
+Jde o stejné pravidlo nahrazení jako ve specifikaci 7.1; podepsané sazby a int64
+kontroly se zachovávají. Dokončená a již přeskočená stanoviště se nepřepočítávají.
+Nedokončené stanoviště přejde do ENDED, completedAt zůstane null, endedAt je čas
+konce. Nedokončený průchod přejde do CLOSED. COMPLETED průchod zůstane COMPLETED
+se zachovanými časy a body, pouze `race` přejde do ENDED. Ruční closures zůstává
+samostatné diagnostické uzavření bez těchto penalizací.
+
+### Čas, historie, obnova a transakce
+
+Start i konec používají pouze současný virtuální čas; rovnost startu a konce je
+povolena. Oba odmítnou virtualNow před timeFloor a posunou timeFloor na čas
+události. Samotný posun hodin zpět zůstává povolen podle dosavadních pravidel;
+nevrací start/konec ani penalizace. Uzavřený průchod se hodinami znovu neotevírá.
+
+Historie obsahuje RACE_START/RACE_END s outcome RACE_STARTED/RACE_ENDED,
+confirmed input version/runId, virtuálním časem, pointsDelta, případnými náhradními
+penalizacemi a `race` po dané události. Odmítnuté požadavky se nezapisují.
+Restore obnoví současně původní State a race do nové větve bez dvojího bodování.
+Restart vytvoří čekající NOT_STARTED větev bez startu/konce a bez penalizací,
+s původním virtuálním počátkem. Původní větve zůstanou čitelné.
+
+Používají se dosavadní zámky ADMIN→účet→simulace, jednorázový command záznam,
+optimistická verze a jediná transakce pro stav, race, historii i audit
+SIMULATION_RACE_STARTED/ENDED. Chyba auditu vrátí zpět celou změnu.
+Žádná skutečná Akce, posádka ani registrace se nemění.
+
+### Migrace a kompatibilita
+
+V25 přidává `race_simulation.race` a `simulation_run.initial_race` jako samostatné
+JSONB objekty s kontrolou konzistentních stavů a časů. Staré průchody označí jako
+implicitně RUNNING se startem na jejich virtualStartAt (také staré CLOSED, protože
+closures nepředstavovalo konec závodu). Nemění původní projection, initial_state,
+penalizace, snapshoty, pořadí ani kontrolní hashe effects. Evaluator VERSION=1 a
+snapshot_format_version=1 zůstávají kompatibilní; přidané příkazy nemění vyhodnocení
+starých faktů. Starší fakta bez `race` používají initial_race své větve. Replay
+starších HTTP odpovědí doplní implicitní race a ponechá expiresAt=null.
+Přesné guardy byly rozšířeny pouze o známou V25; neznámé migrace zůstávají zakázané.
+Při nasazení nelze současně provozovat starší server, který start závodu nevynucuje.
+
+Nové unit/HTTP a připravené PostgreSQL testy pokrývají časové hranice, oprávnění,
+replay, souběh, auditní rollback, migraci a historickou obnovu. PostgreSQL testy
+Codex nespouští. Ruční cílené ověření:
+`.\mvnw.cmd -Pit "-Dit.test=SimulationIT" verify`.
+
+
+Ověření rozšíření start/konec: běžné Maven verify na Microsoft JDK 21.0.12.1
+**704 testů, 0 failures/errors/skipped, BUILD SUCCESS**. Připravených 35 SimulationIT
+je zkompilovaných; PostgreSQL část včetně V25 dosud nebyla spuštěna. Starší úspěšné
+integrační běhy neověřují toto rozšíření.

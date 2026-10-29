@@ -48,11 +48,13 @@ class TemplatesIT {
     static final java.nio.file.Path IMAGE_DIR=imageDirectory();
     static java.nio.file.Path imageDirectory(){try{return java.nio.file.Files.createTempDirectory("it_template_images_");}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}}
     static final String SCHEMA="it_templates_"+UUID.randomUUID().toString().replace("-","");
-    @DynamicPropertySource static void schema(DynamicPropertyRegistry p){p.add("rallye.templates.image-directory",()->IMAGE_DIR.toString());p.add("spring.flyway.schemas",()->SCHEMA);p.add("spring.flyway.default-schema",()->SCHEMA);p.add("spring.datasource.hikari.connection-init-sql",()->"SET search_path TO "+SCHEMA);}
+    @DynamicPropertySource static void schema(DynamicPropertyRegistry p){p.add("rallye.simulation.file-directory",()->IMAGE_DIR.resolve("simulations").toString());p.add("rallye.templates.image-directory",()->IMAGE_DIR.toString());p.add("spring.flyway.schemas",()->SCHEMA);p.add("spring.flyway.default-schema",()->SCHEMA);p.add("spring.datasource.hikari.connection-init-sql",()->"SET search_path TO "+SCHEMA);}
     @Autowired cz.mh.rallye.rallye_backend.templates.application.TemplateImageService images;
     @Autowired cz.mh.rallye.rallye_backend.templates.application.TemplateDuplicationService copies;
     @Autowired cz.mh.rallye.rallye_backend.templates.persistence.TemplateStore templateStore;
     @Autowired cz.mh.rallye.rallye_backend.templates.application.TemplateFileService files;
+    @Autowired cz.mh.rallye.rallye_backend.templates.application.TemplateTransferService transfer;
+    @Autowired cz.mh.rallye.rallye_backend.simulation.application.SimulationService simulator;
     @Autowired TemplateService service;@Autowired AuthService auth;@Autowired JdbcTemplate jdbc;
     @Autowired AccountStore accounts;@Autowired PlatformTransactionManager manager;@Autowired MutableClock clock;
     @Autowired PreRaceAccountParticipationFacts facts;@Autowired CommandCleanupStore cleanup;
@@ -572,5 +574,50 @@ class TemplatesIT {
     }
     @Test void deletingTemplateRemovesWholeLibraryButNotItsCopy()throws Exception{
         UUID template=create();file(template,"guide.md","[Self](guide.md) [PDF](rules.pdf)");file(template,"rules.pdf",cz.mh.rallye.rallye_backend.templates.TemplateFilesTest.pdf());var copy=copies.duplicate(root.principal(),template,UUID.randomUUID());service.delete(root.principal(),template,0);assertFalse(java.nio.file.Files.exists(imagePath(template,"guide.md")));assertFalse(java.nio.file.Files.exists(imagePath(template,"rules.pdf")));assertEquals(2,files.list(root.principal(),copy.id()).items().size());assertTrue(java.nio.file.Files.exists(imagePath(copy.id(),"guide.md")));
+    }
+
+    java.io.InputStream archiveInput(byte[] bytes){return new java.io.ByteArrayInputStream(bytes);}
+    cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.Definition portableDefinition(UUID id){
+        var t=templateStore.lock(id);return new cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.Definition(t.name(),t.description(),t.skipPenaltyPoints(),t.defaultWrongCodePenaltyPoints(),templateStore.stages(id).stream().map(st->new cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.StageData(st.sequenceNo(),st.name(),st.expectedDurationMs(),st.maxPenaltyPoints(),cz.mh.rallye.rallye_backend.templates.application.InstructionsMarkdown.portable(id,st.instructionsMarkdown()),st.configuration())).toList());
+    }
+    @Test void archiveRoundTripKeepsAllRulesOrderReachableFilesAndNewIds()throws Exception{
+        var f=configured(true,true);upload(f.template(),"mapa.png");file(f.template(),"rules.pdf",cz.mh.rallye.rallye_backend.templates.TemplateFilesTest.pdf());
+        file(f.template(),"a.md","[B](b.md) [PDF](rules.pdf)");file(f.template(),"b.md","[A]("+cz.mh.rallye.rallye_backend.templates.application.ImageNames.fileUrl(f.template(),"a.md")+")");file(f.template(),"unused.md","Unused");
+        markdown(f,"![Map]("+cz.mh.rallye.rallye_backend.templates.application.ImageNames.url(f.template(),"mapa.png")+") [A](a.md) [A again](a.md)");
+        UUID second=service.createStage(root.principal(),f.template(),version(f),UUID.randomUUID(),"Second",1000L,9L).id();service.configure(root.principal(),f.template(),second,version(f),config(false,true,"SECOND",-4));
+        service.updateStage(root.principal(),f.template(),second,version(f),"Second",1000L,9L,true,"Second text");
+        var original=service.detail(root.principal(),f.template());var expected=portableDefinition(f.template());var zip=transfer.export(root.principal(),f.template());var bundle=cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.decode(zip);
+        assertEquals(expected,bundle.template());assertEquals(Set.of("a.md","b.md","mapa.png","rules.pdf"),bundle.files().keySet());assertFalse(cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.JSON.writeValueAsString(bundle.template()).contains(f.template().toString()));
+        long before=count("SELECT count(*) FROM race_template");var preview=transfer.preview(root.principal(),archiveInput(zip));assertEquals(2,preview.stageCount());assertEquals(4,preview.fileCount());assertEquals(before,count("SELECT count(*) FROM race_template"));
+        var imported=transfer.importTemplate(root.principal(),UUID.randomUUID(),archiveInput(zip));assertNotEquals(f.template(),imported.id());assertEquals("DRAFT",service.detail(root.principal(),imported.id()).status());assertEquals(expected,portableDefinition(imported.id()));assertEquals(original,service.detail(root.principal(),f.template()));
+        var oldIds=templateStore.stages(f.template()).stream().map(st->st.id()).collect(java.util.stream.Collectors.toSet());assertTrue(templateStore.stages(imported.id()).stream().noneMatch(st->oldIds.contains(st.id())));
+        for(var entry:bundle.files().entrySet())assertArrayEquals(entry.getValue(),java.nio.file.Files.readAllBytes(imagePath(imported.id(),entry.getKey())));
+        assertTrue(files.list(root.principal(),imported.id()).missingReferences().isEmpty());assertTrue(service.readiness(root.principal(),imported.id()).ready());
+        var sim=simulator.create(root.principal(),imported.id(),0,UUID.randomUUID(),null);assertEquals(imported.id(),sim.source().templateId());assertEquals("NOT_STARTED",sim.race().status());
+    }
+    @Test void archiveImportDoesNotDependOnSourceOrSourceAdminAndCanBeRepeated()throws Exception{
+        var f=configured(false,true);var zip=transfer.export(root.principal(),f.template());var expected=portableDefinition(f.template());service.delete(root.principal(),f.template(),version(f));
+        UUID key=UUID.randomUUID();var first=transfer.importTemplate(root.principal(),key,archiveInput(zip));assertEquals(first,transfer.importTemplate(root.principal(),key,archiveInput(zip)));var second=transfer.importTemplate(root.principal(),UUID.randomUUID(),archiveInput(zip));assertNotEquals(first.id(),second.id());assertEquals(expected,portableDefinition(first.id()));assertEquals(expected,portableDefinition(second.id()));
+        assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_IMPORTED' AND actor_id=?",first.id(),root.id()));
+        var another=configured(false,true);byte[] different=transfer.export(root.principal(),another.template());assertEquals("IDEMPOTENCY_CONFLICT",assertThrows(AuthFailure.class,()->transfer.importTemplate(root.principal(),key,archiveInput(different))).code());
+        String request=jdbc.queryForObject("SELECT request_data::text FROM admin_role_command WHERE command_key=?",String.class,key);assertFalse(request.contains("SYNTHETIC-CODE"));
+    }
+    @Test void archiveAuditFailureRollsBackTemplateStagesFilesAndLedger()throws Exception{
+        var f=configured(false,true);file(f.template(),"guide.md","Text");markdown(f,"[Guide](guide.md)");var zip=transfer.export(root.principal(),f.template());long templates=count("SELECT count(*) FROM race_template"),stages=count("SELECT count(*) FROM template_stage"),fileCount=count("SELECT count(*) FROM template_image");UUID key=UUID.randomUUID();var created=new java.util.concurrent.atomic.AtomicReference<UUID>();
+        doAnswer(invocation->{created.set(invocation.getArgument(4));invocation.callRealMethod();throw new IllegalStateException("Injected import audit failure");}).when(audit).appendTemplate(any(),any(),any(),eq(Event.TEMPLATE_IMPORTED),any(),eq(false));
+        try{assertThrows(RuntimeException.class,()->transfer.importTemplate(root.principal(),key,archiveInput(zip)));}finally{org.mockito.Mockito.reset(audit);}
+        assertEquals(templates,count("SELECT count(*) FROM race_template"));assertEquals(stages,count("SELECT count(*) FROM template_stage"));assertEquals(fileCount,count("SELECT count(*) FROM template_image"));assertEquals(0,count("SELECT count(*) FROM admin_role_command WHERE command_key=?",key));assertFalse(java.nio.file.Files.exists(imagePath(created.get(),"guide.md")));assertEquals(0,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_IMPORTED'",created.get()));
+        assertNotNull(transfer.importTemplate(root.principal(),key,archiveInput(zip)));
+    }
+    @Test void concurrentArchiveImportsWithSameKeyCreateExactlyOneTemplate()throws Exception{
+        var f=configured(false,true);byte[] zip=transfer.export(root.principal(),f.template());UUID key=UUID.randomUUID();Callable<String> call=()->transfer.importTemplate(root.principal(),key,archiveInput(zip)).id().toString();var results=race(call,call);assertEquals(results.getFirst(),results.getLast());UUID id=UUID.fromString(results.getFirst());assertEquals(1,count("SELECT count(*) FROM audit_event WHERE target_id=? AND event_type='TEMPLATE_IMPORTED'",id));
+    }
+    @Test void archiveSourceEditAndExportHaveOneConsistentDefinition()throws Exception{
+        var f=configured(false,true);var before=portableDefinition(f.template());long version=version(f);var result=race(()->{byte[] bytes=transfer.export(root.principal(),f.template());return cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.JSON.writeValueAsString(cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.decode(bytes).template());},()->{service.updateStage(root.principal(),f.template(),f.stage(),version,"Edited",0L,0L,true,"Changed");return "UPDATED";});
+        String old=cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.JSON.writeValueAsString(before),next=cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.JSON.writeValueAsString(portableDefinition(f.template()));assertTrue(Set.of(old,next).contains(result.getFirst()));assertEquals("UPDATED",result.getLast());
+    }
+    @Test void archiveExportMissingFileFailsAndNonAdminCannotPreview()throws Exception{
+        var f=configured(false,true);markdown(f,"[Missing](missing.md)");assertEquals("TEMPLATE_EXPORT_FILE_MISSING",assertThrows(AuthFailure.class,()->transfer.export(root.principal(),f.template())).code());
+        Actor user=actor();assertEquals(403,assertThrows(AuthFailure.class,()->transfer.preview(user.principal(),archiveInput(new byte[]{1}))).status());
     }
 }

@@ -50,6 +50,27 @@ public final class RaceEvaluator {
   var result=new State(old.virtualStartAt(),old.virtualNow(),outcome.equals("CHECK_ALREADY_SATISFIED")?old.timeFloor():old.virtualNow(),status,old.position(),progress,ps,null);
   return new State(result.virtualStartAt(),result.virtualNow(),result.timeFloor(),status,result.position(),progress,ps,new Action(action,sequence,type,stageId,outcome,delta(total(result),total(old)),old.virtualNow(),gpsResult));
  }
+ /** New simulations wait for the organizer; legacy start() deliberately retains its semantics. */
+ public State waiting(Definition def,Instant at){var s=start(def,at);var ps=new ArrayList<>(s.stages());var p=ps.getFirst();ps.set(0,new Progress(p.stageId(),"ACTIVE",null,null,null,false,false));return new State(at,at,at,"RUNNING",null,ps,List.of(),null);}
+ public State startRace(State s,UUID action,long sequence){
+  open(s);if(s.virtualNow().isBefore(s.timeFloor()))throw new RuleViolation("SIMULATION_CLOCK_BEFORE_STATE");
+  var ps=new ArrayList<>(s.stages());var p=current(s);if(p==null)throw new RuleViolation("SIMULATION_NOT_RUNNING");
+  ps.set(ps.indexOf(p),new Progress(p.stageId(),p.status(),s.virtualNow(),null,null,p.codeSatisfied(),p.gpsSatisfied()));
+  return new State(s.virtualStartAt(),s.virtualNow(),s.virtualNow(),s.status(),s.position(),ps,s.penalties(),new Action(action,sequence,"RACE_START",null,"RACE_STARTED",0,s.virtualNow(),null));
+ }
+ public State endRace(Definition def,State s,UUID action,long sequence){
+  if(s.virtualNow().isBefore(s.timeFloor()))throw new RuleViolation("SIMULATION_CLOCK_BEFORE_STATE");
+  var ps=new ArrayList<>(s.penalties());var progress=new ArrayList<>(s.stages());
+  for(int i=0;i<progress.size();i++){
+   var p=progress.get(i);if(!Set.of("ACTIVE","PENDING").contains(p.status()))continue;
+   var stage=def.stages().get(i);UUID replacement=UUID.nameUUIDFromBytes((action+":"+p.stageId()+":UNFINISHED").getBytes(StandardCharsets.UTF_8));
+   for(int j=0;j<ps.size();j++){var old=ps.get(j);if(old.effective()&&old.stageId().equals(p.stageId()))ps.set(j,new Penalty(old.id(),old.actionId(),old.stageId(),old.cause(),old.points(),false,replacement,old.virtualAt()));}
+   ps.add(new Penalty(replacement,action,p.stageId(),"UNFINISHED",add(stage.maxPenaltyPoints()==null?0:stage.maxPenaltyPoints(),def.skipPenaltyPoints()),true,null,s.virtualNow()));
+   progress.set(i,new Progress(p.stageId(),"ENDED",p.activatedAt(),null,s.virtualNow(),p.codeSatisfied(),p.gpsSatisfied()));
+  }
+  var result=new State(s.virtualStartAt(),s.virtualNow(),s.virtualNow(),s.status().equals("COMPLETED")?"COMPLETED":"CLOSED",s.position(),progress,ps,null);
+  return new State(result.virtualStartAt(),result.virtualNow(),result.timeFloor(),result.status(),result.position(),progress,ps,new Action(action,sequence,"RACE_END",null,"RACE_ENDED",delta(total(result),total(s)),s.virtualNow(),null));
+ }
  public State shift(State s,long delta,UUID id,long seq){open(s);Instant at;try{at=s.virtualNow().plusMillis(delta);if(at.isBefore(s.virtualStartAt()))throw new RuleViolation("SIMULATION_TIME_OUT_OF_RANGE");duration(s.virtualStartAt(),at);}catch(DateTimeException|ArithmeticException e){throw new RuleViolation("SIMULATION_TIME_OUT_OF_RANGE");}if(at.equals(s.virtualNow()))return s;return control(s,at,s.position(),s.status(),id,seq,"CLOCK_SHIFT","CLOCK_SHIFTED");}
  public State position(State s,Position p,UUID id,long seq){open(s);if(Objects.equals(s.position(),p))return s;return control(s,s.virtualNow(),p,s.status(),id,seq,"POSITION","POSITION_SET");}
  public State close(State s,UUID id,long seq){if(s.status().equals("CLOSED"))return s;return control(s,s.virtualNow(),s.position(),"CLOSED",id,seq,"CLOSE","CLOSED");}

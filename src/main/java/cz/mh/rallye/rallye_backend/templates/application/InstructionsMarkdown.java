@@ -90,6 +90,7 @@ public final class InstructionsMarkdown {
    @Override public void visit(Image n){content[0]=true;}
   });return content[0];
  }
+ public static String portable(UUID sourceTemplate,String source){return copy(sourceTemplate,null,source,false);}
  public static String copy(UUID sourceTemplate,UUID target,String source){return copy(sourceTemplate,target,source,false);}
  public static String copyToEvent(UUID sourceTemplate,UUID target,String source){return copy(sourceTemplate,target,source,true);}
  public static String copyToSimulation(UUID sourceTemplate,UUID target,String source){return copy(sourceTemplate,target,source,false,true);}
@@ -102,7 +103,7 @@ public final class InstructionsMarkdown {
   parsed.references().forEach((node,ref)->{
    String destination=node instanceof Image i?i.getDestination():node instanceof Link link?link.getDestination():((LinkReferenceDefinition)node).getDestination();
    if(!destination.startsWith("/api/v1/race-templates/"+sourceTemplate+"/"))return;
-   String next=(simulation?ImageNames.simulationUrl(target,ref.fileName()):event?ImageNames.eventUrl(target,ref.fileName()):ref.image()?ImageNames.url(target,ref.fileName()):ImageNames.fileUrl(target,ref.fileName()))+ref.fragment();
+   String next=target==null?java.net.URLEncoder.encode(ref.fileName(),StandardCharsets.UTF_8).replace("+","%20")+ref.fragment():(simulation?ImageNames.simulationUrl(target,ref.fileName()):event?ImageNames.eventUrl(target,ref.fileName()):ref.image()?ImageNames.url(target,ref.fileName()):ImageNames.fileUrl(target,ref.fileName()))+ref.fragment();
    if(node instanceof Image i)i.setDestination(next);else if(node instanceof Link link)link.setDestination(next);else ((LinkReferenceDefinition)node).setDestination(next);changed.add(node);
   });
   record Edit(int start,int end,String text){}var edits=new ArrayList<Edit>();

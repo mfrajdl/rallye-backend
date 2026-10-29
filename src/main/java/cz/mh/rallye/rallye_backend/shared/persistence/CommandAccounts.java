@@ -17,6 +17,11 @@ final class CommandAccounts {
             }
             JsonNode req=JSON.readTree(request),res=JSON.readTree(result);
             if(!req.isArray() || !res.isObject()) throw invalid();
+            if(operation.equals("TEMPLATE_IMPORT")){
+                size(req,1);if(!req.get(0).isString()||!req.get(0).asString().matches("[0-9a-f]{64}"))throw invalid();
+                if(!new HashSet<>(res.propertyNames()).equals(Set.of("id","templateId","version"))||!target.equals(requiredId(res.get("id")))||!target.equals(requiredId(res.get("templateId")))||!res.get("version").isIntegralNumber())throw invalid();
+                return new Content(ids,req,res);
+            }
             if(operation.equals("SIMULATION_CREATE")){
                 size(req,3);requiredId(req.get(0));if(!req.get(1).isIntegralNumber()||req.get(1).longValue()<0)throw invalid();textOrNull(req.get(2));
                 if(!new HashSet<>(res.propertyNames()).equals(Set.of("id","version"))||!target.equals(requiredId(res.get("id")))||!res.get("version").isIntegralNumber())throw invalid();

@@ -89,4 +89,10 @@ class CommandAccountsTest {
         UUID template=UUID.randomUUID();String request="[\""+template+"\",7,\"guide.md\",\""+"a".repeat(64)+"\"]";String result="{\"fileName\":\"guide.md\",\"templateId\":\""+template+"\",\"url\":\"/api/v1/race-templates/"+template+"/files/guide.md\",\"version\":7,\"status\":\"DRAFT\",\"missingReferences\":[]}";
         assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_FILE_UPLOAD",request,result).accounts());assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_FILE_UPLOAD",request,result.replace("\"missingReferences\":[]","\"source\":\"private body\",\"missingReferences\":[]")));assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_FILE_UPLOAD",request.replace("a".repeat(64),"private body"),result));
     }
+
+ @Test void templateImportStoresOnlyArchiveDigestAndActor(){
+  String result="{\"id\":\""+target+"\",\"templateId\":\""+target+"\",\"version\":0}";
+  assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_IMPORT","[\""+"a".repeat(64)+"\"]",result).accounts());
+  assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_IMPORT","[\"plaintext-code\"]",result));
+ }
 }

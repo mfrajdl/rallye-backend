@@ -28,6 +28,7 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                             && (!"16".equals(rs.getString("version")) || "V16__race_templates.sql".equals(rs.getString("script")))
                             && (!"17".equals(rs.getString("version")) || "V17__stage_configuration_and_readiness.sql".equals(rs.getString("script")))
                             && (!"18".equals(rs.getString("version")) || "V18__template_html_and_images.sql".equals(rs.getString("script")))
+                            && (!"25".equals(rs.getString("version")) || "V25__simulation_race_lifecycle.sql".equals(rs.getString("script")))
                             && (!"24".equals(rs.getString("version")) || "V24__persistent_simulation_management.sql".equals(rs.getString("script")))
                             && (!"23".equals(rs.getString("version")) || "V23__race_simulations.sql".equals(rs.getString("script")))
                             && (!"22".equals(rs.getString("version")) || "V22__action_configuration.sql".equals(rs.getString("script")))
@@ -35,7 +36,8 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                             && (!"20".equals(rs.getString("version")) || "V20__template_file_library.sql".equals(rs.getString("script")))
                             && (!"19".equals(rs.getString("version")) || "V19__template_markdown_and_named_images.sql".equals(rs.getString("script")))
                             ?rs.getString("version"):"unsupported");
-            if(!versions.equals(java.util.stream.IntStream.rangeClosed(1,24).mapToObj(Integer::toString).toList())
+            if(!versions.equals(java.util.stream.IntStream.rangeClosed(1,25).mapToObj(Integer::toString).toList())
+                    && !versions.equals(java.util.stream.IntStream.rangeClosed(1,24).mapToObj(Integer::toString).toList())
                     && !versions.equals(java.util.stream.IntStream.rangeClosed(1,23).mapToObj(Integer::toString).toList())
                     && !versions.equals(java.util.stream.IntStream.rangeClosed(1,22).mapToObj(Integer::toString).toList())
                     && !versions.equals(java.util.stream.IntStream.rangeClosed(1,21).mapToObj(Integer::toString).toList())

@@ -1,3 +1,23 @@
+## ZIP export/import šablon – implementováno a ověřeno
+
+[Formát v1, API a limity](template-transfer.md). Export konzistentní definice a
+tranzitivně použitých souborů, relativní Markdown odkazy, validační náhled bez
+zápisu a atomický import do nové DRAFT šablony. Všichni ADMIN si zachovávají
+současná práva; importující je pouze v auditu. Žádná nová migrace. Běžné verify:
+730 testů, BUILD SUCCESS. Uživatel potvrdil 73 TemplatesIT proti PostgreSQL
+(BUILD SUCCESS) a ruční ověření exportu/importu. Samostatné PostgreSQL ověření
+rozšíření start/konec simulátoru tím není potvrzeno.
+
+## Rozšíření simulátoru – start a konec závodu / V25
+
+Implementovány samostatné race-starts/race-ends nad stávajícím průchodem,
+race.status NOT_STARTED/RUNNING/ENDED, náhrada penalizací nedokončených stanovišť,
+trvalá historie, restart/restore a audit. V25 zachovává původní state JSON/hash
+starých simulací a doplňuje implicitní start; nové simulace čekají na explicitní
+start. [Kontrakt](race-simulator-design.md#17-organizátorský-start-a-konec-závodu-v-simulaci).
+PostgreSQL ověření rozšíření je připravené, dosud neprovedené. Starší potvrzené
+výsledky níže se na toto rozšíření nepřenášejí. Skutečný závodní runtime se nemění.
+
 ## Backend simulátoru šablony – dokončeno a ověřeno
 
 [Schválený kontrakt a skutečný stav](race-simulator-design.md#16-správa-trvale-uložených-simulací).

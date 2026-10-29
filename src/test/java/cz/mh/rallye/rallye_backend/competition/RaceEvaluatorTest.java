@@ -15,4 +15,25 @@ class RaceEvaluatorTest {
  @Test void verifiedFactsReplayWithoutCodeAndDoNotDoublePenalties(){var d=def(false,true,null,3,900000,2);var initial=engine.start(d,at);var wrong=act(d,initial,"CODE","NO");assertEquals(wrong,engine.replay(d,initial,wrong.lastAction()));var skipped=act(d,wrong,"SKIP",null);assertEquals(skipped,engine.replay(d,wrong,skipped.lastAction()));assertEquals(12,total(skipped));assertEquals(0,total(initial));}
  @Test void successfulPartialCheckSurvivesClockAndPositionAndReplay(){var d=def(true,true,null,0,0,0);var s=engine.start(d,at);s=act(d,s,"CODE","YES");Instant floor=s.timeFloor();s=engine.shift(s,10000,UUID.randomUUID(),2);var repeated=act(d,s,"CODE","WRONG");assertEquals(floor,repeated.timeFloor());assertEquals(0,total(repeated));assertTrue(repeated.stages().getFirst().codeSatisfied());assertEquals(repeated,engine.replay(d,s,repeated.lastAction()));}
  @Test void activationOfNextStageAndNullMaximumDoNotCarryChecks(){var d=def(false,true,null,0,0,0);var first=d.stages().getFirst();UUID second=UUID.randomUUID();d=new Definition(-2,3,List.of(first,new Stage(second,second,2,"B",0L,null,"Text",first.configuration())));var s=engine.start(d,at);s=act(d,s,"CODE","YES");assertEquals("RUNNING",s.status());assertEquals(second,current(s).stageId());assertFalse(current(s).codeSatisfied());s=engine.evaluate(d,s,"SKIP",second,null,UUID.randomUUID(),2);assertEquals("COMPLETED",s.status());assertEquals(-2,total(s));assertEquals("SKIPPED",s.stages().getLast().status());}
+
+ @Test void organizerEndReplacesOnlyUnfinishedStagesAndKeepsDistinctPenaltyIds(){
+  var base=def(false,true,3L,0,0,0).stages().getFirst();var stages=new ArrayList<Stage>();
+  for(int n=0;n<3;n++){UUID stage=UUID.randomUUID();stages.add(new Stage(stage,stage,n+1,"S"+n,0L,(long)n,"Text",base.configuration()));}
+  var d=new Definition(-2,3,stages);var state=engine.start(d,at);
+  state=engine.evaluate(d,state,"SKIP",stages.getFirst().id(),null,UUID.randomUUID(),1);
+  state=engine.evaluate(d,state,"CODE",stages.get(1).id(),"wrong",UUID.randomUUID(),2);
+  UUID action=UUID.randomUUID();var ended=engine.endRace(d,state,action,3);
+  assertEquals(-3,total(ended)); // skipped -2, unfinished -1 and 0; replaces previous +3.
+  assertEquals(List.of("SKIPPED","ENDED","ENDED"),ended.stages().stream().map(Progress::status).toList());
+  assertNull(ended.stages().get(1).completedAt());assertEquals(at,ended.stages().get(1).endedAt());assertNull(ended.stages().get(2).activatedAt());
+  var replacements=ended.penalties().stream().filter(p->p.actionId().equals(action)).toList();assertEquals(2,replacements.size());assertNotEquals(replacements.getFirst().id(),replacements.getLast().id());
+  assertFalse(ended.penalties().stream().filter(p->p.cause().equals("WRONG_CODE")).findFirst().orElseThrow().effective());
+  assertEquals(ended,engine.endRace(d,state,action,3));
+ }
+ @Test void actualStartResetsStageMeasurementAndEndPreservesCompletedTime(){
+  var d=def(false,true,0L,3,0,0);var waiting=engine.waiting(d,at);var later=engine.shift(waiting,120000,UUID.randomUUID(),1);
+  var started=engine.startRace(later,UUID.randomUUID(),2);assertEquals(later.virtualNow(),current(started).activatedAt());
+  var done=engine.evaluate(d,started,"CODE",id,"YES",UUID.randomUUID(),3);assertEquals(0,total(done));
+  var ended=engine.endRace(d,done,UUID.randomUUID(),4);assertEquals("COMPLETED",ended.status());assertEquals(done.stages(),ended.stages());assertEquals(0,total(ended));
+ }
 }
