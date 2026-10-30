@@ -701,3 +701,19 @@ PostgreSQL integrační ověření proti rallye_test jako **BUILD SUCCESS**
 (28. 10. 2026), včetně 19 připravených EventsIT a V21. Codex tento běh
 neprováděl a databázi sám neměnil. Ruční ověření API není tímto potvrzeno.
 Git diff --check prošel; chráněné uživatelské soubory a V1–V20 se neměnily.
+
+
+## Etapa 2 konání – lifecycle a souhrn registrací (30. 10. 2026)
+
+Implementované PLANNED/RUNNING/ENDED, automatický i ruční start/konec a opakované
+obnovení dle race-event-lifecycle-api-v1; V27, historie, období, revize uzávěrek,
+transakční audit a společná 24h idempotence. GET jsou čistě čtecí a odlišují
+persistedStatus/transitionsPending; zápisy a 30s scheduler používají společný
+resolver a konzistentní pořadí zámků. Původní registration-api-v1 zůstává veřejně
+beze změny, nový vlastní souhrn je jedním agregačním SQL.
+
+Kanonický kontrakt a ověření: [race-event-lifecycle-api.md](race-event-lifecycle-api.md).
+Uživatel potvrdil úspěšné PostgreSQL ověření i ruční integraci s frontendem.
+Dokončeny jsou také vlastní seznam přihlášek a ADMIN diagnostika O aplikaci;
+kontrakty jsou v registrační a administrační dokumentaci. Následují individuální
+účast/start a skutečný runtime; tato etapa nepřidává zařízení, průchod ani výsledky.

@@ -53,7 +53,7 @@ public class AuthConfiguration {
                                 "/api/v1/auth/external/registrations/current", "/api/v1/auth/external/registrations/completions").permitAll()
                         // Only the approved participant registration methods, never the ADMIN event API/library.
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
-                                "/api/v1/race-events/*/registration-status", "/api/v1/race-events/*/registration-crews",
+                                "/api/v1/me/registrations", "/api/v1/me/registrations/summary", "/api/v1/race-events/*/registration-status", "/api/v1/race-events/*/registration-crews",
                                 "/api/v1/race-events/*/registrations", "/api/v1/race-events/*/registrations/*").authenticated()
                         .requestMatchers(org.springframework.http.HttpMethod.POST,"/api/v1/race-events/*/registrations").authenticated()
                         .requestMatchers(org.springframework.http.HttpMethod.PUT,"/api/v1/race-events/*/registrations/*/members").authenticated()

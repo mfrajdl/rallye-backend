@@ -336,3 +336,149 @@ posádky a novým UUID `Idempotency-Key` (a pro cookie relaci s CSRF).
 aktuální dostupnost cíle; výsledek vyhledávání není oprávněním ani rezervací účtu.
 Stávající konflikty CAPTAIN_UNAVAILABLE, CREW_VERSION_CONFLICT a CAPTAIN_UNCHANGED
 zůstávají zachované. Nové přiřazovací API ani migrace nevznikají.
+
+
+## Administrační diagnostika „O aplikaci“
+
+`GET /api/v1/admin/about` je dostupný aktivnímu ověřenému ADMIN se stávající
+cookie nebo Bearer relací. GET nevyžaduje CSRF, nepřijímá query parametry
+(neznámé → 400 INVALID_REQUEST) a vrací `Cache-Control: no-store`.
+401 znamená nepřihlášeného/neplatnou relaci, 403 chybějící ADMIN. Role i platnost
+relace se znovu kontrolují; tato cesta pouze čte, neobnovuje expiraci/last_used_at
+relace a nemění audit ani databázi.
+
+Struktura odpovědi (ilustrační hodnoty; skutečné hodnoty závisí na sestavení,
+procesu, efektivní konfiguraci a připojené databázi):
+
+```json
+{
+  "application": {
+    "name": "rallye-backend",
+    "backendVersion": "0.0.1-SNAPSHOT",
+    "buildTime": "2026-10-30T09:01:26Z",
+    "gitCommit": null
+  },
+  "database": {
+    "type": "PostgreSQL",
+    "version": "17.11",
+    "migrationVersion": "27",
+    "migrationDescription": "race event lifecycle",
+    "migrationState": "SUCCESS"
+  },
+  "runtime": {
+    "javaVersion": "21.0.12.1+1-LTS",
+    "springBootVersion": "4.1.1",
+    "serverTime": "2026-10-30T10:00:00Z",
+    "timezone": "Europe/Prague",
+    "uptimeSeconds": 180
+  },
+  "configuration": {
+    "activeProfiles": ["local"],
+    "defaultProfiles": ["default"],
+    "schedulers": {
+      "lifecycle": {"enabled": true, "intervalMilliseconds": 30000, "cron": null, "timezone": null},
+      "auditCleanup": {"enabled": true, "intervalMilliseconds": null, "cron": "0 15 3 * * *", "timezone": "Europe/Prague"},
+      "simulationFileCleanup": {"enabled": true, "intervalMilliseconds": 600000, "cron": null, "timezone": null},
+      "appleRegistrationMaintenance": {"enabled": true, "intervalMilliseconds": 60000, "cron": null, "timezone": null},
+      "appleRevocation": {"enabled": false, "intervalMilliseconds": 60000, "cron": null, "timezone": null}
+    },
+    "idempotencyHours": 24,
+    "auditRetentionDays": 365,
+    "limits": {
+      "registrationMembersTextCodePoints": 2000,
+      "registrationMaxPageSize": 100,
+      "instructionsMaxBytes": 102400,
+      "files": {"imageMaxBytes": 5242880, "imageMaxWidth": 4096, "imageMaxHeight": 4096, "markdownMaxBytes": 102400, "pdfMaxBytes": 10485760},
+      "multipartMaxFileBytes": 52428800,
+      "multipartMaxRequestBytes": 53477376
+    },
+    "security": {
+      "secureCookies": true,
+      "sessionIdleHours": 24,
+      "rememberedSessionIdleDays": 30,
+      "googleProviderEnabled": false,
+      "appleProviderEnabled": false
+    }
+  }
+}
+```
+
+- `application`: jméno z efektivního spring.application.name, verze a čas z
+  Spring Boot BuildProperties. Git hash pochází pouze ze sestavených GitProperties,
+  ne z běhu Git příkazu na serveru. Není potvrzením čistého pracovního stromu.
+  Chybějící build/Git metadata dávají null, aplikace se spustí i bez nich.
+- Maven generuje META-INF/build-info.properties a git.properties. Git plugin
+  spravuje Spring Boot parent, používá JGit offline a ukládá pouze commit ID;
+  bez Git repozitáře neblokuje sestavení. Na produkčním serveru Git není potřeba.
+  Standardní čisté sestavení z exportovaných zdrojů bez .git nemá Git commit ID
+  (plugin může vytvořit prázdný git.properties);
+  nepřenášet starý target/git.properties z jiného sestavení.
+- buildTime je čas zahájení Maven sestavení, nikoli reprodukovatelný čas ZIP
+  položek 1980 převzatý z parent POM. Nastavení project.build.outputTimestamp se
+  nemění. Pro bitově reprodukovatelné release sestavení použít stejné zdroje,
+  závislosti i explicitní vstup `-Drallye.build.time=2026-10-30T09:00:00Z` a stejné
+  project.build.outputTimestamp; bez explicitního vstupu se čas při novém buildu mění.
+- `database.version` je current_setting('server_version') z aktuálního datasource.
+  Flyway schema/table se převezmou z konfigurace Flyway, nikoli z pevného public
+  nebo nejvyššího V*.sql. Čte se poslední instalovaný verzovaný záznam podle
+  installed_rank, bez SCHEMA/DELETE záznamů. Stav SUCCESS/FAILED je jeho skutečný
+  success příznak; nejde o spuštění validate ani o odhad pending migrací.
+  Chybějící/prázdná historie vrací verzi/popisek null a stav NONE. Chyba diagnostiky
+  DB → 503 ABOUT_DATABASE_UNAVAILABLE, nikdy falešné SUCCESS/NONE. Pokud je DB
+  nedostupná již při autentizaci, platí stávající 503 AUTHENTICATION_UNAVAILABLE.
+- `runtime`: Java Runtime.version, SpringBootVersion, aktuální injektovaný Clock
+  v UTC, systémová ZoneId a uptime aktuální JVM z RuntimeMXBean (sekundy).
+- `configuration`: pevný allowlist DTO. Limity souborů pocházejí ze skutečného
+  TemplateFileContent/MultipartProperties, retence z AuditRetentionService,
+  platnosti/limity ze stejných konstant a metod jako vykonávaná pravidla. Pět
+  konkrétních Scheduled metod poskytuje interval/cron/zónu, placeholder interval
+  se řeší přes efektivní Environment. Enabled zahrnuje příslušné funkční přepínače
+  a profil it; nejedná se o kontrolu dostupnosti Apple/Google ani zdraví workeru.
+  Prázdné activeProfiles je skutečně prázdné; defaultProfiles ukazuje implicitní
+  Spring profily, pokud žádný aktivní profil zadán není.
+
+Nikdy se neserializují konfigurační beany ani Environment. DTO nemá pole pro JDBC
+URL, DB/OS uživatele, hostname, cesty, klientská ID, callback/return URL, hesla,
+klíče, tokeny či cookie hodnoty. Nepřidává se migrace ani externí HTTP volání.
+
+Implementace: administration/api/AboutController.java,
+administration/application/AboutService.java a AboutConfiguration.java,
+administration/persistence/AboutStore.java. Testy: AboutServiceTest,
+AboutConfigurationTest, AboutStoreTest, AboutHttpTest a PostgreSQL AboutIT.
+PostgreSQL testy podle AGENTS.md spouští uživatel. Dne 30. 10. 2026 uživatel
+potvrdil cílený běh `.\mvnw.cmd -Pit "-Dit.test=AboutIT" verify`: **BUILD SUCCESS**
+(sedm scénářů AboutIT). Nejde o potvrzení kompletní integrační sady ani všech
+scénářů rozpracované etapy životního cyklu konání.
+
+
+Ověření diagnostiky Codexem (30. 10. 2026): JDK 21.0.12.1 / Maven Wrapper,
+12 cílených unit/HTTP testů a následné verify bez PostgreSQL: **794 testů,
+BUILD SUCCESS, 0 failures/errors/skipped**. Všechny IT včetně sedmi AboutIT jsou
+zkompilované, Codexem nespouštěné; následný cílený běh AboutIT potvrdil uživatel.
+Generování metadat `generate-resources` bylo
+samostatně ověřeno s kopií POM/Wrapperu v čisté dočasné složce bez Git repozitáře:
+BUILD SUCCESS, skutečný build timestamp, žádný Git commit ID. Nejde o integrační
+ověření proti PostgreSQL ani o spuštění celé aplikace z této dočasné kopie.
+
+Soubory této změny (starší rozpracované lifecycle změny zůstávají zachované):
+
+- `pom.xml`
+- `src/main/java/cz/mh/rallye/rallye_backend/administration/api/AboutController.java`
+- `src/main/java/cz/mh/rallye/rallye_backend/administration/application/AboutService.java`
+- `src/main/java/cz/mh/rallye/rallye_backend/administration/application/AboutConfiguration.java`
+- `src/main/java/cz/mh/rallye/rallye_backend/administration/persistence/AboutStore.java`
+- `src/main/java/cz/mh/rallye/rallye_backend/identity/api/AuthSessionFilter.java`
+- `src/main/java/cz/mh/rallye/rallye_backend/audit/application/AuditRetentionService.java`
+- `src/main/java/cz/mh/rallye/rallye_backend/shared/persistence/CommandStore.java`
+- `src/main/java/cz/mh/rallye/rallye_backend/participation/domain/RegistrationRules.java`
+- `src/main/java/cz/mh/rallye/rallye_backend/participation/application/RegistrationService.java`
+- `src/test/java/cz/mh/rallye/rallye_backend/administration/AboutServiceTest.java`
+- `src/test/java/cz/mh/rallye/rallye_backend/administration/AboutConfigurationTest.java`
+- `src/test/java/cz/mh/rallye/rallye_backend/administration/AboutStoreTest.java`
+- `src/test/java/cz/mh/rallye/rallye_backend/administration/AboutHttpTest.java`
+- `src/test/java/cz/mh/rallye/rallye_backend/identity/AboutIT.java`
+- `docs/administration-3b1.md`
+- `docs/testing.md`
+
+Úpravy původních služeb jen zpřístupňují existující efektivní hodnoty a sdílené
+konstanty pro diagnostiku; hodnoty ani pravidla retence, členů a stránkování se nemění.

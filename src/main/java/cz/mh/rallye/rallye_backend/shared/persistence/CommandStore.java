@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 /** One ledger and actor/key namespace shared with the original ADMIN operations. Caller holds admin_control. */
 @Repository
 public class CommandStore {
+    public static final long RETENTION_HOURS=24;
     public record RoleCommand(UUID target,boolean grant) { }
     private final JdbcTemplate jdbc;
     public CommandStore(JdbcTemplate jdbc) { this.jdbc=jdbc; }
@@ -45,7 +46,7 @@ public class CommandStore {
         jdbc.update("""
                 INSERT INTO admin_role_command(actor_id,command_key,target_id,operation,request_data,result_data,grant_role,created_at,expires_at,related_account_ids)
                 VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?,?,?::uuid[])
-                """,actor,key,target,operation,request,result,grant,Timestamp.from(now),Timestamp.from(now.plusSeconds(86400)),array(accounts));
+                """,actor,key,target,operation,request,result,grant,Timestamp.from(now),Timestamp.from(now.plus(java.time.Duration.ofHours(RETENTION_HOURS))),array(accounts));
     }
     Set<UUID> related(UUID actor,UUID target,String operation,String request,String result) {
         var ids=CommandAccounts.inspect(actor,target,operation,request,result).accounts();

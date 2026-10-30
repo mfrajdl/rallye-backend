@@ -24,6 +24,7 @@ public class AuditRetentionService {
         this.days=days;this.store=store;this.commands=commands;this.audit=audit;this.clock=clock;
         transaction=new TransactionTemplate(manager);transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
+    public long retentionDays(){return days;}
     /** Invoked only by the scheduled trigger or tests, never a startup runner or public endpoint. */
     public boolean runScheduled() {
         return Boolean.TRUE.equals(transaction.execute(status->{

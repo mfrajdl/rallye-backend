@@ -173,4 +173,18 @@ class AuthServiceTest {
         assertEquals(java.util.List.of("USER"),service.me(principal).roles());
     }
 
+    @Test void readOnlyAuthenticationNeverLocksTouchesOrAudits() {
+        when(store.session(anyString())).thenReturn(new AccountStore.Session(session,account,true,clock.instant().plusSeconds(10)));
+        when(store.account(account)).thenReturn(active());when(store.isActiveSession(session,account,clock.instant())).thenReturn(true);
+        var result=service.authenticateReadOnly(new SecretTokens().create());assertEquals(account,result.accountId());assertEquals(session,result.sessionId());
+        verify(store,never()).lockAccount(any());verify(store,never()).touch(any(),any(),any());verifyNoInteractions(audit);
+    }
+    @Test void readOnlyAuthenticationRejectsExpiredRevokedAndCancelledAccounts() {
+        when(store.session(anyString())).thenReturn(new AccountStore.Session(session,account,false,clock.instant()));
+        assertNull(service.authenticateReadOnly(new SecretTokens().create()));verify(store,never()).account(any());
+        when(store.session(anyString())).thenReturn(new AccountStore.Session(session,account,false,clock.instant().plusSeconds(10)));
+        when(store.account(account)).thenReturn(active());assertNull(service.authenticateReadOnly(new SecretTokens().create()));
+        when(store.account(account)).thenReturn(new AccountStore.Account(account,null,null,"ANONYMIZED",null));assertNull(service.authenticateReadOnly(new SecretTokens().create()));
+        verify(store,never()).touch(any(),any(),any());verifyNoInteractions(audit);
+    }
 }

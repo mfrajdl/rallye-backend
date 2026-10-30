@@ -57,6 +57,10 @@ public class AuditStore {
         String metadata=tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.Map.of("stageId",stage));
         jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type,metadata) VALUES (?,?,'USER',?,'RACE_EVENT_STAGE_INSTRUCTIONS_UPDATED',?,'RACE_EVENT',?::jsonb)",id,Timestamp.from(time),actor,target,metadata);
     }
+    public void appendRaceLifecycle(UUID id,Instant time,UUID actor,Event event,UUID target,UUID transition,long version){
+        String metadata=tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.Map.of("transitionId",transition,"version",version));
+        jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type,metadata) VALUES (?,?,?,?,?,?,'RACE_EVENT',?::jsonb)",id,Timestamp.from(time),actor==null?"SYSTEM":"USER",actor,event.name(),target,metadata);
+    }
     public void appendRace(UUID id,Instant time,UUID actor,Event event,UUID target,UUID source,long version){
         String metadata=tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.Map.of("sourceTemplateId",source,"sourceTemplateVersion",version));
         jdbc.update("INSERT INTO audit_event(id,occurred_at,actor_kind,actor_id,event_type,target_id,target_type,metadata) VALUES (?,?,'USER',?,?,?,'RACE_EVENT',?::jsonb)",id,Timestamp.from(time),actor,event.name(),target,metadata);

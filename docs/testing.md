@@ -1105,3 +1105,54 @@ ZIP přenos – běžné verify po opravě: **730 testů, BUILD SUCCESS**, bez s
 PostgreSQL TemplatesIT jsou uživatelem potvrzené; nejde o nově provedenou
 kompletní PostgreSQL sadu ani samostatné ověření SimulationIT.
 Nová simulační fixture round-trip testu používá výhradně dočasný adresář TemplatesIT.
+
+
+### Životní cyklus konání a souhrn registrací
+
+`EventLifecycleIT` ověřuje V26→V27, přechody, čisté GET, období, uzávěrky,
+idempotenci, souběhy, rollback a souhrn podle aktuálního kapitána. V profilu `it`
+scheduler automaticky neběží; používá se MutableClock a přímé volání služby.
+Codex PostgreSQL nespouští. Uživatel potvrdil úspěšné ověření včetně PostgreSQL
+a ručního integračního průchodu s frontendem. Příkazy pro případné opakování:
+
+```powershell
+.\mvnw.cmd -Pit "-Dit.test=EventLifecycleIT,RegistrationIT,EventsIT,AccountCancellationServiceIT" verify
+# závěrečné kompletní ověření:
+.\mvnw.cmd -Pit verify
+```
+
+Běžné verify bez DB současně kompiluje IT, ale neověřuje SQL/triggery/souběhy.
+
+
+### Administrační endpoint O aplikaci
+
+Unit/HTTP testy AboutServiceTest, AboutConfigurationTest, AboutStoreTest a
+AboutHttpTest běží bez DB. Sedm připravených AboutIT kontroluje skutečnou verzi
+PostgreSQL/Flyway, další skutečně aplikovanou migraci v izolovaném schématu,
+vlastní název historie, prázdnou/neúspěšnou historii, ADMIN oprávnění, čisté čtení
+a chybu diagnostiky. Nepřepisuje existující migrace a používá TestDatabaseInitializer.
+
+```powershell
+.\mvnw.cmd -Pit "-Dit.test=AboutIT" verify
+# případně závěrečné kompletní ověření uživatelem:
+.\mvnw.cmd -Pit verify
+```
+
+Uživatel dne 30. 10. 2026 potvrdil cílený PostgreSQL běh AboutIT: **BUILD SUCCESS**
+(sedm scénářů). Codex tento běh nespouštěl. Toto potvrzení se nevztahuje na
+kompletní integrační sadu ani na všechny scénáře etapy životního cyklu konání.
+Běžné verify IT pouze kompiluje.
+
+Ověření bez DB pro About: 794 testů, BUILD SUCCESS (12 nových cílených unit/HTTP
+scénářů prošlo i samostatně). Sedm AboutIT následně prošlo uživatelem spuštěným
+PostgreSQL ověřením. Generování build metadat bez Git repozitáře prošlo.
+
+
+Závěrečné potvrzení této etapy: PostgreSQL testy a ruční integraci s frontendem
+uživatel potvrdil jako úspěšné při zadání commitu. Zahrnuje lifecycle, vlastní
+seznam/souhrn registrací a ADMIN diagnostiku. Předchozí záznamy o čekajícím
+ověření zachycují průběh před potvrzením; nejsou tvrzením o novém běhu Codexu.
+
+Závěrečný běh před commitem této etapy: Codex `verify` bez DB, JDK 21.0.12.1,
+**799 testů, BUILD SUCCESS, 0 failures/errors/skipped**. Oba aktuální registrační
+a lifecycle OpenAPI 3.1 kontrakty prošly OpenAPIV31SpecValidator 0.9.0.

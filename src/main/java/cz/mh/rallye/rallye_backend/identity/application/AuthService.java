@@ -101,6 +101,15 @@ public class AuthService {
         audit.record(account.id(), Event.LOGIN_SUCCEEDED, account.id());
         return new LoginSession(secret, new Principal(account.id(), session, remember));
     }
+    /** Lifecycle GETs must not renew or otherwise mutate a persisted session. */
+    @Transactional(readOnly=true)
+    public Principal authenticateReadOnly(String secret) {
+        var session=store.session(tokens.hash(secret));Instant at=now();
+        if(session==null||!session.expiresAt().isAfter(at))return null;
+        var account=store.account(session.accountId());
+        if(account==null||!"ACTIVE".equals(account.status())||!store.isActiveSession(session.id(),account.id(),at))return null;
+        return new Principal(account.id(),session.id(),session.rememberMe());
+    }
     @Transactional
     public Principal authenticate(String secret) {
         var session = store.session(tokens.hash(secret));

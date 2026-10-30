@@ -29,7 +29,9 @@ public class AuthSessionFilter extends OncePerRequestFilter {
                 secret = header.substring(7);
             }
             if (secret != null) {
-                var principal = secret.matches("[A-Za-z0-9_-]{43}") ? service.authenticate(secret) : null;
+                String path=request.getRequestURI().substring(request.getContextPath().length());
+                boolean readOnly="GET".equals(request.getMethod())&&(path.equals("/api/v1/admin/about")||path.equals("/api/v1/me/registrations")||path.equals("/api/v1/me/registrations/summary")||path.equals("/api/v1/race-events")||path.startsWith("/api/v1/race-events/"));
+                var principal = secret.matches("[A-Za-z0-9_-]{43}") ? (readOnly?service.authenticateReadOnly(secret):service.authenticate(secret)) : null;
                 if (principal == null) {
                     if (cookie == null) throw AuthFailure.credentials();
                     // An expired browser cookie must not prevent a fresh login/password reset.
@@ -42,7 +44,7 @@ public class AuthSessionFilter extends OncePerRequestFilter {
                     context.setAuthentication(new UsernamePasswordAuthenticationToken(principal, null,
                             authorities));
                     SecurityContextHolder.setContext(context);
-                    if (cookie != null && principal.rememberMe()) cookies.set(response, secret, true);
+                    if (cookie != null && principal.rememberMe() && !path.equals("/api/v1/me/registrations")) cookies.set(response, secret, true);
                 }
             }
         } catch (AuthFailure failure) {

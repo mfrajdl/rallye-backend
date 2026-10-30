@@ -1,0 +1,2359 @@
+openapi: 3.1.0
+info:
+  title: Rallye – životní cyklus konání závodu
+  version: race-event-lifecycle-api-v1
+  description: 'Schválený implementovaný kontrakt. Uživatel potvrdil automatické PostgreSQL i ruční frontendové integrační ověření. Úplná časová, souběhová a databázová pravidla:
+    race-event-lifecycle-api.md. Zachovává registration-api-v1 beze změn. Nenavrhuje individuální start, závodní
+    odpovědi, výpočty ani publikaci. Všechny GET včetně detailu jsou čistě čtecí. Obsahuje odděleně označené aditivní
+    rozšíření GET /me/registrations/summary; původní registration-api-v1 se nemění.'
+servers:
+- url: /api/v1
+tags:
+- name: Životní cyklus konání
+  description: Aktivní ověřený ADMIN; žádná vlastnická výjimka, CSRF pro cookie zápisy.
+- name: Souhrn vlastních registrací
+  description: Aditivní rozšíření registračního API pro každý aktivní ověřený účet. ADMIN pouze vlastní souhrn; čistě
+    čtecí.
+paths:
+  /race-events/{eventId}:
+    get:
+      operationId: getRaceEventLifecycle
+      tags:
+      - Životní cyklus konání
+      summary: Detail konání s životním cyklem
+      description: 'Implementováno; PostgreSQL ověření potvrdil uživatel. Rozšíření existujícího ADMIN detailu. Čistě čtecí
+        GET: společný pure resolver vypočítá efektivní status podle jediného serverového času a DB snapshotu; persistedStatus
+        a transitionsPending zachovají rozdíl vůči DB. Žádná materializace, historie, období, audit, změna verze
+        ani jiné perzistentní změny. Read-only přístup bez FOR UPDATE pro lifecycle. Oprávnění ADMIN zůstává.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      x-required-role: ADMIN
+      responses:
+        '200':
+          description: Úspěch; úplné DTO.
+          headers:
+            Cache-Control:
+              description: Citlivá administrační odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventView'
+              examples:
+                EventDetail:
+                  $ref: '#/components/examples/EventDetail'
+                EventPendingStart:
+                  $ref: '#/components/examples/EventPendingStart'
+                EventPendingEnd:
+                  $ref: '#/components/examples/EventPendingEnd'
+                EventEndedBeforeStart:
+                  $ref: '#/components/examples/EventEndedBeforeStart'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '406':
+          $ref: '#/components/responses/Error406'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-materializes-due-transitions: false
+      x-mutates-persistence: false
+    put:
+      operationId: updateRaceEventLifecycle
+      tags:
+      - Životní cyklus konání
+      summary: Změna základních údajů a termínů
+      description: Implementováno; PostgreSQL ověření potvrdil uživatel. Stávající full PUT. Resolver před kontrolou verze.
+        Při rovnosti nového plánovaného startu a decisionAt nastavení i START atomicky; verze může vzrůst o 2. Konec
+        musí být budoucí. Po konci pouze resume. Business odmítnutí nesmí vrátit zpět samostatně oprávněný systémový
+        přechod.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      x-required-role: ADMIN
+      responses:
+        '200':
+          description: Úspěch; úplné DTO.
+          headers:
+            Cache-Control:
+              description: Citlivá administrační odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventView'
+              examples:
+                EventUpdated:
+                  $ref: '#/components/examples/EventUpdated'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '406':
+          $ref: '#/components/responses/Error406'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventUpdate'
+            examples:
+              Update:
+                value:
+                  version: 4
+                  name: Podzimní Akce
+                  description: null
+                  scheduledStartAt: '2026-11-01T10:00:00Z'
+                  endAt: '2026-11-01T16:00:00Z'
+  /race-events/{eventId}/start:
+    post:
+      operationId: startRaceEvent
+      tags:
+      - Životní cyklus konání
+      summary: Ruční oficiální start
+      description: 'Implementováno; PostgreSQL ověření potvrdil uživatel. PLANNED→RUNNING; čas z aktuálního serveru. Dosud
+        neuložený automatický start nepředřazovat: i po plánu použít nyní. Splatný konec má přednost. Opakování
+        s novým klíčem odmítnout, přesný 24h replay vrací původní receipt. Po úspěchu GET detail. Příklad: plán
+        10:00, první uložení schedulerem v 10:01 → effectiveAt=10:00; první uložení ručním START v 10:01 → effectiveAt=10:01.
+        Předchozí GET včetně opakovaných nic neuloží a neovlivní vítěze.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-required-role: ADMIN
+      responses:
+        '200':
+          description: Úspěch; úplné DTO.
+          headers:
+            Cache-Control:
+              description: Citlivá administrační odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecycleCommandResult'
+              examples:
+                Started:
+                  $ref: '#/components/examples/Started'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '406':
+          $ref: '#/components/responses/Error406'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionCommand'
+            examples:
+              Start:
+                value:
+                  version: 5
+  /race-events/{eventId}/end:
+    post:
+      operationId: endRaceEvent
+      tags:
+      - Životní cyklus konání
+      summary: Ruční ukončení konání
+      description: Implementováno; PostgreSQL ověření potvrdil uživatel. PLANNED/RUNNING→ENDED v aktuálním serverovém čase.
+        Žádný klientský historický čas. Konec PLANNED nevytváří start/období. Pokud už dosáhl endAt, přednost automatického
+        konce přesně endAt a ruční záměr je odmítnut; kontrola verze před kontrolou stavu.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-required-role: ADMIN
+      responses:
+        '200':
+          description: Úspěch; úplné DTO.
+          headers:
+            Cache-Control:
+              description: Citlivá administrační odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecycleCommandResult'
+              examples:
+                Ended:
+                  $ref: '#/components/examples/Ended'
+                EndedBeforeStart:
+                  $ref: '#/components/examples/EndedBeforeStart'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '406':
+          $ref: '#/components/responses/Error406'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionCommand'
+            examples:
+              End:
+                value:
+                  version: 6
+              BeforeFirstStart:
+                value:
+                  version: 4
+  /race-events/{eventId}/resume:
+    post:
+      operationId: resumeRaceEvent
+      tags:
+      - Životní cyklus konání
+      summary: Obnovení ukončeného konání
+      description: Implementováno; PostgreSQL ověření potvrdil uživatel. ENDED→RUNNING nyní, opakovaně bez limitu. Výslovný
+        budoucí endAt nebo null, resultsFinalizedAt musí být null. Nové období; zachovat původní konce, registrace/override/průběhy.
+        Invalidovat předchozí uzávěrku, nepočítat výsledky. Žádné zpětné přijímání odmítnutých odpovědí.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      x-required-role: ADMIN
+      responses:
+        '200':
+          description: Úspěch; úplné DTO.
+          headers:
+            Cache-Control:
+              description: Citlivá administrační odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecycleCommandResult'
+              examples:
+                Resumed:
+                  $ref: '#/components/examples/Resumed'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '406':
+          $ref: '#/components/responses/Error406'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '415':
+          $ref: '#/components/responses/Error415'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResumeCommand'
+            examples:
+              WithDeadline:
+                value:
+                  version: 7
+                  endAt: '2026-11-01T17:00:00Z'
+              WithoutDeadline:
+                value:
+                  version: 7
+                  endAt: null
+  /race-events/{eventId}/lifecycle-history:
+    get:
+      operationId: getRaceEventLifecycleHistory
+      tags:
+      - Životní cyklus konání
+      summary: Historie přechodů a změn termínů
+      description: Implementováno; PostgreSQL ověření potvrdil uživatel. Pure GET, nic nematerializuje. sequence DESC,id DESC
+        před offsetovým stránkováním; obsahuje konfiguraci i skutečné přechody s jejich odlišením. Nezávislé na
+        auditní retenci.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      x-required-role: ADMIN
+      responses:
+        '200':
+          description: Úspěch; úplné DTO.
+          headers:
+            Cache-Control:
+              description: Citlivá administrační odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecycleHistoryPage'
+              examples:
+                LifecycleHistory:
+                  $ref: '#/components/examples/LifecycleHistory'
+                EmptyStoredHistory:
+                  $ref: '#/components/examples/EmptyStoredHistory'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '406':
+          $ref: '#/components/responses/Error406'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-materializes-due-transitions: false
+      x-mutates-persistence: false
+  /race-events/{eventId}/running-periods:
+    get:
+      operationId: getRaceEventRunningPeriods
+      tags:
+      - Životní cyklus konání
+      summary: Období aktivního běhu
+      description: Implementováno; PostgreSQL ověření potvrdil uživatel. Pure GET, number DESC,id DESC. Nezaměňovat s administrační
+        historií. Intervaly zachovají dřívější konce a mezery ENDED i po obnovení. Přesné pravidlo příjmu a pořadí
+        viz Markdown §4.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      x-required-role: ADMIN
+      responses:
+        '200':
+          description: Úspěch; úplné DTO.
+          headers:
+            Cache-Control:
+              description: Citlivá administrační odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunningPeriodPage'
+              examples:
+                RunningPeriods:
+                  $ref: '#/components/examples/RunningPeriods'
+                EmptyStoredPeriods:
+                  $ref: '#/components/examples/EmptyStoredPeriods'
+                StoredPeriodBeforePendingEnd:
+                  $ref: '#/components/examples/StoredPeriodBeforePendingEnd'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '406':
+          $ref: '#/components/responses/Error406'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '503':
+          $ref: '#/components/responses/Error503'
+      x-materializes-due-transitions: false
+      x-mutates-persistence: false
+  /me/registrations/summary:
+    get:
+      operationId: getMyRegistrationsSummary
+      tags:
+      - Souhrn vlastních registrací
+      summary: Počet aktivních registrací vlastních posádek
+      description: 'Implementováno; PostgreSQL ověření potvrdil uživatel. Aditivní rozšíření registračního API navržené společně s lifecycle-api-v1.
+        Aktivní ověřený účet, nevyžaduje ADMIN; i ADMIN vidí pouze vlastní posádky. Účet pouze z relace, žádné path/query
+        parametry či request tělo. Nepodporované query parametry jsou 400. Čistě čtecí GET bez CSRF a materializace.
+        Jediný agregační SELECT, jedno decisionAt a PostgreSQL snapshot: počet crew_registration s aktuálním captain_account_id
+        a efektivním PLANNED/RUNNING. Dvě posádky ve stejném konání jsou 2; override, individuální start/dokončení
+        a historický kapitán nemají vliv. Dosažený endAt vyřadí z počtu i před schedulerem; pending start se započítá.
+        Chyba není náhradní nula.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters: []
+      x-required-account-state: ACTIVE_VERIFIED
+      x-materializes-due-transitions: false
+      x-mutates-persistence: false
+      x-reject-unknown-query-parameters: true
+      responses:
+        '200':
+          description: Souhrn aktuálně přihlášeného účtu, včetně legitimní nuly.
+          headers:
+            Cache-Control:
+              description: Citlivá administrační odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyRegistrationsSummary'
+              examples:
+                MyRegistrationsSummaryThree:
+                  $ref: '#/components/examples/MyRegistrationsSummaryThree'
+                MyRegistrationsSummaryEmpty:
+                  $ref: '#/components/examples/MyRegistrationsSummaryEmpty'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '405':
+          $ref: '#/components/responses/Error405'
+        '406':
+          $ref: '#/components/responses/Error406'
+        '500':
+          $ref: '#/components/responses/Error500'
+        '400':
+          description: Nepodporované parametry; účet nelze přepnout klientskou hodnotou.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - type
+                - title
+                - status
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                    const: 400
+                  code:
+                    type: string
+                    enum:
+                    - INVALID_REQUEST
+                  instance:
+                    type: string
+                    format: uri-reference
+                description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+                  je volitelné.
+              examples:
+                Error:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    code: INVALID_REQUEST
+          headers:
+            Cache-Control:
+              description: Ani chybová odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+        '403':
+          description: Stávající bezpečnostní odmítnutí; role ADMIN není požadována.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - type
+                - title
+                - status
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                    const: 403
+                  code:
+                    type: string
+                    enum:
+                    - ACCESS_DENIED
+                  instance:
+                    type: string
+                    format: uri-reference
+                description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+                  je volitelné.
+              examples:
+                Error:
+                  value:
+                    type: about:blank
+                    title: Forbidden
+                    status: 403
+                    code: ACCESS_DENIED
+          headers:
+            Cache-Control:
+              description: Ani chybová odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+        '503':
+          description: Nelze bezpečně určit lifecycle; nevracet nulu.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - type
+                - title
+                - status
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  title:
+                    type: string
+                  status:
+                    type: integer
+                    const: 503
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_LIFECYCLE_UNAVAILABLE
+                  instance:
+                    type: string
+                    format: uri-reference
+                description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+                  je volitelné.
+              examples:
+                Error:
+                  value:
+                    type: about:blank
+                    title: Service Unavailable
+                    status: 503
+                    code: RACE_EVENT_LIFECYCLE_UNAVAILABLE
+          headers:
+            Cache-Control:
+              description: Ani chybová odpověď se neukládá do cache.
+              schema:
+                type: string
+                const: no-store
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque Rallye session
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: RALLYE_SESSION
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-XSRF-TOKEN
+      description: Maskovaný token a související cookie získat GET /api/v1/auth/csrf. Nekombinovat session cookie
+        s Bearer.
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 10000
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID; společný namespace aktér/klíč, 24h; při retry stejný klíč i celé tělo. Neobsahuje tajemství.
+  schemas:
+    Version:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 9223372036854775807
+    EventState:
+      type: string
+      enum:
+      - PLANNED
+      - RUNNING
+      - ENDED
+    VersionCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      properties:
+        version:
+          $ref: '#/components/schemas/Version'
+      description: Očekávaná společná verze konání; nepřijímá čas ani jiné parametry.
+    ResumeCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - endAt
+      properties:
+        version:
+          $ref: '#/components/schemas/Version'
+        endAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+      description: 'endAt je povinné: budoucí čas > decisionAt nebo explicitní null pro neomezený běh.'
+    EventUpdate:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - name
+      properties:
+        version:
+          $ref: '#/components/schemas/Version'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+        scheduledStartAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        endAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+      description: 'Stávající úplný PUT, nikoli PATCH. Vynechané nullable pole znamená null. PLANNED: všechny údaje.
+        RUNNING: mění se jen endAt, ostatní musí zůstat shodné. ENDED: odmítnuto. Nový plán >= decisionAt, nový
+        konec > decisionAt; vazba plán<konec se nevyžaduje. No-op se správnou verzí bez změny/auditu; systémový
+        přechod nezávislý.'
+    Lifecycle:
+      type: object
+      additionalProperties: false
+      required:
+      - serverTime
+      - persistedStatus
+      - transitionsPending
+      - startedAt
+      - effectiveStartedAt
+      - lastEndedAt
+      - activePeriodId
+      - periodNumber
+      - closureRevision
+      - currentClosureRevision
+      - resultsFinalizedAt
+      - canStart
+      - canEnd
+      - canResume
+      - canEditScheduledStartAt
+      - canEditEndAt
+      - canEditBasicDetails
+      - resumeBlockedReason
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+          description: Jediný autoritativní serverový rozhodovací čas pro celé čtení; ne čas klienta.
+        persistedStatus:
+          $ref: '#/components/schemas/EventState'
+          description: Skutečně uložený stav; může se lišit od efektivního EventView.status.
+        transitionsPending:
+          type: boolean
+          description: Existuje splatný dosud neuložený automatický přechod. GET jej neprovede.
+        startedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: 'Pouze první uložený start. Pending první start nebo ukončení před prvním startem: null.'
+        effectiveStartedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Při pending startu plánovaný efektivní začátek; při skutečně uloženém startu jeho čas. Při
+            přímém konci z PLANNED null.
+        lastEndedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Pouze poslední uložené ukončení, zůstává i po resume. Pending konec tuto hodnotu nepřepisuje.
+        activePeriodId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: Pouze již uložené a nyní efektivně aktivní období. Null při pending prvním startu i jakémkoli
+            efektivním ENDED. GET období může při pending konci ještě vracet uložený otevřený řádek.
+        periodNumber:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+          description: Počet dosud uložených období; GET jej nikdy nezvyšuje.
+        closureRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+          description: Poslední uložený čítač uzávěrek; GET jej nezvyšuje.
+        currentClosureRevision:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+          description: Pouze aktuální uložená uzávěrka ENDED, null při běhu a pending konci.
+        resultsFinalizedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        canStart:
+          type: boolean
+          description: True v PLANNED bez splatného konce, i pokud start je pouze pending a efektivní status už
+            RUNNING. První úspěšně uložený ruční/systémový přechod vyhraje.
+        canEnd:
+          type: boolean
+          description: True před startem i při běhu, včetně pending startu; false při efektivním ENDED. Ruční PLANNED→ENDED
+            bez fiktivního startu/období.
+        canResume:
+          type: boolean
+          description: 'True jen při uloženém ENDED bez definitivní publikace. Pending konec: false do materializace
+            schedulerem/relevantním zápisem.'
+        canEditScheduledStartAt:
+          type: boolean
+          description: True jen PLANNED/PLANNED bez pending; GET stav nezmění.
+        canEditEndAt:
+          type: boolean
+          description: True při PLANNED nebo RUNNING bez pending a před koncem; při pending false.
+        canEditBasicDetails:
+          type: boolean
+          description: True jen PLANNED/PLANNED bez pending.
+        resumeBlockedReason:
+          type:
+          - string
+          - 'null'
+          enum:
+          - NOT_ENDED
+          - RESULTS_FINALIZED
+          - PENDING_TRANSITION
+          - null
+          description: RESULTS_FINALIZED při doložené definitivní publikaci; jinak PENDING_TRANSITION při pending
+            konci; jinak NOT_ENDED před efektivním koncem; jinak null.
+      description: 'Stejná pravidla pro čistě čtecí detail i seznam. startedAt je první uložený start; lastEndedAt
+        pouze uložený poslední konec i po resume. Pending start: efektivní RUNNING, persisted PLANNED, startedAt/activePeriodId
+        null, effectiveStartedAt=plán; ruční canStart/canEnd=true, canEdit*=false. Pending konec: efektivní ENDED,
+        activePeriodId/currentClosureRevision null, poslední uložené startedAt/lastEndedAt/čítače beze změn; canStart/canEnd/canResume/canEdit*=false,
+        resumeBlockedReason=PENDING_TRANSITION. UUID/revize se nevymýšlejí a GET nic neukládá. Přesná tabulka v
+        Markdown §3; definitivní publikace má jako zábrana přednost.'
+    EventView:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - sourceTemplateId
+      - sourceTemplateVersion
+      - name
+      - description
+      - skipPenaltyPoints
+      - status
+      - scheduledStartAt
+      - endAt
+      - version
+      - createdAt
+      - updatedAt
+      - defaultWrongCodePenaltyPoints
+      - sourceTemplateName
+      - sourceTemplateNameIsSnapshot
+      - lifecycle
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceTemplateId:
+          type: string
+          format: uuid
+        sourceTemplateVersion:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        skipPenaltyPoints:
+          type: integer
+          format: int64
+          minimum: -9223372036854775808
+          maximum: 9223372036854775807
+        status:
+          $ref: '#/components/schemas/EventState'
+          description: Efektivní PLANNED/RUNNING/ENDED podle společného rozhodovacího času; GET nikdy nematerializuje.
+        scheduledStartAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        endAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        updatedAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        defaultWrongCodePenaltyPoints:
+          type: integer
+          format: int64
+          minimum: -9223372036854775808
+          maximum: 9223372036854775807
+        sourceTemplateName:
+          type: string
+        sourceTemplateNameIsSnapshot:
+          type: boolean
+        lifecycle:
+          $ref: '#/components/schemas/Lifecycle'
+      description: Všech 15 existujících polí EventService.View plus lifecycle. status je efektivní; uložený stav
+        je lifecycle.persistedStatus. Detail i seznam jsou čistě čtecí, bez ukládání časových přechodů. Žádná konfigurace
+        stanovišť ani údaje členů.
+    LifecycleHistoryEntry:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - raceEventId
+      - sequence
+      - kind
+      - type
+      - fromStatus
+      - toStatus
+      - effectiveAt
+      - processedAt
+      - trigger
+      - cause
+      - actorKind
+      - actorAccountId
+      - versionBefore
+      - versionAfter
+      - scheduledStartAtBefore
+      - scheduledStartAtAfter
+      - endAtBefore
+      - endAtAfter
+      - periodId
+      - closureRevision
+      - invalidatedClosureRevision
+      properties:
+        id:
+          type: string
+          format: uuid
+        raceEventId:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        kind:
+          type: string
+          enum:
+          - CONFIGURATION
+          - TRANSITION
+        type:
+          type: string
+          enum:
+          - TIMES_UPDATED
+          - STARTED
+          - ENDED
+          - RESUMED
+        fromStatus:
+          $ref: '#/components/schemas/EventState'
+        toStatus:
+          $ref: '#/components/schemas/EventState'
+        effectiveAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        processedAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        trigger:
+          type: string
+          enum:
+          - ADMIN
+          - SCHEDULER
+          - API_RECONCILIATION
+        cause:
+          type: string
+          enum:
+          - SETTINGS_UPDATE
+          - MANUAL
+          - SCHEDULED_START
+          - END_AT
+        actorKind:
+          type: string
+          enum:
+          - USER
+          - SYSTEM
+        actorAccountId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        versionBefore:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        versionAfter:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        scheduledStartAtBefore:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        scheduledStartAtAfter:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        endAtBefore:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        endAtAfter:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        periodId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        closureRevision:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        invalidatedClosureRevision:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+      description: Trvalá neměnná lifecycle historie, nezávislá na retenci audit_event. sequence je monotónní pořadí
+        v konání, mezery přípustné. TIMES_UPDATED je konfigurace bez změny stavu; ostatní skutečné přechody. END
+        před startem má periodId null. END zakládá closureRevision, RESUME invalidatedClosureRevision; nic zpětně
+        nemaže.
+      allOf:
+      - if:
+          properties:
+            kind:
+              const: CONFIGURATION
+        then:
+          properties:
+            type:
+              const: TIMES_UPDATED
+            cause:
+              const: SETTINGS_UPDATE
+            trigger:
+              const: ADMIN
+            actorKind:
+              const: USER
+        else:
+          properties:
+            type:
+              type: string
+              enum:
+              - STARTED
+              - ENDED
+              - RESUMED
+      - if:
+          properties:
+            actorKind:
+              const: SYSTEM
+        then:
+          properties:
+            actorAccountId:
+              type: 'null'
+            cause:
+              type: string
+              enum:
+              - SCHEDULED_START
+              - END_AT
+        else:
+          properties:
+            actorAccountId:
+              type: string
+              format: uuid
+      - if:
+          properties:
+            type:
+              const: STARTED
+        then:
+          properties:
+            fromStatus:
+              const: PLANNED
+            toStatus:
+              const: RUNNING
+            periodId:
+              type: string
+              format: uuid
+            closureRevision:
+              type: 'null'
+            invalidatedClosureRevision:
+              type: 'null'
+      - if:
+          properties:
+            type:
+              const: ENDED
+        then:
+          properties:
+            fromStatus:
+              type: string
+              enum:
+              - PLANNED
+              - RUNNING
+            toStatus:
+              const: ENDED
+            closureRevision:
+              type: integer
+              format: int64
+              minimum: 1
+            invalidatedClosureRevision:
+              type: 'null'
+      - if:
+          properties:
+            type:
+              const: RESUMED
+        then:
+          properties:
+            fromStatus:
+              const: ENDED
+            toStatus:
+              const: RUNNING
+            periodId:
+              type: string
+              format: uuid
+            cause:
+              const: MANUAL
+            closureRevision:
+              type: 'null'
+            invalidatedClosureRevision:
+              type: integer
+              format: int64
+              minimum: 1
+    RunningPeriod:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - raceEventId
+      - number
+      - startedAt
+      - endedAt
+      - endBoundary
+      - startTransitionId
+      - endTransitionId
+      - startSequence
+      - endSequence
+      properties:
+        id:
+          type: string
+          format: uuid
+        raceEventId:
+          type: string
+          format: uuid
+        number:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        startedAt:
+          type: string
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        endedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC RFC3339; výstup Z, milisekundová přesnost. Vstupní explicitní offset se normalizuje do
+            UTC a zlomek zkrátí na milisekundy.
+        endBoundary:
+          type:
+          - string
+          - 'null'
+          enum:
+          - INCLUSIVE
+          - SERVER_ORDER
+          - null
+        startTransitionId:
+          type: string
+          format: uuid
+        endTransitionId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        startSequence:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        endSequence:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+      description: Samostatné období běhu. Automatický konec INCLUSIVE (receivedAt<=endAt); ruční konec SERVER_ORDER,
+        shodná milisekunda se řadí serverovou sekvencí. ENDED mezery nejsou aktivním obdobím. Uzavřený řádek se
+        po resume neotevírá.
+      allOf:
+      - if:
+          properties:
+            endedAt:
+              type: 'null'
+        then:
+          properties:
+            endBoundary:
+              type: 'null'
+            endTransitionId:
+              type: 'null'
+            endSequence:
+              type: 'null'
+        else:
+          properties:
+            endBoundary:
+              type: string
+              enum:
+              - INCLUSIVE
+              - SERVER_ORDER
+            endTransitionId:
+              type: string
+              format: uuid
+            endSequence:
+              type: integer
+              format: int64
+              minimum: 1
+              maximum: 9223372036854775807
+    LifecycleCommandResult:
+      type: object
+      additionalProperties: false
+      required:
+      - raceEventId
+      - version
+      - transition
+      properties:
+        raceEventId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        transition:
+          allOf:
+          - $ref: '#/components/schemas/LifecycleHistoryEntry'
+          - properties:
+              kind:
+                const: TRANSITION
+      description: Neměnný původní 24h receipt. Není aktuální stav; po úspěchu/replay načíst GET detail. Verze je
+        výsledná společná verze konání po příkazu.
+    LifecycleHistoryPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - hasMore
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LifecycleHistoryEntry'
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10000
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        hasMore:
+          type: boolean
+    RunningPeriodPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - hasMore
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunningPeriod'
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10000
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+        hasMore:
+          type: boolean
+    Problem:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - title
+      - status
+      - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+          enum:
+          - INVALID_REQUEST
+          - RACE_EVENT_SCHEDULE_INVALID
+          - RACE_EVENT_END_TIME_INVALID
+          - UNAUTHENTICATED
+          - INVALID_CREDENTIALS
+          - ACCESS_DENIED
+          - ADMIN_REQUIRED
+          - RACE_EVENT_NOT_FOUND
+          - RACE_EVENT_VERSION_CONFLICT
+          - IDEMPOTENCY_CONFLICT
+          - RACE_EVENT_ALREADY_STARTED
+          - RACE_EVENT_ALREADY_ENDED
+          - RACE_EVENT_NOT_ENDED
+          - RACE_EVENT_RESULTS_FINALIZED
+          - RACE_EVENT_ENDED
+          - RACE_EVENT_SCHEDULE_LOCKED
+          - RACE_EVENT_DETAILS_LOCKED
+          - METHOD_NOT_ALLOWED
+          - NOT_ACCEPTABLE
+          - UNSUPPORTED_MEDIA_TYPE
+          - INTERNAL_ERROR
+          - RACE_EVENT_LIFECYCLE_UNAVAILABLE
+          - RACE_EVENT_RESULTS_CHECK_UNAVAILABLE
+        instance:
+          type: string
+          format: uri-reference
+      description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance je
+        volitelné.
+    MyRegistrationsSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - activeCount
+      properties:
+        activeCount:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+          description: Počet jednotlivých přihlášek aktuálně vlastních posádek v efektivním PLANNED/RUNNING, nikoli
+            počet konání. Počítá se i po individuálním startu/dokončení; ENDED ne.
+      description: Aditivní rozšíření registračního API společně s lifecycle-api-v1, ne změna původního registration-api-v1.
+        Jen jedno pole; žádné údaje cizích uživatelů.
+  responses:
+    Error400:
+      description: INVALID_REQUEST; RACE_EVENT_SCHEDULE_INVALID; RACE_EVENT_END_TIME_INVALID
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 400
+              code:
+                type: string
+                enum:
+                - INVALID_REQUEST
+                - RACE_EVENT_SCHEDULE_INVALID
+                - RACE_EVENT_END_TIME_INVALID
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                code: INVALID_REQUEST
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error401:
+      description: UNAUTHENTICATED; INVALID_CREDENTIALS
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 401
+              code:
+                type: string
+                enum:
+                - UNAUTHENTICATED
+                - INVALID_CREDENTIALS
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: UNAUTHENTICATED
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error403:
+      description: ACCESS_DENIED; ADMIN_REQUIRED
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 403
+              code:
+                type: string
+                enum:
+                - ACCESS_DENIED
+                - ADMIN_REQUIRED
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: ACCESS_DENIED
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error404:
+      description: RACE_EVENT_NOT_FOUND
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 404
+              code:
+                type: string
+                enum:
+                - RACE_EVENT_NOT_FOUND
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: RACE_EVENT_NOT_FOUND
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error409:
+      description: RACE_EVENT_VERSION_CONFLICT; IDEMPOTENCY_CONFLICT; RACE_EVENT_ALREADY_STARTED; RACE_EVENT_ALREADY_ENDED;
+        RACE_EVENT_NOT_ENDED; RACE_EVENT_RESULTS_FINALIZED; RACE_EVENT_ENDED; RACE_EVENT_SCHEDULE_LOCKED; RACE_EVENT_DETAILS_LOCKED
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 409
+              code:
+                type: string
+                enum:
+                - RACE_EVENT_VERSION_CONFLICT
+                - IDEMPOTENCY_CONFLICT
+                - RACE_EVENT_ALREADY_STARTED
+                - RACE_EVENT_ALREADY_ENDED
+                - RACE_EVENT_NOT_ENDED
+                - RACE_EVENT_RESULTS_FINALIZED
+                - RACE_EVENT_ENDED
+                - RACE_EVENT_SCHEDULE_LOCKED
+                - RACE_EVENT_DETAILS_LOCKED
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: RACE_EVENT_VERSION_CONFLICT
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error405:
+      description: METHOD_NOT_ALLOWED
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 405
+              code:
+                type: string
+                enum:
+                - METHOD_NOT_ALLOWED
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Method Not Allowed
+                status: 405
+                code: METHOD_NOT_ALLOWED
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error406:
+      description: NOT_ACCEPTABLE
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 406
+              code:
+                type: string
+                enum:
+                - NOT_ACCEPTABLE
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Not Acceptable
+                status: 406
+                code: NOT_ACCEPTABLE
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error415:
+      description: UNSUPPORTED_MEDIA_TYPE
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 415
+              code:
+                type: string
+                enum:
+                - UNSUPPORTED_MEDIA_TYPE
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Unsupported Media Type
+                status: 415
+                code: UNSUPPORTED_MEDIA_TYPE
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error500:
+      description: INTERNAL_ERROR
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 500
+              code:
+                type: string
+                enum:
+                - INTERNAL_ERROR
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+    Error503:
+      description: RACE_EVENT_LIFECYCLE_UNAVAILABLE; RACE_EVENT_RESULTS_CHECK_UNAVAILABLE
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - type
+            - title
+            - status
+            - code
+            properties:
+              type:
+                type: string
+                format: uri-reference
+              title:
+                type: string
+              status:
+                type: integer
+                const: 503
+              code:
+                type: string
+                enum:
+                - RACE_EVENT_LIFECYCLE_UNAVAILABLE
+                - RACE_EVENT_RESULTS_CHECK_UNAVAILABLE
+              instance:
+                type: string
+                format: uri-reference
+            description: Stávající application/problem+json. Žádné SQL, tokeny, cookies ani osobní údaje. instance
+              je volitelné.
+          examples:
+            Error:
+              value:
+                type: about:blank
+                title: Service Unavailable
+                status: 503
+                code: RACE_EVENT_LIFECYCLE_UNAVAILABLE
+      headers:
+        Cache-Control:
+          description: Ani chybová odpověď se neukládá do cache.
+          schema:
+            type: string
+            const: no-store
+  examples:
+    EventDetail:
+      value:
+        id: 11111111-1111-4111-8111-111111111111
+        sourceTemplateId: 22222222-2222-4222-8222-222222222222
+        sourceTemplateVersion: 3
+        name: Podzimní Akce
+        description: null
+        skipPenaltyPoints: 0
+        status: PLANNED
+        scheduledStartAt: '2026-11-01T11:00:00Z'
+        endAt: '2026-11-01T15:00:00Z'
+        version: 4
+        createdAt: '2026-10-30T09:00:00Z'
+        updatedAt: '2026-10-30T09:00:00Z'
+        defaultWrongCodePenaltyPoints: 0
+        sourceTemplateName: Podzimní šablona
+        sourceTemplateNameIsSnapshot: true
+        lifecycle:
+          serverTime: '2026-11-01T09:00:00Z'
+          persistedStatus: PLANNED
+          transitionsPending: false
+          startedAt: null
+          effectiveStartedAt: null
+          lastEndedAt: null
+          activePeriodId: null
+          periodNumber: 0
+          closureRevision: 0
+          currentClosureRevision: null
+          resultsFinalizedAt: null
+          canStart: true
+          canEnd: true
+          canResume: false
+          canEditScheduledStartAt: true
+          canEditEndAt: true
+          canEditBasicDetails: true
+          resumeBlockedReason: NOT_ENDED
+    EventUpdated:
+      value:
+        id: 11111111-1111-4111-8111-111111111111
+        sourceTemplateId: 22222222-2222-4222-8222-222222222222
+        sourceTemplateVersion: 3
+        name: Podzimní Akce
+        description: null
+        skipPenaltyPoints: 0
+        status: PLANNED
+        scheduledStartAt: '2026-11-01T10:00:00Z'
+        endAt: '2026-11-01T16:00:00Z'
+        version: 5
+        createdAt: '2026-10-30T09:00:00Z'
+        updatedAt: '2026-11-01T09:05:00Z'
+        defaultWrongCodePenaltyPoints: 0
+        sourceTemplateName: Podzimní šablona
+        sourceTemplateNameIsSnapshot: true
+        lifecycle:
+          serverTime: '2026-11-01T09:05:00Z'
+          persistedStatus: PLANNED
+          transitionsPending: false
+          startedAt: null
+          effectiveStartedAt: null
+          lastEndedAt: null
+          activePeriodId: null
+          periodNumber: 0
+          closureRevision: 0
+          currentClosureRevision: null
+          resultsFinalizedAt: null
+          canStart: true
+          canEnd: true
+          canResume: false
+          canEditScheduledStartAt: true
+          canEditEndAt: true
+          canEditBasicDetails: true
+          resumeBlockedReason: NOT_ENDED
+    Started:
+      value:
+        raceEventId: 11111111-1111-4111-8111-111111111111
+        version: 6
+        transition:
+          id: 55555555-5555-4555-8555-555555555555
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          sequence: 2
+          kind: TRANSITION
+          type: STARTED
+          fromStatus: PLANNED
+          toStatus: RUNNING
+          effectiveAt: '2026-11-01T09:30:00Z'
+          processedAt: '2026-11-01T09:30:00Z'
+          trigger: ADMIN
+          cause: MANUAL
+          actorKind: USER
+          actorAccountId: 99999999-9999-4999-8999-999999999999
+          versionBefore: 5
+          versionAfter: 6
+          scheduledStartAtBefore: '2026-11-01T10:00:00Z'
+          scheduledStartAtAfter: '2026-11-01T10:00:00Z'
+          endAtBefore: '2026-11-01T16:00:00Z'
+          endAtAfter: '2026-11-01T16:00:00Z'
+          periodId: 33333333-3333-4333-8333-333333333333
+          closureRevision: null
+          invalidatedClosureRevision: null
+    Ended:
+      value:
+        raceEventId: 11111111-1111-4111-8111-111111111111
+        version: 7
+        transition:
+          id: 66666666-6666-4666-8666-666666666666
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          sequence: 3
+          kind: TRANSITION
+          type: ENDED
+          fromStatus: RUNNING
+          toStatus: ENDED
+          effectiveAt: '2026-11-01T12:00:00Z'
+          processedAt: '2026-11-01T12:00:00Z'
+          trigger: ADMIN
+          cause: MANUAL
+          actorKind: USER
+          actorAccountId: 99999999-9999-4999-8999-999999999999
+          versionBefore: 6
+          versionAfter: 7
+          scheduledStartAtBefore: '2026-11-01T10:00:00Z'
+          scheduledStartAtAfter: '2026-11-01T10:00:00Z'
+          endAtBefore: '2026-11-01T16:00:00Z'
+          endAtAfter: '2026-11-01T16:00:00Z'
+          periodId: 33333333-3333-4333-8333-333333333333
+          closureRevision: 1
+          invalidatedClosureRevision: null
+    Resumed:
+      value:
+        raceEventId: 11111111-1111-4111-8111-111111111111
+        version: 8
+        transition:
+          id: 77777777-7777-4777-8777-777777777777
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          sequence: 4
+          kind: TRANSITION
+          type: RESUMED
+          fromStatus: ENDED
+          toStatus: RUNNING
+          effectiveAt: '2026-11-01T12:20:00Z'
+          processedAt: '2026-11-01T12:20:00Z'
+          trigger: ADMIN
+          cause: MANUAL
+          actorKind: USER
+          actorAccountId: 99999999-9999-4999-8999-999999999999
+          versionBefore: 7
+          versionAfter: 8
+          scheduledStartAtBefore: '2026-11-01T10:00:00Z'
+          scheduledStartAtAfter: '2026-11-01T10:00:00Z'
+          endAtBefore: '2026-11-01T16:00:00Z'
+          endAtAfter: '2026-11-01T17:00:00Z'
+          periodId: 44444444-4444-4444-8444-444444444444
+          closureRevision: null
+          invalidatedClosureRevision: 1
+    LifecycleHistory:
+      value:
+        items:
+        - id: 77777777-7777-4777-8777-777777777777
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          sequence: 4
+          kind: TRANSITION
+          type: RESUMED
+          fromStatus: ENDED
+          toStatus: RUNNING
+          effectiveAt: '2026-11-01T12:20:00Z'
+          processedAt: '2026-11-01T12:20:00Z'
+          trigger: ADMIN
+          cause: MANUAL
+          actorKind: USER
+          actorAccountId: 99999999-9999-4999-8999-999999999999
+          versionBefore: 7
+          versionAfter: 8
+          scheduledStartAtBefore: '2026-11-01T10:00:00Z'
+          scheduledStartAtAfter: '2026-11-01T10:00:00Z'
+          endAtBefore: '2026-11-01T16:00:00Z'
+          endAtAfter: '2026-11-01T17:00:00Z'
+          periodId: 44444444-4444-4444-8444-444444444444
+          closureRevision: null
+          invalidatedClosureRevision: 1
+        - id: 66666666-6666-4666-8666-666666666666
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          sequence: 3
+          kind: TRANSITION
+          type: ENDED
+          fromStatus: RUNNING
+          toStatus: ENDED
+          effectiveAt: '2026-11-01T12:00:00Z'
+          processedAt: '2026-11-01T12:00:00Z'
+          trigger: ADMIN
+          cause: MANUAL
+          actorKind: USER
+          actorAccountId: 99999999-9999-4999-8999-999999999999
+          versionBefore: 6
+          versionAfter: 7
+          scheduledStartAtBefore: '2026-11-01T10:00:00Z'
+          scheduledStartAtAfter: '2026-11-01T10:00:00Z'
+          endAtBefore: '2026-11-01T16:00:00Z'
+          endAtAfter: '2026-11-01T16:00:00Z'
+          periodId: 33333333-3333-4333-8333-333333333333
+          closureRevision: 1
+          invalidatedClosureRevision: null
+        - id: 55555555-5555-4555-8555-555555555555
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          sequence: 2
+          kind: TRANSITION
+          type: STARTED
+          fromStatus: PLANNED
+          toStatus: RUNNING
+          effectiveAt: '2026-11-01T09:30:00Z'
+          processedAt: '2026-11-01T09:30:00Z'
+          trigger: ADMIN
+          cause: MANUAL
+          actorKind: USER
+          actorAccountId: 99999999-9999-4999-8999-999999999999
+          versionBefore: 5
+          versionAfter: 6
+          scheduledStartAtBefore: '2026-11-01T10:00:00Z'
+          scheduledStartAtAfter: '2026-11-01T10:00:00Z'
+          endAtBefore: '2026-11-01T16:00:00Z'
+          endAtAfter: '2026-11-01T16:00:00Z'
+          periodId: 33333333-3333-4333-8333-333333333333
+          closureRevision: null
+          invalidatedClosureRevision: null
+        - id: 88888888-8888-4888-8888-888888888888
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          sequence: 1
+          kind: CONFIGURATION
+          type: TIMES_UPDATED
+          fromStatus: PLANNED
+          toStatus: PLANNED
+          effectiveAt: '2026-11-01T09:05:00Z'
+          processedAt: '2026-11-01T09:05:00Z'
+          trigger: ADMIN
+          cause: SETTINGS_UPDATE
+          actorKind: USER
+          actorAccountId: 99999999-9999-4999-8999-999999999999
+          versionBefore: 4
+          versionAfter: 5
+          scheduledStartAtBefore: '2026-11-01T11:00:00Z'
+          scheduledStartAtAfter: '2026-11-01T10:00:00Z'
+          endAtBefore: '2026-11-01T15:00:00Z'
+          endAtAfter: '2026-11-01T16:00:00Z'
+          periodId: null
+          closureRevision: null
+          invalidatedClosureRevision: null
+        page: 0
+        size: 50
+        hasMore: false
+    RunningPeriods:
+      value:
+        items:
+        - id: 44444444-4444-4444-8444-444444444444
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          number: 2
+          startedAt: '2026-11-01T12:20:00Z'
+          endedAt: null
+          endBoundary: null
+          startTransitionId: 77777777-7777-4777-8777-777777777777
+          endTransitionId: null
+          startSequence: 4
+          endSequence: null
+        - id: 33333333-3333-4333-8333-333333333333
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          number: 1
+          startedAt: '2026-11-01T09:30:00Z'
+          endedAt: '2026-11-01T12:00:00Z'
+          endBoundary: SERVER_ORDER
+          startTransitionId: 55555555-5555-4555-8555-555555555555
+          endTransitionId: 66666666-6666-4666-8666-666666666666
+          startSequence: 2
+          endSequence: 3
+        page: 0
+        size: 50
+        hasMore: false
+    EventPendingStart:
+      summary: 'GET po plánu: uložené PLANNED, efektivní RUNNING, ruční START může předběhnout scheduler.'
+      value:
+        id: 11111111-1111-4111-8111-111111111111
+        sourceTemplateId: 22222222-2222-4222-8222-222222222222
+        sourceTemplateVersion: 3
+        name: Podzimní Akce
+        description: null
+        skipPenaltyPoints: 0
+        status: RUNNING
+        scheduledStartAt: '2026-11-01T11:00:00Z'
+        endAt: '2026-11-01T15:00:00Z'
+        version: 4
+        createdAt: '2026-10-30T09:00:00Z'
+        updatedAt: '2026-10-30T09:00:00Z'
+        defaultWrongCodePenaltyPoints: 0
+        sourceTemplateName: Podzimní šablona
+        sourceTemplateNameIsSnapshot: true
+        lifecycle:
+          serverTime: '2026-11-01T11:01:00Z'
+          persistedStatus: PLANNED
+          transitionsPending: true
+          startedAt: null
+          effectiveStartedAt: '2026-11-01T11:00:00Z'
+          lastEndedAt: null
+          activePeriodId: null
+          periodNumber: 0
+          closureRevision: 0
+          currentClosureRevision: null
+          resultsFinalizedAt: null
+          canStart: true
+          canEnd: true
+          canResume: false
+          canEditScheduledStartAt: false
+          canEditEndAt: false
+          canEditBasicDetails: false
+          resumeBlockedReason: NOT_ENDED
+    EventPendingEnd:
+      summary: 'GET přesně v endAt: efektivně ENDED, DB RUNNING; žádný nový konec/revize/historie.'
+      value:
+        id: 11111111-1111-4111-8111-111111111111
+        sourceTemplateId: 22222222-2222-4222-8222-222222222222
+        sourceTemplateVersion: 3
+        name: Podzimní Akce
+        description: null
+        skipPenaltyPoints: 0
+        status: ENDED
+        scheduledStartAt: '2026-11-01T10:00:00Z'
+        endAt: '2026-11-01T16:00:00Z'
+        version: 6
+        createdAt: '2026-10-30T09:00:00Z'
+        updatedAt: '2026-11-01T09:30:00Z'
+        defaultWrongCodePenaltyPoints: 0
+        sourceTemplateName: Podzimní šablona
+        sourceTemplateNameIsSnapshot: true
+        lifecycle:
+          serverTime: '2026-11-01T16:00:00Z'
+          persistedStatus: RUNNING
+          transitionsPending: true
+          startedAt: '2026-11-01T09:30:00Z'
+          effectiveStartedAt: '2026-11-01T09:30:00Z'
+          lastEndedAt: null
+          activePeriodId: null
+          periodNumber: 1
+          closureRevision: 0
+          currentClosureRevision: null
+          resultsFinalizedAt: null
+          canStart: false
+          canEnd: false
+          canResume: false
+          canEditScheduledStartAt: false
+          canEditEndAt: false
+          canEditBasicDetails: false
+          resumeBlockedReason: PENDING_TRANSITION
+    EndedBeforeStart:
+      summary: Schválené ruční PLANNED→ENDED, bez vytvoření období běhu.
+      value:
+        raceEventId: 11111111-1111-4111-8111-111111111111
+        version: 5
+        transition:
+          id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          sequence: 1
+          kind: TRANSITION
+          type: ENDED
+          fromStatus: PLANNED
+          toStatus: ENDED
+          effectiveAt: '2026-11-01T09:30:00Z'
+          processedAt: '2026-11-01T09:30:00Z'
+          trigger: ADMIN
+          cause: MANUAL
+          actorKind: USER
+          actorAccountId: 99999999-9999-4999-8999-999999999999
+          versionBefore: 4
+          versionAfter: 5
+          scheduledStartAtBefore: '2026-11-01T11:00:00Z'
+          scheduledStartAtAfter: '2026-11-01T11:00:00Z'
+          endAtBefore: '2026-11-01T15:00:00Z'
+          endAtAfter: '2026-11-01T15:00:00Z'
+          periodId: null
+          closureRevision: 1
+          invalidatedClosureRevision: null
+    EventEndedBeforeStart:
+      summary: Čtecí detail po ručním konci před startem; startedAt zůstává null.
+      value:
+        id: 11111111-1111-4111-8111-111111111111
+        sourceTemplateId: 22222222-2222-4222-8222-222222222222
+        sourceTemplateVersion: 3
+        name: Podzimní Akce
+        description: null
+        skipPenaltyPoints: 0
+        status: ENDED
+        scheduledStartAt: '2026-11-01T11:00:00Z'
+        endAt: '2026-11-01T15:00:00Z'
+        version: 5
+        createdAt: '2026-10-30T09:00:00Z'
+        updatedAt: '2026-11-01T09:30:00Z'
+        defaultWrongCodePenaltyPoints: 0
+        sourceTemplateName: Podzimní šablona
+        sourceTemplateNameIsSnapshot: true
+        lifecycle:
+          serverTime: '2026-11-01T09:30:00Z'
+          persistedStatus: ENDED
+          transitionsPending: false
+          startedAt: null
+          effectiveStartedAt: null
+          lastEndedAt: '2026-11-01T09:30:00Z'
+          activePeriodId: null
+          periodNumber: 0
+          closureRevision: 1
+          currentClosureRevision: 1
+          resultsFinalizedAt: null
+          canStart: false
+          canEnd: false
+          canResume: true
+          canEditScheduledStartAt: false
+          canEditEndAt: false
+          canEditBasicDetails: false
+          resumeBlockedReason: null
+    EmptyStoredHistory:
+      summary: Před pending prvním startem není uložen žádný lifecycle záznam.
+      value:
+        items: []
+        page: 0
+        size: 50
+        hasMore: false
+    EmptyStoredPeriods:
+      summary: Pending první start nesmí vytvořit fiktivní období.
+      value:
+        items: []
+        page: 0
+        size: 50
+        hasMore: false
+    StoredPeriodBeforePendingEnd:
+      summary: Pouze uložený otevřený řádek; pending konec jej GET nesmí uzavřít. Efektivní activePeriodId v detailu
+        je už null.
+      value:
+        items:
+        - id: 33333333-3333-4333-8333-333333333333
+          raceEventId: 11111111-1111-4111-8111-111111111111
+          number: 1
+          startedAt: '2026-11-01T09:30:00Z'
+          endedAt: null
+          endBoundary: null
+          startTransitionId: 55555555-5555-4555-8555-555555555555
+          endTransitionId: null
+          startSequence: 2
+          endSequence: null
+        page: 0
+        size: 50
+        hasMore: false
+    MyRegistrationsSummaryThree:
+      value:
+        activeCount: 3
+    MyRegistrationsSummaryEmpty:
+      value:
+        activeCount: 0
+x-proposal-status: IMPLEMENTED_PENDING_POSTGRESQL_VERIFICATION
+x-existing-endpoint-impacts:
+  GET /race-events: Stejné parametry/page DTO. EventView získá lifecycle a efektivní status; detail i seznam jsou
+    čistě čtecí, bez materializace. Pending hodnoty a capabilities podle Markdown §3.
+  POST /race-templates/{id}/events: Stejný request/Created DTO/Location/idempotence. Nové termíny validovat jako
+    EventUpdate, plán>=decisionAt, end>decisionAt; null zachovat. Plán==decisionAt materializuje start ve stejné
+    transakci a Created.version je výsledná.
+  registration-api-v1: Beze změn cest, DTO a chyb. Pure resolver pro čtení, interní materializace při zápisu se
+    stejnými zámky; replay před otevřeností.
+  PUT instructions / DELETE race event: Resolver před existující kontrolou PLANNED/verze; po skutečném startu neotevírat
+    dosavadní správu snapshotu.
+  GET /me/registrations/summary: Implementovaný aditivní souhrn; kanonická definice je zde a v lifecycle Markdown dokumentu.
+    Původní registrační MD/YAML pouze odkazují na tuto definici.
+x-time-rules:
+  schedulerSeconds: 30
+  automaticStartEffectiveAt: scheduledStartAt
+  manualStartEffectiveAt: decisionAt even after planned start if no start persisted
+  automaticEndEffectiveAt: endAt
+  plannedAlreadyPastEnd: direct PLANNED→ENDED, no fabricated running period
+  answerDeadline: future runtime receivedAt<=endAt with durable admission/order; registrations and individual start
+    strictly before endAt
+  manualBoundary: server ordering for equal millisecond
+  receiptDefinition: future runtime durable acceptance after auth and acquiring short event admission lock; not
+    TCP arrival/client timestamp
+  references: race-event-lifecycle-api.md §§3–4,8
+  allLifecycleReads: 'Pure GET, including detail/history/periods/registration/summary: no persistence, version or
+    audit changes. Only stored history rows.'
+  manualEndBeforeFirstStart: Approved PLANNED→ENDED now; startedAt stays null, no running period; version/history/audit
+    atomically.
+  summary: Count registrations, not distinct events; current captain only; effective PLANNED/RUNNING; one read snapshot
+    and decisionAt.
+x-future-decisions:
+- Timing penalties during ENDED gaps is undecided; no evaluator change implied.
+- Whether withdrawal of definitive results can clear the resume prohibition is undecided; no current publisher/clear
+  operation.

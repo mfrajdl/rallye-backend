@@ -17,6 +17,22 @@ final class CommandAccounts {
             }
             JsonNode req=JSON.readTree(request),res=JSON.readTree(result);
             if(!req.isArray() || !res.isObject()) throw invalid();
+            if(Set.of("RACE_EVENT_STARTED","RACE_EVENT_ENDED","RACE_EVENT_RESUMED").contains(operation)){
+                size(req,3);if(!target.equals(requiredId(req.get(0)))||!req.get(1).isIntegralNumber()||!req.get(1).canConvertToLong()||req.get(1).longValue()<0)throw invalid();textOrNull(req.get(2));
+                if(!new HashSet<>(res.propertyNames()).equals(Set.of("raceEventId","version","transition"))||!target.equals(requiredId(res.get("raceEventId")))||!res.get("version").isIntegralNumber())throw invalid();
+                var h=res.get("transition");
+                if(!h.isObject()||!new HashSet<>(h.propertyNames()).equals(Set.of("id","raceEventId","sequence","kind","type","fromStatus","toStatus","effectiveAt","processedAt","trigger","cause","actorKind","actorAccountId","versionBefore","versionAfter","scheduledStartAtBefore","scheduledStartAtAfter","endAtBefore","endAtAfter","periodId","closureRevision","invalidatedClosureRevision"))||!target.equals(requiredId(h.get("raceEventId")))||!operation.equals("RACE_EVENT_"+h.get("type").asString())||!actor.equals(requiredId(h.get("actorAccountId"))))throw invalid();
+                if(!h.get("kind").asString().equals("TRANSITION")||!h.get("trigger").asString().equals("ADMIN")||!h.get("cause").asString().equals("MANUAL")||!h.get("actorKind").asString().equals("USER"))throw invalid();
+                String type=h.get("type").asString(),from=h.get("fromStatus").asString(),to=h.get("toStatus").asString();
+                if(!(type.equals("STARTED")&&from.equals("PLANNED")&&to.equals("RUNNING")||type.equals("ENDED")&&Set.of("PLANNED","RUNNING").contains(from)&&to.equals("ENDED")||type.equals("RESUMED")&&from.equals("ENDED")&&to.equals("RUNNING")))throw invalid();
+                if(!h.get("sequence").isIntegralNumber()||!h.get("sequence").canConvertToLong()||h.get("sequence").longValue()<1||!res.get("version").canConvertToLong()||!h.get("versionBefore").canConvertToLong()||!h.get("versionAfter").canConvertToLong())throw invalid();
+                for(String field:List.of("effectiveAt","processedAt","scheduledStartAtBefore","scheduledStartAtAfter","endAtBefore","endAtAfter")){textOrNull(h.get(field));if(!h.get(field).isNull())java.time.Instant.parse(h.get(field).asString());}
+                if(h.get("effectiveAt").isNull()||h.get("processedAt").isNull()||!h.get("effectiveAt").equals(h.get("processedAt")))throw invalid();
+                if(h.get("periodId").isNull()){if(!type.equals("ENDED")||!from.equals("PLANNED"))throw invalid();}else requiredId(h.get("periodId"));
+                for(String field:List.of("closureRevision","invalidatedClosureRevision")){var value=h.get(field);boolean expected=field.equals("closureRevision")?type.equals("ENDED"):type.equals("RESUMED");if(expected?(!value.isIntegralNumber()||!value.canConvertToLong()||value.longValue()<1):!value.isNull())throw invalid();}
+                requiredId(h.get("id"));if(!h.get("versionBefore").isIntegralNumber()||h.get("versionBefore").longValue()!=req.get(1).longValue()||!h.get("versionAfter").isIntegralNumber()||h.get("versionAfter").longValue()!=res.get("version").longValue()||h.get("versionAfter").longValue()!=Math.addExact(h.get("versionBefore").longValue(),1))throw invalid();
+                return new Content(ids,req,res);
+            }
             if(operation.equals("CREW_REGISTRATION_CREATE")){
                 size(req,4);requiredId(req.get(0));requiredId(req.get(1));
                 if(!req.get(2).isString()||!req.get(2).asString().matches("[0-9a-f]{64}")||!req.get(3).isIntegralNumber()||!req.get(3).canConvertToInt()||req.get(3).intValue()<0)throw invalid();

@@ -1,10 +1,12 @@
 # Registrace posádek do konání – registration-api-v1
 
-**Stav: návrh ke schválení, nikoli implementované API.** Datum: 2026-10-30.
+**Stav: schválený a implementovaný kontrakt.** Datum: 2026-10-30.
 Verze kontraktu není Git tag ani verze aplikace. Strojový protějšek:
 [participation-registration-openapi.yaml](participation-registration-openapi.yaml), OpenAPI 3.1.0.
-Backend i frontend použijí stejný kontrakt po jeho schválení. Zatím pouze dokumentace;
-žádné nové endpointy, tabulky, migrace ani frontend nebyly implementovány.
+Základ registrací byl dokončen v předchozí etapě. Návaznost lifecycle a vlastní
+seznam/souhrn jsou implementované aditivní změny; uživatel potvrdil PostgreSQL
+i ruční frontendové integrační ověření. Starší validační záznamy níže popisují
+kontraktační fázi, aktuální stav uvádějí závěrečné oddíly.
 
 ## 1. Zdroje a změny proti specifikaci
 
@@ -764,3 +766,87 @@ Ověřeno 2026-10-30:
 
 Validátory jsou pouze v dočasném adresáři mimo projekt; nejde o nové závislosti backendu.
 Tato validace neprokazuje hotovou implementaci ani runtime autorizaci, tu musí ověřit budoucí testy.
+
+## Návaznost životního cyklu konání (etapa 2)
+
+Sedm operací registration-api-v1 zůstává zachováno. GET nyní využívají společný
+efektivní lifecycle stav a zápisy materializaci přechodů. Aditivní GET
+`/api/v1/me/registrations/summary` je kanonicky definován výhradně v
+[race-event-lifecycle-api.md](race-event-lifecycle-api.md) a
+[race-event-lifecycle-openapi.yaml](race-event-lifecycle-openapi.yaml).
+Uživatel při závěrečném uzavření potvrdil PostgreSQL ověření této návaznosti
+i ruční integraci s frontendem. Nejde o vlastní PostgreSQL běh Codexu.
+
+
+## Vlastní přihlášky napříč konáními – implementované rozšíření registration-api-v1
+
+`GET /api/v1/me/registrations?page=0&size=50`
+
+Aktivní ověřený přihlášený účet (USER i ADMIN), Bearer nebo session cookie.
+ADMIN nemá výjimku: SQL omezuje výsledek přes `crew.captain_account_id` na právě
+přihlášený účet. Změna kapitána proto okamžitě mění přístup. Původní autor ani
+historický kapitán nejsou kritériem tohoto seznamu. Neexistuje parametr `scope`.
+Neznámé parametry jsou odmítnuty. GET nepotřebuje CSRF ani Idempotency-Key,
+neprodlužuje relaci a nemění konání, audit ani verze. Odpověď má `Cache-Control: no-store`.
+
+Stránkování: `page` celé číslo 0–10000, výchozí 0; `size` 1–100, výchozí 50.
+Odpověď 200 obsahuje `items`, `page`, `size`, `hasMore`; prázdný seznam je 200.
+Jeden řádek odpovídá jedné přihlášce, bez omezení podle registračního intervalu.
+
+```json
+{
+  "items": [{
+    "id": "11111111-1111-4111-8111-111111111111",
+    "raceEventId": "22222222-2222-4222-8222-222222222222",
+    "raceEventName": "Podzimní projížďka",
+    "crewId": "33333333-3333-4333-8333-333333333333",
+    "crewName": "Pohodáři",
+    "scheduledStartAt": "2026-11-01T09:00:00Z",
+    "endAt": "2026-11-01T17:00:00Z",
+    "raceEventStatus": "PLANNED",
+    "version": 0
+  }],
+  "page": 0,
+  "size": 50,
+  "hasMore": false
+}
+```
+
+ID jsou UUID. Jména jsou aktuální jména konání a posádky; `crewName` není
+historické `crewNameAtRegistration`. Časy jsou UTC ISO 8601, oba mohou být null.
+`version` je int64 verze přihlášky, nikoli konání; navigace na existující detail
+používá `raceEventId` a `id`. Význam ostatních existujících DTO se nemění.
+
+`raceEventStatus` je efektivní PLANNED/RUNNING/ENDED podle EventLifecycle:
+uložený ENDED nebo dosažené endAt má přednost; PLANNED s dosaženým scheduledStartAt
+je RUNNING. Přechody se pouze promítají, nematerializují. Jediný serverový okamžik
+je společný pro vyhodnocení a SQL řazení v read-only repeatable-read transakci.
+
+Řazení před LIMIT/OFFSET:
+1. Efektivní PLANNED podle scheduledStartAt vzestupně, bez plánovaného času nakonec.
+2. Efektivní RUNNING podle ID přihlášky vzestupně.
+3. Efektivní ENDED podle plánovaného endAt sestupně, null nakonec.
+Ve shodě rozhoduje UUID přihlášky vzestupně (PostgreSQL UUID pořadí).
+Při stejných datech a efektivních stavech jsou stránky stabilní. Změny dat nebo
+překročení lifecycle termínu mezi samostatnými HTTP voláními mohou jako u ostatního
+offset stránkování položky přesunout; API neposkytuje snapshot napříč požadavky.
+
+Chyby: 400 INVALID_REQUEST (parametry), 401 UNAUTHENTICATED (chybějící/neplatná
+relace či nepřípustný účet), případně existující 503 AUTHENTICATION_UNAVAILABLE při
+výpadku autentizační DB. Standardní application/problem+json, žádné údaje cizích
+přihlášek. Seznam používá jeden omezený JOIN dotaz bez načítání detailu každého
+konání či posádky. Nová migrace není potřeba.
+
+Uživatel potvrdil úspěšný cílený PostgreSQL běh tohoto rozšíření v EventLifecycleIT:
+`.\mvnw.cmd -Pit "-Dit.test=EventLifecycleIT" verify` – **BUILD SUCCESS**.
+Codex podle AGENTS.md PostgreSQL testy nespouštěl.
+
+Ověření rozšíření (30. 10. 2026): Maven Wrapper / JDK 21.0.12.1,
+`verify` bez profilu it: **799 testů, BUILD SUCCESS, 0 failures/errors/skipped**.
+Pět nových unit/HTTP scénářů pokrývá stránkování, projekci lifecycle, omezení
+vlastnictví i u ADMIN, read-only autentizaci, neobnovení remember-me cookie a jeden
+seznamový JDBC dotaz. Tři nové PostgreSQL scénáře v EventLifecycleIT jsou
+zkompilované, Codexem nespouštěné. YAML syntaxe OpenAPI, všechny lokální reference
+a shoda polí OwnView s OpenAPI schématem byly ověřeny. Následný cílený běh
+EventLifecycleIT včetně tří nových scénářů potvrdil uživatel jako **BUILD SUCCESS**.
+Kompletní PostgreSQL sada tímto není označena za nově ověřenou.

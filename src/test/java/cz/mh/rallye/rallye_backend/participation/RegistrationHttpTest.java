@@ -4,11 +4,11 @@ import org.junit.jupiter.api.*;import org.springframework.beans.factory.annotati
 import cz.mh.rallye.rallye_backend.participation.api.RegistrationController;import cz.mh.rallye.rallye_backend.participation.application.RegistrationService;
 import cz.mh.rallye.rallye_backend.identity.api.*;import cz.mh.rallye.rallye_backend.identity.application.*;import cz.mh.rallye.rallye_backend.races.api.EventController;import cz.mh.rallye.rallye_backend.races.application.EventService;
 import static org.mockito.Mockito.*;import static org.mockito.ArgumentMatchers.*;import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-@WebMvcTest({RegistrationController.class,EventController.class}) @Import({AuthConfiguration.class,AuthCookies.class,ApiErrors.class})
+@WebMvcTest({RegistrationController.class,EventController.class,cz.mh.rallye.rallye_backend.participation.api.MyRegistrationsController.class}) @Import({AuthConfiguration.class,AuthCookies.class,ApiErrors.class})
 class RegistrationHttpTest {
  @Autowired MockMvc mvc;@MockitoBean AuthService auth;@MockitoBean RegistrationService service;@MockitoBean EventService events;
  final UUID event=UUID.randomUUID(),crew=UUID.randomUUID(),registration=UUID.randomUUID();final String token=new SecretTokens().create(),base="/api/v1/race-events/"+event;final AuthService.Principal actor=new AuthService.Principal(UUID.randomUUID(),UUID.randomUUID(),false);
- @BeforeEach void login(){when(auth.authenticate(token)).thenReturn(actor);}
+ @BeforeEach void login(){when(auth.authenticate(token)).thenReturn(actor);when(auth.authenticateReadOnly(token)).thenReturn(actor);}
  String createBody(){return "{\"crewId\":\""+crew+"\",\"membersText\":\"A\\nB\",\"childrenUnder15\":1}";}
  String members(){return "{\"version\":0,\"membersText\":\"A\\nB\",\"childrenUnder15\":1}";}
  RegistrationService.Status state(){var time=Instant.parse("2026-10-30T10:00:00Z");return new RegistrationService.Status(new RegistrationService.EventSummary(event,"Event",null,"PLANNED",null,null,null),4,time,null,null,"AUTO","OPEN","DEFAULT_OPEN",true,false);}
@@ -31,4 +31,19 @@ class RegistrationHttpTest {
  @Test void missingKeyAndMalformedOrUnknownInputAre400()throws Exception{mvc.perform(post(base+"/registrations").header("Authorization","Bearer "+token).contentType("application/json").content(createBody())).andExpect(status().isBadRequest());for(String b:List.of("null","{}",createBody().replace("\"childrenUnder15\":1","\"childrenUnder15\":1.5"),createBody().replace("\"childrenUnder15\":1","\"childrenUnder15\":\"1\""),createBody().replace("\"childrenUnder15\":1","\"childrenUnder15\":-1"),createBody().replace("}",",\"status\":\"REGISTERED\"}"),createBody().replace(crew.toString(),"1-1-1-1-1"))){mvc.perform(post(base+"/registrations").header("Authorization","Bearer "+token).header("Idempotency-Key",UUID.randomUUID()).contentType("application/json").content(b)).andExpect(status().isBadRequest());}verifyNoInteractions(service);}
  @Test void settingsRequireExplicitNullableDatesAndOffset()throws Exception{when(auth.isAdministrator(actor)).thenReturn(true);for(String b:List.of("null","{\"version\":0,\"override\":\"AUTO\"}","{\"version\":0,\"registrationFrom\":\"2026-10-30T10:00:00\",\"registrationTo\":null,\"override\":\"AUTO\"}")){mvc.perform(put(base+"/registration-settings").header("Authorization","Bearer "+token).contentType("application/json").content(b)).andExpect(status().isBadRequest());}verifyNoInteractions(service);}
  @Test void safeProblemCodesPassThroughWithoutMemberContent()throws Exception{when(service.members(any(),any(),any(),anyLong(),any(),anyInt())).thenThrow(new AuthFailure(409,"REGISTRATION_COMPOSITION_LOCKED"));mvc.perform(put(base+"/registrations/"+registration+"/members").header("Authorization","Bearer "+token).contentType("application/json").content(members())).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("REGISTRATION_COMPOSITION_LOCKED")).andExpect(jsonPath("$.membersText").doesNotExist());}
+
+ @Test void ownCrossEventListIsAuthenticatedReadOnlyAndNoStore()throws Exception{
+  when(service.own(actor,0,50)).thenReturn(new RegistrationService.Page<>(List.of(new RegistrationService.OwnView(registration,event,"Event",crew,"Crew",null,null,"PLANNED",2)),0,50,false));
+  mvc.perform(get("/api/v1/me/registrations")).andExpect(status().isUnauthorized());
+  mvc.perform(get("/api/v1/me/registrations").cookie(new Cookie(AuthCookies.NAME,token))).andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store")).andExpect(jsonPath("$.items[0].id").value(registration.toString())).andExpect(jsonPath("$.items[0].raceEventId").value(event.toString())).andExpect(jsonPath("$.items[0].crewId").value(crew.toString())).andExpect(jsonPath("$.items[0].raceEventStatus").value("PLANNED")).andExpect(jsonPath("$.hasMore").value(false));
+  verify(auth).authenticateReadOnly(token);verify(auth,never()).authenticate(any());
+  mvc.perform(get("/api/v1/me/registrations").header("Authorization","Bearer "+token).param("scope","all")).andExpect(status().isBadRequest());
+  mvc.perform(get("/api/v1/me/registrations").header("Authorization","Bearer "+token).param("page","invalid")).andExpect(status().isBadRequest());
+  verify(service).own(actor,0,50);verifyNoMoreInteractions(service);
+ }
+
+ @Test void ownListDoesNotRenewRememberedBrowserCookie()throws Exception{
+  var remembered=new AuthService.Principal(actor.accountId(),actor.sessionId(),true);when(auth.authenticateReadOnly(token)).thenReturn(remembered);when(service.own(remembered,0,50)).thenReturn(new RegistrationService.Page<>(List.of(),0,50,false));
+  mvc.perform(get("/api/v1/me/registrations").cookie(new Cookie(AuthCookies.NAME,token))).andExpect(status().isOk()).andExpect(header().doesNotExist("Set-Cookie"));
+ }
 }

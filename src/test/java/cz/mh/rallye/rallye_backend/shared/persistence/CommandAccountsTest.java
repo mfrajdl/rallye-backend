@@ -102,4 +102,11 @@ class CommandAccountsTest {
   assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"TEMPLATE_IMPORT","[\""+"a".repeat(64)+"\"]",result).accounts());
   assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"TEMPLATE_IMPORT","[\"plaintext-code\"]",result));
  }
+    @Test void lifecycleReceiptRelatesOnlyItsActorAndRejectsUnknownOrSubstitutedAccountFields(){
+        var at=java.time.Instant.parse("2026-10-30T10:00:00Z");var entry=new cz.mh.rallye.rallye_backend.races.persistence.LifecycleStore.Entry(UUID.randomUUID(),target,1,"TRANSITION","STARTED","PLANNED","RUNNING",at,at,"ADMIN","MANUAL","USER",actor,0,1,null,null,null,null,UUID.randomUUID(),null,null);
+        var json=JsonMapper.builder().build();String request=json.writeValueAsString(Arrays.asList(target,0,null)),result=json.writeValueAsString(new cz.mh.rallye.rallye_backend.races.application.LifecycleService.Receipt(target,1,entry));
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"RACE_EVENT_STARTED",request,result).accounts());
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"RACE_EVENT_STARTED",request,result.replace(actor.toString(),owner.toString())));
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"RACE_EVENT_STARTED",request,result.replace("\"periodId\"","\"password\"")));
+    }
 }

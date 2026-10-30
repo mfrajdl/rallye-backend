@@ -23,6 +23,7 @@ public class CrewStore {
                 r.getObject("photo_size",Integer.class),r.getObject("photo_width",Integer.class),r.getObject("photo_height",Integer.class),
                 r.getTimestamp("created_at").toInstant(),r.getTimestamp("updated_at").toInstant(),r.getLong("version"));
     }
+    public Crew read(UUID id) {var rows=jdbc.query("SELECT * FROM crew WHERE id=?",this::map,id);return rows.isEmpty()?null:rows.getFirst();}
     public Crew find(UUID id) {
         var rows=jdbc.query("SELECT * FROM crew WHERE id=? FOR UPDATE",this::map,id);
         return rows.isEmpty()?null:rows.getFirst();
