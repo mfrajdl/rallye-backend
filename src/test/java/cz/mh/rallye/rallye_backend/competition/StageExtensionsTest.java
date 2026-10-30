@@ -1,0 +1,38 @@
+package cz.mh.rallye.rallye_backend.competition;
+import java.time.Instant;import java.util.*;
+import org.junit.jupiter.api.Test;
+import cz.mh.rallye.rallye_backend.templates.domain.StageConfiguration;
+import cz.mh.rallye.rallye_backend.templates.domain.StageConfiguration.*;
+import cz.mh.rallye.rallye_backend.competition.domain.*;
+import static cz.mh.rallye.rallye_backend.competition.domain.RaceEvaluator.*;
+import static org.junit.jupiter.api.Assertions.*;
+class StageExtensionsTest {
+ final RaceEvaluator engine=new RaceEvaluator();final UUID id=UUID.randomUUID();final Instant at=Instant.parse("2026-10-30T10:00:00Z");
+ Definition definition(StageConfiguration c){return new Definition(2,3,List.of(new Stage(id,id,1,"Station",0L,4L,"Text",c)));}
+ StageConfiguration radar(double radius,long penalty){var e=StageConfiguration.empty();return new StageConfiguration(new Gps(true,50d,14d,radius,null,null),e.code(),e.timePenalty(),e.delayed(),"RADAR",penalty);}
+ State measure(Definition d,State s,long seq){return engine.evaluate(d,s,"RADAR",id,null,UUID.randomUUID(),seq);}
+ @Test void unicodeAndVariantsPreserveDefinition(){for(String pair:List.of("PŘÍŠERA:PRISERA","ŽLUŤOUČKÝ:ZLUTOUCKY","KŮŇ:KUN","PŘÍŠERA:PŘÍŠERA")){var p=pair.split(":");assertEquals(StageConfiguration.normalizeCode(p[0]),StageConfiguration.normalizeCode(p[1]));}var c=new Code(true,"Praha | Hlavní město | PRAGUE | praha",3L);assertEquals(3,StageConfiguration.variants(c.value()).size());assertTrue(c.matches(" hlavni mesto "));assertTrue(c.matches("PRAGUE"));assertFalse(c.matches("Pra"));assertEquals("Praha | Hlavní město | PRAGUE | praha",c.value());}
+ @Test void emptyVariantsAndMarksNeverAcceptEmpty(){for(String code:List.of(""," ","|A","A|","A||B","A|  |B","\u0301"))assertThrows(RuntimeException.class,()->StageConfiguration.variants(code));assertFalse(new Code(true,"A|",1L).matches(""));}
+ @Test void standardCodeUsesVariantsAndOriginalPenalty(){var e=StageConfiguration.empty();var d=definition(new StageConfiguration(e.gps(),new Code(true,"Kůň | Horse",null),e.timePenalty(),e.delayed()));var s=engine.start(d,at);s=engine.evaluate(d,s,"CODE",id,"bad",UUID.randomUUID(),1);assertEquals(3,total(s));s=engine.evaluate(d,s,"CODE",id," KUN ",UUID.randomUUID(),2);assertEquals("COMPLETED",s.status());assertEquals(3,total(s));}
+ @Test void informationOnlyCompletesOnExplicitContinue(){var e=StageConfiguration.empty();var c=new StageConfiguration(e.gps(),e.code(),e.timePenalty(),e.delayed(),"INFORMATION",null);c.validate();var d=definition(c);var s=engine.start(d,at);assertThrows(RuleViolation.class,()->engine.evaluate(d,s,"GPS",id,null,UUID.randomUUID(),1));var done=engine.evaluate(d,s,"COMPLETE",id,null,UUID.randomUUID(),1);assertEquals("COMPLETED",done.status());assertEquals(0,total(done));assertEquals("INFORMATION_COMPLETED",done.lastAction().outcome());}
+ @Test void informationRejectsTimeAndGps(){var e=StageConfiguration.empty();assertThrows(RuntimeException.class,()->new StageConfiguration(e.gps(),e.code(),new TimePenalty(true,1000L,1L),e.delayed(),"INFORMATION",null).validate());assertThrows(RuntimeException.class,()->radar(10,-1).validate());}
+ @Test void radarOutsideRoundsAndAccumulatesBeyondSkipMaximum(){var d=definition(radar(10,7));var p=new Position(50.01,14,0,false);var s=engine.position(engine.start(d,at),p,UUID.randomUUID(),1);double distance=GpsMath.distance(50.01,14,50,14);for(int i=2;i<=5;i++){s=measure(d,s,i);assertEquals("RADAR_OUTSIDE",s.lastAction().outcome());assertEquals((double)Math.round(distance),s.lastAction().gps().distanceMeters());}assertEquals(28,total(s));assertEquals("RUNNING",s.status());var skipped=engine.evaluate(d,s,"SKIP",id,null,UUID.randomUUID(),6);assertEquals(6,total(skipped));assertEquals(1,skipped.penalties().stream().filter(Penalty::effective).count());}
+ @Test void radarInsideAndExactUnroundedBoundary(){double distance=GpsMath.distance(50.001,14,50,14);for(double radius:new double[]{distance,distance+0.1}){var d=definition(radar(radius,7));var s=engine.position(engine.start(d,at),new Position(50.001,14,0,false),UUID.randomUUID(),1);var done=measure(d,s,2);assertEquals("COMPLETED",done.status());assertEquals(0,total(done));}var d=definition(radar(distance-0.00001,7));var s=engine.position(engine.start(d,at),new Position(50.001,14,0,false),UUID.randomUUID(),1);assertEquals(7,total(measure(d,s,2)));}
+ @Test void invalidOrUnavailableGpsNeverPenalizesRadar(){var d=definition(radar(10,7));assertEquals(0,total(measure(d,engine.start(d,at),1)));for(var p:List.of(new Position(51,14,11,false),new Position(51,14,0,true))){var s=engine.position(engine.start(d,at),p,UUID.randomUUID(),1);var result=measure(d,s,2);assertEquals(0,total(result));assertNull(result.lastAction().gps().distanceMeters());assertEquals("RUNNING",result.status());}assertThrows(RuleViolation.class,()->new Position(Double.NaN,14,0,false));}
+ @Test void radarReplayAndOverflowRemainDeterministic(){var d=definition(radar(10,7));var s=engine.position(engine.start(d,at),new Position(51,14,0,false),UUID.randomUUID(),1);var result=measure(d,s,2);assertEquals(result,engine.replay(d,s,result.lastAction()));var huge=definition(radar(10,Long.MAX_VALUE));var first=measure(huge,s,2);assertThrows(RuleViolation.class,()->measure(huge,first,3));}
+ @Test void oldJsonConfigurationDefaultsToStandard(){var json=tools.jackson.databind.json.JsonMapper.builder().build();var old=json.writeValueAsString(StageConfiguration.empty()).replace(",\"type\":\"STANDARD\",\"radarPenaltyPoints\":null","").replace("\"enabled\":false,\"value\":null","\"enabled\":true,\"value\":\"OLD\"");var c=json.readValue(old,StageConfiguration.class);assertEquals("STANDARD",c.type());assertTrue(c.code().matches("old"));}
+
+ @Test void archivePreservesRadarAndOriginalVariantsAndAcceptsOldConfiguration(){
+  var e=StageConfiguration.empty();var code=new StageConfiguration(e.gps(),new Code(true,"Kůň | Horse",3L),e.timePenalty(),e.delayed());
+  for(var cfg:List.of(code,radar(20,4))){var data=cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.ConfigurationData.from(cfg);assertEquals(cfg,data.domain());}
+ }
+
+ @Test void archiveRoundTripPreservesRadarAndLegacyZipDefaults()throws Exception{
+  for(var cfg:List.of(StageConfiguration.empty(),radar(20,4))){
+   var def=new cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.Definition("Route",null,1,2,List.of(new cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.StageData(1,"Station",0L,4L,"Text",cfg)));
+   byte[] zip=cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.encode(def,Map.of(),Map.of(),at);
+   assertEquals(cfg,cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.decode(zip).template().stages().getFirst().configuration().domain());
+   if(cfg.type().equals("STANDARD")){var output=new java.io.ByteArrayOutputStream();try(var input=new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zip));var target=new java.util.zip.ZipOutputStream(output)){for(var entry=input.getNextEntry();entry!=null;entry=input.getNextEntry()){byte[] bytes=input.readAllBytes();if(entry.getName().equals("template.json"))bytes=new String(bytes,java.nio.charset.StandardCharsets.UTF_8).replace(",\"type\":\"STANDARD\",\"radarPenaltyPoints\":null","").getBytes(java.nio.charset.StandardCharsets.UTF_8);target.putNextEntry(new java.util.zip.ZipEntry(entry.getName()));target.write(bytes);target.closeEntry();}}assertEquals("STANDARD",cz.mh.rallye.rallye_backend.templates.application.TemplateArchive.decode(output.toByteArray()).template().stages().getFirst().configuration().domain().type());}
+  }
+ }
+}

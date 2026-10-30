@@ -274,3 +274,11 @@ vrací READY do DRAFT. Override stanoviště null dědí společnou sazbu, 0 ji 
 sazby jsou podepsané. `maxPenaltyPoints` může být null, efektivně 0 i v odpovědi;
 nevyplnění nebrání READY. Duplikace šablon/stanovišť zachová skutečný kód a override,
 duplikace celé šablony také společnou sazbu. Snapshot Akce zachová nezávislou kopii.
+
+
+Aktuální rozšíření stanovišť (30. 10. 2026): normalizace diakritiky, varianty CODE,
+INFORMATION/Pokračovat a RADAR jsou popsané v [stage-extensions-api.md](stage-extensions-api.md)
+a [OpenAPI](stage-extensions-openapi.yaml). Tento oddíl doplňuje starší popis;
+nové code.newCode se ukládá po strip + uppercase ROOT, se zachováním diakritiky.
+Diakritika se odstraňuje pouze při porovnávání. Existující hodnoty se nepřepisují.
+STANDARD zachovává GPS+CODE AND.

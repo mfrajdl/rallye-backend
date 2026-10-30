@@ -224,3 +224,11 @@ souběžného exportu/importu, idempotence a rollbacku auditu a souborů.
 Jejich opakované PostgreSQL ověření po opravě uživatel potvrdil jako úspěšné.
 Toto potvrzení se nevztahuje na kompletní PostgreSQL sadu ani samostatný běh
 SimulationIT pro rozšíření start/konec.
+
+
+Aktuální rozšíření stanovišť (30. 10. 2026): normalizace diakritiky, varianty CODE,
+INFORMATION/Pokračovat a RADAR jsou popsané v [stage-extensions-api.md](stage-extensions-api.md)
+a [OpenAPI](stage-extensions-openapi.yaml). Tento oddíl doplňuje starší popis;
+nové code.newCode se ukládá po strip + uppercase ROOT, se zachováním diakritiky.
+Diakritika se odstraňuje pouze při porovnávání. Existující hodnoty se nepřepisují.
+STANDARD zachovává GPS+CODE AND.

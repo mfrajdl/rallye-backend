@@ -49,4 +49,14 @@ class SimulationHttpTest {
   verify(service).mutate(eq(actor),eq(id),any(),eq("RACE_START"),argThat(i->i.runId().equals(run)&&i.stageId()==null&&i.version()==0));
   verify(service).mutate(eq(actor),eq(id),any(),eq("RACE_END"),any());
  }
+
+ @Test void radarAndInformationUseExistingVersionCsrfAndIdempotencyContract()throws Exception{login(true);String body=code().replace(",\"code\":\"INPUT-ONLY\"","");for(String route:List.of("radar-measurements","stage-completions")){mvc.perform(post(base+"/"+id+"/"+route).cookie(new Cookie(AuthCookies.NAME,token)).header("Idempotency-Key",UUID.randomUUID()).contentType("application/json").content(body)).andExpect(status().isForbidden());mvc.perform(post(base+"/"+id+"/"+route).header("Authorization","Bearer "+token).header("Idempotency-Key",UUID.randomUUID()).contentType("application/json").content(body)).andExpect(status().isOk());}verify(service).mutate(eq(actor),eq(id),any(),eq("RADAR"),argThat(i->i.stageId().equals(stage)));verify(service).mutate(eq(actor),eq(id),any(),eq("COMPLETE"),any());}
+
+ @Test void radarHistoryIsPrivateAndReturnsOnlyExplicitMeasurementFields()throws Exception{
+  String url=base+"/"+id+"/runs/"+run+"/stages/"+stage+"/radar-measurements";
+  mvc.perform(get(url)).andExpect(status().isUnauthorized());login(false);mvc.perform(get(url).header("Authorization","Bearer "+token)).andExpect(status().isForbidden());verifyNoInteractions(service);
+  login(true);var at=Instant.parse("2026-10-30T10:00:00Z");var item=new SimulationService.RadarMeasurement(UUID.randomUUID(),run,3,1,51.123456789,15.987654321,1234,"9007199254740993",at,at,false);when(service.radarHistory(actor,id,run,stage,0,50)).thenReturn(new SimulationService.RadarHistory(id,run,stage,List.of(item),false,3));
+  mvc.perform(get(url).header("Authorization","Bearer "+token)).andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store")).andExpect(jsonPath("$.items[0].latitude").value(51.123456789)).andExpect(jsonPath("$.items[0].distanceMeters").value(1234)).andExpect(jsonPath("$.items[0].penaltyPoints").value("9007199254740993")).andExpect(jsonPath("$.items[0].completedStage").value(false)).andExpect(jsonPath("$.items[0]",org.hamcrest.Matchers.aMapWithSize(11))).andExpect(jsonPath("$.targetLatitude").doesNotExist()).andExpect(jsonPath("$.items[0].gps").doesNotExist());
+  mvc.perform(get(url).param("afterSequence","invalid").header("Authorization","Bearer "+token)).andExpect(status().isBadRequest());verify(service).radarHistory(actor,id,run,stage,0,50);
+ }
 }

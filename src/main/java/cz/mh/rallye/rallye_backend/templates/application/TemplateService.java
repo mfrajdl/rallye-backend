@@ -29,11 +29,12 @@ public class TemplateService {
     public static CodeView codeView(Code code,long global){return new CodeView(code.enabled(),code.value()!=null,code.wrongAttemptPenaltyPoints(),code.value(),code.valueUnavailable(),code.wrongAttemptPenaltyPoints()==null?global:code.wrongAttemptPenaltyPoints());}
     public record TimePenaltyView(boolean enabled,Long intervalSeconds,Long pointsPerInterval) {}
     public record StageView(UUID id,int sequenceNo,String name,Long expectedDurationMs,Long maxPenaltyPoints,String instructionsMarkdown,String instructionsRenderedHtml,
-                            Gps gps,CodeView code,TimePenaltyView timePenalty,Delayed delayed,List<TemplateFileReferences.Warning> missingReferences) {}
+                            Gps gps,CodeView code,TimePenaltyView timePenalty,Delayed delayed,List<TemplateFileReferences.Warning> missingReferences,String type,Long radarPenaltyPoints) {}
     public record CodeChange(boolean enabled,String newCode,Long wrongAttemptPenaltyPoints) {
         @Override public String toString(){return "CodeChange[redacted]";}
     }
-    public record ConfigurationChange(Gps gps,CodeChange code,TimePenalty timePenalty,Delayed delayed) {
+    public record ConfigurationChange(Gps gps,CodeChange code,TimePenalty timePenalty,Delayed delayed,String type,Long radarPenaltyPoints) {
+        public ConfigurationChange(Gps gps,CodeChange code,TimePenalty timePenalty,Delayed delayed){this(gps,code,timePenalty,delayed,null,null);}
         @Override public String toString(){return "ConfigurationChange[redacted]";}
     }
     public record View(UUID id,String name,String description,long skipPenaltyPoints,String status,long version,Instant createdAt,Instant updatedAt,List<StageView> stages,long defaultWrongCodePenaltyPoints) {
@@ -63,7 +64,7 @@ public class TemplateService {
         var c=s.configuration();var time=c.timePenalty();
         return new StageView(s.id(),s.sequenceNo(),s.name(),s.expectedDurationMs(),s.maxPenaltyPoints()==null?0:s.maxPenaltyPoints(),s.instructionsMarkdown(),InstructionsMarkdown.render(s.templateId(),s.instructionsMarkdown(),names),c.gps(),
                 codeView(c.code(),global),
-                new TimePenaltyView(time.enabled(),time.intervalMs()==null?null:time.intervalMs()/1000,time.pointsPerInterval()),c.delayed(),TemplateFileReferences.stage(s.templateId(),s,files));
+                new TimePenaltyView(time.enabled(),time.intervalMs()==null?null:time.intervalMs()/1000,time.pointsPerInterval()),c.delayed(),TemplateFileReferences.stage(s.templateId(),s,files),c.type(),c.radarPenaltyPoints());
     }
     private Map<String,String> imageNames(UUID template){var names=new HashMap<String,String>();store.images(template).forEach(i->names.put(i.nameKey(),i.fileName()));return names;}
     private View view(Template t){var files=store.images(t.id());var names=TemplateFileReferences.names(files);return new View(t.id(),t.name(),t.description(),t.skipPenaltyPoints(),t.status(),t.version(),t.createdAt(),t.updatedAt(),store.stages(t.id()).stream().map(s->view(s,names,files,t.defaultWrongCodePenaltyPoints())).toList(),t.defaultWrongCodePenaltyPoints());}
@@ -130,10 +131,11 @@ public class TemplateService {
     }
     public View configure(Principal actor,UUID template,UUID id,long expected,ConfigurationChange change){
         authorize(actor);var t=template(template);version(t,expected);var stage=stage(template,id);
+        if(change!=null&&change.type()==null&&change.radarPenaltyPoints()!=null)throw invalid();
         if(change==null || change.gps()==null || change.code()==null || change.timePenalty()==null || change.delayed()==null)throw invalid();
         var old=stage.configuration();String value=old.code().value();boolean unavailable=old.code().valueUnavailable();
-        if(change.code().newCode()!=null){value=normalizeCode(change.code().newCode());unavailable=false;}
-        var config=new StageConfiguration(change.gps(),new Code(change.code().enabled(),value,change.code().wrongAttemptPenaltyPoints(),unavailable),change.timePenalty(),change.delayed());
+        if(change.code().newCode()!=null){String definition=StageConfiguration.normalizeDefinition(change.code().newCode());var answers=StageConfiguration.variants(definition);boolean same=false;if(value!=null)try{same=StageConfiguration.variants(value).equals(answers);}catch(AuthFailure invalidOldDefinition){/* Permit replacing an old definition containing now-invalid separators. */}if(!same)value=definition;unavailable=false;}
+        var config=new StageConfiguration(change.gps(),new Code(change.code().enabled(),value,change.code().wrongAttemptPenaltyPoints(),unavailable),change.timePenalty(),change.delayed(),change.type()==null?old.type():change.type(),change.type()==null?old.radarPenaltyPoints():change.radarPenaltyPoints());
         config.validate();
         if(!config.equals(old)){
             store.configureStage(id,config);store.touch(template,now());audit.template(actor.accountId(),Event.TEMPLATE_STAGE_CONFIGURED,id,true);
@@ -141,7 +143,7 @@ public class TemplateService {
         return view(template(template));
     }
     public static String normalizeCode(String code){
-        return StageConfiguration.normalizeCode(code);
+        return StageConfiguration.normalizeDefinition(code);
     }
     public View deleteStage(Principal actor,UUID template,UUID id,long expected){
         authorize(actor);var t=template(template);version(t,expected);stage(template,id);store.deleteStage(id);

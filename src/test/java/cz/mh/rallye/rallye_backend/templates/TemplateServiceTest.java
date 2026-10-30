@@ -117,4 +117,17 @@ class TemplateServiceTest {
     @Test void codeComparisonUsesNormalizedPlaintextAndNeverHashes(){var code=new cz.mh.rallye.rallye_backend.templates.domain.StageConfiguration.Code(true,"ABC 12",null);assertTrue(code.matches(" abc 12 "));assertFalse(code.matches("other"));assertFalse(code.matches(null));assertFalse(new cz.mh.rallye.rallye_backend.templates.domain.StageConfiguration.Code(true,null,null,true).matches("anything"));assertFalse(code.toString().contains("ABC 12"));}
     @Test void globalDefaultIsSubstantialAndIsPartOfCreateIdempotencyParameters(){service.update(principal,id,7,"Name","Description",-3,8L);verify(store).update(id,"Name","Description",-3,8L,true,now);UUID key=UUID.randomUUID();service.create(principal,key,"Name",null,0,8);verify(commands).replay(eq(actor),eq(key),eq("TEMPLATE_CREATE"),eq("[\"Name\",null,0,8]"),eq(now));}
 
+
+    @Test void storageNormalizationRetainsDiacriticsWhileComparisonAcceptsVariants(){
+        when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,"Station",0L,0L,"Text",complete())));
+        service.configure(principal,id,stage,7,change(" příšera | kůň "));
+        var cap=org.mockito.ArgumentCaptor.forClass(cz.mh.rallye.rallye_backend.templates.domain.StageConfiguration.class);verify(store).configureStage(eq(stage),cap.capture());
+        assertEquals("PŘÍŠERA | KŮŇ",cap.getValue().code().value());assertTrue(cap.getValue().code().matches("prisera"));assertTrue(cap.getValue().code().matches("kun"));assertFalse(cap.getValue().code().matches(""));
+        assertEquals("PŘÍŠERA",TemplateService.normalizeCode(" příšera "));verifyNoInteractions(commands);
+    }
+    @Test void invalidVariantsDoNotWriteDefinitionOrAudit(){
+        when(store.stages(id)).thenReturn(List.of(new Stage(stage,id,1,"Station",0L,0L,"Text",complete())));
+        for(String text:List.of("A|","|A","A| |B"))assertThrows(AuthFailure.class,()->service.configure(principal,id,stage,7,change(text)));
+        verify(store,never()).configureStage(any(),any());verify(store,never()).touch(any(),any());verifyNoInteractions(commands,audit);
+    }
 }

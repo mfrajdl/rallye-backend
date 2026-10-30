@@ -1,0 +1,532 @@
+openapi: 3.1.0
+info:
+  title: Rallye – rozšíření stanovišť
+  version: stage-extensions-v1
+  description: Implementované rozšíření existujících administračních API. U odpovědí
+    jsou popsána aditivní pole; ostatní původní pole zůstávají zachována dle stage-extensions-api.md.
+    Budoucí mobilní runtime je oddělený návrh v Markdown dokumentu, nikoli implementované
+    paths.
+servers:
+- url: /api/v1
+paths:
+  /race-templates/{id}/stages/{stageId}/configuration:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema: &id001
+        type: string
+        format: uuid
+    - name: stageId
+      in: path
+      required: true
+      schema: *id001
+    put:
+      operationId: configureStageCompletionType
+      description: Existující ADMIN konfigurace rozšířená o typ a radarovou sazbu.
+        GPS+CODE AND zůstává STANDARD. Vynechaný typ zachová konfiguraci typu. Prázdná
+        varianta CODE je 400. Nové code.newCode se ukládá po strip a uppercase Locale.ROOT
+        se zachováním diakritiky; odstranění diakritiky a varianty se používají při
+        porovnávání. Existující hodnoty se nepřepisují.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Configuration'
+      responses:
+        '200':
+          description: Výsledek operace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '400':
+          description: INVALID_REQUEST / INVALID_COORDINATES
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: ACCESS_DENIED / ADMIN_REQUIRED / CSRF
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Nepřístupný nebo neexistující objekt
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Konflikt verze/průchodu/stavu nebo idempotence
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /admin/race-simulations/{id}/radar-measurements:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema: *id001
+    post:
+      operationId: measureSimulationRadar
+      description: ADMIN a vlastník simulace, běžící závod, aktivní run/stage. Poloha
+        je nastavena předchozí existující operací position. RADAR měřicí výsledek
+        je v dashboard.lastAction.gps.distanceMeters, celočíselná hodnota bez směru.
+        INFORMATION je explicitní Pokračovat. Žádný ostrý participant endpoint.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageCommand'
+      responses:
+        '200':
+          description: Výsledek operace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationResponse'
+        '400':
+          description: INVALID_REQUEST / INVALID_COORDINATES
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: ACCESS_DENIED / ADMIN_REQUIRED / CSRF
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Nepřístupný nebo neexistující objekt
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Konflikt verze/průchodu/stavu nebo idempotence
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema: *id001
+  /admin/race-simulations/{id}/stage-completions:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema: *id001
+    post:
+      operationId: continueSimulationInformation
+      description: ADMIN a vlastník simulace, běžící závod, aktivní run/stage. Poloha
+        je nastavena předchozí existující operací position. RADAR měřicí výsledek
+        je v dashboard.lastAction.gps.distanceMeters, celočíselná hodnota bez směru.
+        INFORMATION je explicitní Pokračovat. Žádný ostrý participant endpoint.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageCommand'
+      responses:
+        '200':
+          description: Výsledek operace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationResponse'
+        '400':
+          description: INVALID_REQUEST / INVALID_COORDINATES
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: ACCESS_DENIED / ADMIN_REQUIRED / CSRF
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Nepřístupný nebo neexistující objekt
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Konflikt verze/průchodu/stavu nebo idempotence
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema: *id001
+  /admin/race-simulations/{id}/runs/{runId}/stages/{stageId}/radar-measurements:
+    get:
+      operationId: listSimulationRadarMeasurements
+      description: ADMIN vlastník; trvalá historie požadované větve včetně zděděného prefixu. Reálný participant runtime dosud není implementován.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: runId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: stageId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: afterSequence, in: query, schema: {type: integer, format: int64, minimum: 0, default: 0}}
+      - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200':
+          description: Měření podle sequence vzestupně; penaltyPoints je historická měřicí penalizace, nikoli aktuálně účinný součet.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RadarHistory'}
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '401':
+          description: UNAUTHENTICATED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '403':
+          description: ADMIN_REQUIRED / ACCESS_DENIED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '404':
+          description: SIMULATION_NOT_FOUND / SIMULATION_STAGE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409':
+          description: SIMULATION_RESTORE_INVALID / CHECK_NOT_ENABLED
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '503':
+          description: SIMULATION_SNAPSHOT_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: RALLYE_SESSION
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-XSRF-TOKEN
+  schemas:
+    RadarMeasurement:
+      type: object
+      additionalProperties: false
+      required: [measurementId, sourceRunId, sequence, measurementNumber, latitude, longitude, distanceMeters, penaltyPoints, measuredAt, recordedAt, completedStage]
+      properties:
+        measurementId: {type: string, format: uuid}
+        sourceRunId: {type: string, format: uuid}
+        sequence: {type: integer, format: int64, minimum: 1}
+        measurementNumber: {type: integer, format: int64, minimum: 1}
+        latitude: {type: number, format: double, minimum: -90, maximum: 90}
+        longitude: {type: number, format: double, minimum: -180, maximum: 180}
+        distanceMeters: {type: integer, format: int64, minimum: 0}
+        penaltyPoints: {type: string, pattern: '^[0-9]+$'}
+        measuredAt: {type: string, format: date-time, description: Virtuální čas měření v simulátoru.}
+        recordedAt: {type: string, format: date-time}
+        completedStage: {type: boolean}
+    RadarHistory:
+      type: object
+      additionalProperties: false
+      required: [simulationId, runId, stageId, items, hasMore, nextAfterSequence]
+      properties:
+        simulationId: {type: string, format: uuid}
+        runId: {type: string, format: uuid}
+        stageId: {type: string, format: uuid}
+        items: {type: array, items: {$ref: '#/components/schemas/RadarMeasurement'}}
+        hasMore: {type: boolean}
+        nextAfterSequence: {type: integer, format: int64, minimum: 0}
+    Gps:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: &id004
+          type: boolean
+        latitude: &id002
+          type:
+          - number
+          - 'null'
+        longitude: *id002
+        radiusMeters: *id002
+        outsidePenaltyPoints: &id003
+          type:
+          - integer
+          - 'null'
+          format: int64
+        spoofingPenaltyPoints: *id003
+      required:
+      - enabled
+    Code:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: *id004
+        newCode:
+          type:
+          - string
+          - 'null'
+          description: Při uložení strip + uppercase Locale.ROOT, diakritika zachována;
+            1–128 Unicode kódových bodů po této úpravě. Varianty | nesmějí být prázdné.
+        wrongAttemptPenaltyPoints: *id003
+      required:
+      - enabled
+    TimePenalty:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: *id004
+        intervalSeconds: *id003
+        pointsPerInterval: *id003
+      required:
+      - enabled
+    Delayed:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: *id004
+        minimumDurationMs: *id003
+        pointsPerSecond: *id003
+      required:
+      - enabled
+    Configuration:
+      type: object
+      additionalProperties: false
+      properties:
+        version: &id005
+          type: integer
+          format: int64
+          minimum: 0
+        gps:
+          $ref: '#/components/schemas/Gps'
+        code:
+          $ref: '#/components/schemas/Code'
+        timePenalty:
+          $ref: '#/components/schemas/TimePenalty'
+        delayed:
+          $ref: '#/components/schemas/Delayed'
+        type:
+          type:
+          - string
+          - 'null'
+          enum:
+          - STANDARD
+          - INFORMATION
+          - RADAR
+          - null
+        radarPenaltyPoints:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+      required:
+      - version
+      - gps
+      - code
+      - timePenalty
+      - delayed
+    StageCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        version: *id005
+        runId: *id001
+        stageId: *id001
+      required:
+      - version
+      - runId
+      - stageId
+    Problem:
+      type: object
+      required:
+      - status
+      - title
+      - code
+      properties:
+        status:
+          type: integer
+        title:
+          type: string
+        code:
+          type: string
+      additionalProperties: true
+    TemplateResponse:
+      type: object
+      required:
+      - id
+      - version
+      - stages
+      properties:
+        id: *id001
+        version: *id005
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminStage'
+      additionalProperties: true
+    AdminStage:
+      type: object
+      required:
+      - id
+      - sequenceNo
+      - type
+      - radarPenaltyPoints
+      properties:
+        id: *id001
+        sequenceNo:
+          type: integer
+        type:
+          enum:
+          - STANDARD
+          - INFORMATION
+          - RADAR
+        radarPenaltyPoints: *id003
+      additionalProperties: true
+    SimulationResponse:
+      type: object
+      required:
+      - id
+      - runId
+      - version
+      - status
+      - currentStage
+      - dashboard
+      properties:
+        id: *id001
+        runId: *id001
+        version: *id005
+        status:
+          enum:
+          - RUNNING
+          - COMPLETED
+          - CLOSED
+        currentStage:
+          oneOf:
+          - $ref: '#/components/schemas/ParticipantStage'
+          - type: 'null'
+        dashboard:
+          type: object
+          properties:
+            lastAction:
+              oneOf:
+              - $ref: '#/components/schemas/Action'
+              - type: 'null'
+          additionalProperties: true
+      additionalProperties: true
+    ParticipantStage:
+      type: object
+      required:
+      - id
+      - type
+      - radarPenaltyPoints
+      - requiredChecks
+      properties:
+        id: *id001
+        type:
+          enum:
+          - STANDARD
+          - INFORMATION
+          - RADAR
+        radarPenaltyPoints:
+          type:
+          - string
+          - 'null'
+        requiredChecks:
+          type: array
+          items:
+            enum:
+            - GPS
+            - CODE
+            - CONTINUE
+            - RADAR
+      additionalProperties: true
+    Action:
+      type: object
+      properties:
+        type:
+          type: string
+        outcome:
+          type: string
+        pointsDelta:
+          type: string
+          pattern: ^-?[0-9]+$
+        gps:
+          oneOf:
+          - $ref: '#/components/schemas/GpsResult'
+          - type: 'null'
+      additionalProperties: true
+    GpsResult:
+      type: object
+      additionalProperties: false
+      properties:
+        latitude: *id002
+        longitude: *id002
+        accuracyMeters: *id002
+        distanceMeters: *id002
+        outcome:
+          type: string
+      required:
+      - latitude
+      - longitude
+      - accuracyMeters
+      - distanceMeters
+      - outcome

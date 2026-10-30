@@ -28,7 +28,7 @@ public class TemplateController {
     }
     public record TimeInput(JsonNode enabled,JsonNode intervalSeconds,JsonNode pointsPerInterval) implements Strict {}
     public record DelayedInput(JsonNode enabled,JsonNode minimumDurationMs,JsonNode pointsPerSecond) implements Strict {}
-    public record ConfigurationInput(JsonNode version,GpsInput gps,CodeInput code,TimeInput timePenalty,DelayedInput delayed) implements Strict {
+    public record ConfigurationInput(JsonNode version,GpsInput gps,CodeInput code,TimeInput timePenalty,DelayedInput delayed,JsonNode type,JsonNode radarPenaltyPoints) implements Strict {
         @Override public String toString(){return "ConfigurationInput[redacted]";}
     }
     public record Order(JsonNode version,List<UUID> stageIds) implements Strict {}
@@ -66,7 +66,7 @@ public class TemplateController {
                 new Gps(flag(gps.enabled()),decimal(gps.latitude()),decimal(gps.longitude()),decimal(gps.radiusMeters()),number(gps.outsidePenaltyPoints()),number(gps.spoofingPenaltyPoints())),
                 new TemplateService.CodeChange(flag(code.enabled()),text(code.newCode()),number(code.wrongAttemptPenaltyPoints())),
                 new TimePenalty(flag(time.enabled()),interval,number(time.pointsPerInterval())),
-                new Delayed(flag(delayed.enabled()),number(delayed.minimumDurationMs()),number(delayed.pointsPerSecond())));
+                new Delayed(flag(delayed.enabled()),number(delayed.minimumDurationMs()),number(delayed.pointsPerSecond())),text(input.type()),number(input.radarPenaltyPoints()));
         return service.configure(actor,id,stageId,required(input.version()),change);
     }
     private static boolean flag(JsonNode value){if(value==null || !value.isBoolean())throw new AuthFailure(400,"INVALID_REQUEST");return value.booleanValue();}

@@ -1268,3 +1268,99 @@ Ověření rozšíření start/konec: běžné Maven verify na Microsoft JDK 21.
 **704 testů, 0 failures/errors/skipped, BUILD SUCCESS**. Připravených 35 SimulationIT
 je zkompilovaných; PostgreSQL část včetně V25 dosud nebyla spuštěna. Starší úspěšné
 integrační běhy neověřují toto rozšíření.
+
+
+Aktuální rozšíření stanovišť (30. 10. 2026): normalizace diakritiky, varianty CODE,
+INFORMATION/Pokračovat a RADAR jsou popsané v [stage-extensions-api.md](stage-extensions-api.md)
+a [OpenAPI](stage-extensions-openapi.yaml). Tento oddíl doplňuje starší popis;
+nové code.newCode se ukládá po strip + uppercase ROOT, se zachováním diakritiky.
+Diakritika se odstraňuje pouze při porovnávání. Existující hodnoty se nepřepisují.
+STANDARD zachovává GPS+CODE AND.
+
+
+## Historie radarových měření
+
+Po upřesnění rozsahu je připraven společný model `competition.domain.RadarMeasurement`
+a jeho převod z ověřeného výsledku `RaceEvaluator`. Používá jej simulátor. Reálný
+průchod posádky, jeho persistence, autentizace zařízení a participant API dosud
+nejsou implementované. Napojení historie na reálný průchod (včetně převzetí zařízení)
+zůstává výslovně otevřené; toto rozšíření samo o sobě reálný průchod neposkytuje.
+Budoucí runtime musí použít stejná pravidla evaluatoru a evidenci výsledků ve stejné
+transakci jako stav průchodu a penalizace, s jednorázovou evidencí podle idempotence.
+Čas měření bude u reálného průchodu autoritativní serverový čas, u simulátoru virtuální.
+
+Implementovaný čtecí endpoint:
+`GET /api/v1/admin/race-simulations/{id}/runs/{runId}/stages/{stageId}/radar-measurements?afterSequence=0&size=50`.
+Pouze ADMIN a vlastník simulace; podporuje cookie i Bearer relaci. GET nevyžaduje
+CSRF. Odpověď má `Cache-Control: no-store`. `size` je 1–100,
+`afterSequence` nezáporné int64. Řazení podle sequence vzestupně; další stránka
+použije nextAfterSequence. Nevytváří ani nemění verzi simulace.
+
+```json
+{
+  "simulationId": "ee72eeea-c007-46c0-9ce7-d742b812ec2c",
+  "runId": "a82492a5-9c1f-4230-bb3a-30574809bd5f",
+  "stageId": "fca7d580-49db-4893-a7a0-480156b9cf89",
+  "items": [{
+    "measurementId": "5a211ccd-5563-4c6f-9987-e85baa4bf55b",
+    "sourceRunId": "a82492a5-9c1f-4230-bb3a-30574809bd5f",
+    "sequence": 3,
+    "measurementNumber": 1,
+    "latitude": 51.123456789,
+    "longitude": 15.987654321,
+    "distanceMeters": 150000,
+    "penaltyPoints": "7",
+    "measuredAt": "2026-10-30T10:00:00Z",
+    "recordedAt": "2026-10-30T11:00:00Z",
+    "completedStage": false
+  }],
+  "hasMore": false,
+  "nextAfterSequence": 3
+}
+```
+
+UUID jsou stringy, sequence/measurementNumber jsou int64, souřadnice čísla double,
+distanceMeters celé metry (Math.round), penaltyPoints desetinný string int64,
+časy UTC Instant. measuredAt je čas herní události, recordedAt čas trvalého zápisu.
+measurementNumber je pořadí úspěšného měření daného stanoviště v požadované větvi;
+sequence je pořadí všech operací a používá se jako kurzor.
+
+Poloha se zadává předchozím `PUT /api/v1/admin/race-simulations/{id}/position`,
+mode INPUT s latitude/longitude/accuracyMeters/mockLocation, nebo stávajícím
+TARGET/OUTSIDE/UNAVAILABLE. Poté POST radar-measurements s version/runId/stageId
+a Idempotency-Key provede měření. Pouhé nastavení polohy není měření.
+Platí původní HTTP kontrakt těchto operací.
+
+Historie obsahuje jen RADAR_OUTSIDE a RADAR_ACCEPTED. Neplatná, nedostupná,
+mockovaná ani nepřesná GPS nevytvoří úspěšné měření. Vnější měření přidá plnou
+konfigurovanou sazbu bez stropu max_penalty_points; vnitřní měření má měřicí
+penalizaci 0 i při vzniku jiných časových penalizací při dokončení. Pozdější SKIP
+nemění historickou částku jednotlivého měření, ale může nahradit její účinnost
+podle stávajících pravidel. Historie není součtem aktuálně účinných bodů.
+
+Simulátor čte existující simulation_command.verified_facts: zápis stavu, výsledku,
+penalizací a idempotence již probíhá atomicky. Nezakládá se druhý deník ani nová
+tabulka. Expirace replay odpovědi nemaže facts. Starší úspěšná RADAR měření se
+zobrazí z existujících facts. Obnovená větev obsahuje jen zděděný prefix a vlastní
+měření; sourceRunId označuje původ záznamu. Restart má prázdnou historii měření,
+původní průchod zůstává dostupný svým runId.
+
+Chyby: 400 INVALID_REQUEST (parametry); 401 UNAUTHENTICATED; 403 ADMIN_REQUIRED /
+ACCESS_DENIED; 404 SIMULATION_NOT_FOUND (též cizí simulace) nebo
+SIMULATION_STAGE_NOT_FOUND; 409 SIMULATION_RESTORE_INVALID (neexistující run),
+CHECK_NOT_ENABLED (jiný typ stanoviště); 503 SIMULATION_SNAPSHOT_UNAVAILABLE
+(nekonzistentní uložený výsledek). Odpovědi používají stávající Problem DTO.
+Nové DTO neobsahuje cílovou polohu, konfiguraci GPS, CODE ani autentizační údaje.
+
+Ověření PostgreSQL je připravené v SimulationIT: přesné polohy, pořadí a stránkování,
+zaokrouhlení, invalidní GPS, vlastnictví, reload i po úklidu replay, větvení a replay.
+Spouští uživatel: `.\mvnw.cmd -Pit "-Dit.test=SimulationIT" verify`.
+Skutečný reálný průchod a převzetí zařízení tím nejsou otestované.
+
+
+Závěrečné ověření historie RADAR: Codex provedl Maven Wrapper `verify` bez PostgreSQL
+na JDK 21.0.12.1: **822 testů, BUILD SUCCESS, 0 failures/errors/skipped**.
+Uživatel následně potvrdil cílené `.\mvnw.cmd -Pit "-Dit.test=SimulationIT" verify`
+jako **BUILD SUCCESS**. Toto je uživatelem provedené ověření, nikoli běh Codexu;
+kompletní PostgreSQL sada nebyla po rozšíření historie nově spuštěna Codexem.
+Reálný průchod posádky a převzetí zařízení zůstávají mimo implementovaný rozsah.

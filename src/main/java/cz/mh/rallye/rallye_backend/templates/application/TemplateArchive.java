@@ -24,9 +24,9 @@ public final class TemplateArchive {
  public record CodeData(boolean enabled,String value,Long wrongAttemptPenaltyPoints,boolean valueUnavailable){@Override public String toString(){return "CodeData[redacted]";}}
  public record TimeData(boolean enabled,Long intervalMs,Long pointsPerInterval){}
  public record DelayData(boolean enabled,Long minimumDurationMs,Long pointsPerSecond){}
- public record ConfigurationData(GpsData gps,CodeData code,TimeData timePenalty,DelayData delayed){
-  public static ConfigurationData from(StageConfiguration c){var g=c.gps();var k=c.code();var t=c.timePenalty();var d=c.delayed();return new ConfigurationData(new GpsData(g.enabled(),g.latitude(),g.longitude(),g.radiusMeters(),g.outsidePenaltyPoints(),g.spoofingPenaltyPoints()),new CodeData(k.enabled(),k.value(),k.wrongAttemptPenaltyPoints(),k.valueUnavailable()),new TimeData(t.enabled(),t.intervalMs(),t.pointsPerInterval()),new DelayData(d.enabled(),d.minimumDurationMs(),d.pointsPerSecond()));}
-  public StageConfiguration domain(){if(gps==null||code==null||timePenalty==null||delayed==null)throw invalid();return new StageConfiguration(new StageConfiguration.Gps(gps.enabled(),gps.latitude(),gps.longitude(),gps.radiusMeters(),gps.outsidePenaltyPoints(),gps.spoofingPenaltyPoints()),new StageConfiguration.Code(code.enabled(),code.value(),code.wrongAttemptPenaltyPoints(),code.valueUnavailable()),new StageConfiguration.TimePenalty(timePenalty.enabled(),timePenalty.intervalMs(),timePenalty.pointsPerInterval()),new StageConfiguration.Delayed(delayed.enabled(),delayed.minimumDurationMs(),delayed.pointsPerSecond()));}
+ public record ConfigurationData(GpsData gps,CodeData code,TimeData timePenalty,DelayData delayed,String type,Long radarPenaltyPoints){
+  public static ConfigurationData from(StageConfiguration c){var g=c.gps();var k=c.code();var t=c.timePenalty();var d=c.delayed();return new ConfigurationData(new GpsData(g.enabled(),g.latitude(),g.longitude(),g.radiusMeters(),g.outsidePenaltyPoints(),g.spoofingPenaltyPoints()),new CodeData(k.enabled(),k.value(),k.wrongAttemptPenaltyPoints(),k.valueUnavailable()),new TimeData(t.enabled(),t.intervalMs(),t.pointsPerInterval()),new DelayData(d.enabled(),d.minimumDurationMs(),d.pointsPerSecond()),c.type(),c.radarPenaltyPoints());}
+  public StageConfiguration domain(){if(gps==null||code==null||timePenalty==null||delayed==null)throw invalid();return new StageConfiguration(new StageConfiguration.Gps(gps.enabled(),gps.latitude(),gps.longitude(),gps.radiusMeters(),gps.outsidePenaltyPoints(),gps.spoofingPenaltyPoints()),new StageConfiguration.Code(code.enabled(),code.value(),code.wrongAttemptPenaltyPoints(),code.valueUnavailable()),new StageConfiguration.TimePenalty(timePenalty.enabled(),timePenalty.intervalMs(),timePenalty.pointsPerInterval()),new StageConfiguration.Delayed(delayed.enabled(),delayed.minimumDurationMs(),delayed.pointsPerSecond()),type,radarPenaltyPoints);}
   @Override public String toString(){return "ConfigurationData[redacted]";}
  }
  public record StageData(int sequenceNo,String name,Long expectedDurationMs,Long maxPenaltyPoints,String instructionsMarkdown,ConfigurationData configuration){
@@ -44,7 +44,7 @@ public final class TemplateArchive {
  private static void shape(JsonNode n,Class<?> type){
   if(n==null||!n.isObject())throw invalid();var fields=new HashSet<String>();
   for(var c:type.getRecordComponents()){
-   fields.add(c.getName());var v=n.get(c.getName());if(v==null)throw invalid();var t=c.getType();
+   fields.add(c.getName());var v=n.get(c.getName());if(v==null){if(type==ConfigurationData.class&&Set.of("type","radarPenaltyPoints").contains(c.getName())){fields.remove(c.getName());continue;}throw invalid();}var t=c.getType();
    if(v.isNull()){if(t.isPrimitive())throw invalid();continue;}
    if(t==String.class||t==Instant.class){if(!v.isString())throw invalid();}
    else if(t==long.class||t==Long.class||t==int.class){if(!v.isIntegralNumber()||!v.canConvertToLong()||(t==int.class&&!v.canConvertToInt()))throw invalid();}
@@ -102,7 +102,7 @@ public final class TemplateArchive {
   for(int i=0;i<t.stages().size();i++){
    var s=t.stages().get(i);if(s==null||s.sequenceNo()!=i+1||s.expectedDurationMs()!=null&&s.expectedDurationMs()<0||s.maxPenaltyPoints()!=null&&s.maxPenaltyPoints()<0)throw invalid();
    text(s.name(),100,false);if(s.name()!=null&&s.name().isBlank())throw invalid();if(s.configuration()==null)throw invalid();var config=s.configuration().domain();if(config.code().valueUnavailable())throw invalid();config.validate();
-   String code=s.configuration().code().value();if(code!=null&&!StageConfiguration.normalizeCode(code).equals(code))throw invalid();InstructionsMarkdown.validate(s.instructionsMarkdown());references(s.instructionsMarkdown(),files);
+   String code=s.configuration().code().value();if(code!=null)StageConfiguration.variants(code);InstructionsMarkdown.validate(s.instructionsMarkdown());references(s.instructionsMarkdown(),files);
   }
  }
  public static Set<String> references(String text,Set<String> files){

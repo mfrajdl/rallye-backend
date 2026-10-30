@@ -1156,3 +1156,47 @@ ověření zachycují průběh před potvrzením; nejsou tvrzením o novém běh
 Závěrečný běh před commitem této etapy: Codex `verify` bez DB, JDK 21.0.12.1,
 **799 testů, BUILD SUCCESS, 0 failures/errors/skipped**. Oba aktuální registrační
 a lifecycle OpenAPI 3.1 kontrakty prošly OpenAPIV31SpecValidator 0.9.0.
+
+
+### Rozšíření stanovišť (CODE / INFORMATION / RADAR)
+
+StageExtensionsTest ověřuje Unicode, alternativy, prázdné/duplicitní varianty,
+penalizace, INFORMATION, přesnou hranici perimetru a zaokrouhlení, neomezenou
+kumulaci do limitu int64, neplatnou GPS, deterministický replay, starý JSON a ZIP.
+HTTP regrese ověřují nové konfigurační atributy, radarovou operaci a Pokračovat
+při zachování ADMIN, CSRF, verzí a klíčů. SimulationIT obsahuje pět nových scénářů:
+stejný klíč v souběhu/obnovu, INFORMATION, nezávislost snapshotu Akce, upgrade V27→V28
+s uchováním starého CODE a různé klíče ve stejné verzi. Guard neznámé budoucí
+migrace se testuje V29, přesná V28 je výslovně povolena.
+
+Codex PostgreSQL nespouští; pro ruční ověření proti rallye_test:
+```powershell
+.\mvnw.cmd -Pit "-Dit.test=SimulationIT,TemplatesIT,EventsIT,AccountCancellationServiceIT" verify
+# kompletní ověření dle potřeby uživatele:
+.\mvnw.cmd -Pit verify
+```
+Nové integrační scénáře jsou ověřené uživatelem potvrzeným cíleným během uvedeným níže.
+
+Ověření Codexem: JDK 21.0.12.1 / Maven Wrapper, `verify` bez DB – **814 testů,
+BUILD SUCCESS, 0 failures/errors/skipped**. Integrační testy zkompilované,
+PostgreSQL nespouštěno. Nový i oba dosavadní OpenAPI 3.1 kontrakty prošly
+OpenAPIV31SpecValidator 0.9.0; git diff --check bez chyb.
+
+Ověření opravy ukládání CODE (Codex): Maven Wrapper / JDK 21.0.12.1,
+`verify` bez DB – **816 testů, BUILD SUCCESS, 0 failures/errors/skipped**.
+Dvě nové regrese ověřují uchování diakritiky při ukládání, porovnání variant bez
+diakritiky a odmítnutí prázdných variant bez zápisu/auditu. OpenAPI 3.1 a
+git diff --check prošly. Uživatel následně potvrdil příkaz
+`.\mvnw.cmd -Pit "-Dit.test=SimulationIT,TemplatesIT,EventsIT,AccountCancellationServiceIT" verify`
+jako **BUILD SUCCESS**, včetně opravy čtyř předchozích selhání. Codex PostgreSQL
+nespouštěl; toto potvrzení se nevztahuje na nově spuštěnou kompletní integrační sadu.
+
+RADAR historie: cílené PostgreSQL ověření `.\mvnw.cmd -Pit "-Dit.test=SimulationIT" verify` spouští uživatel. Připravené scénáře ověřují simulaci, nikoli dosud neimplementovaný reálný průchod/zařízení.
+
+
+Závěrečné ověření historie RADAR: Codex provedl Maven Wrapper `verify` bez PostgreSQL
+na JDK 21.0.12.1: **822 testů, BUILD SUCCESS, 0 failures/errors/skipped**.
+Uživatel následně potvrdil cílené `.\mvnw.cmd -Pit "-Dit.test=SimulationIT" verify`
+jako **BUILD SUCCESS**. Toto je uživatelem provedené ověření, nikoli běh Codexu;
+kompletní PostgreSQL sada nebyla po rozšíření historie nově spuštěna Codexem.
+Reálný průchod posádky a převzetí zařízení zůstávají mimo implementovaný rozsah.

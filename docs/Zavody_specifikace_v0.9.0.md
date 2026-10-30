@@ -505,3 +505,22 @@ verze se odmítne. Platí stejná pravidla Markdownu, bezpečného renderování
 upozornění na chybějící soubory jako u šablon, s odkazy pouze do knihovny dané
 Akce. Samostatný kontrakt je v race-event-stage-instructions-api.md.
 Tato implementace nepovoluje editaci běžících nebo ukončených Akcí.
+
+
+## Doplnění stanovišť schváleným zadáním 30. 10. 2026
+
+STANDARD zachovává GPS/CODE AND a stávající časová pravidla. Při porovnání CODE se
+ignoruje diakritika standardní Unicode normalizací NFD a odstraněním kombinujících
+značek; zachovává se strip a velikost písmen nezávislá na locale. Nově zadaná definice se ukládá po strip + uppercase Locale.ROOT, diakritika
+se při ukládání zachovává. Existující hodnoty se hromadně nepřepisují. Znak |
+odděluje alternativy. Prázdné varianty jsou neplatné,
+duplicitní normalizované varianty nepřidávají další význam.
+INFORMATION vyžaduje pouze explicitní Pokračovat bez GPS, CODE a časové penalizace.
+RADAR vyžaduje cílovou GPS polohu, perimetr a nezápornou celou sazbu za platné
+měření mimo perimetr. Vzdálenost se pro odpověď zaokrouhlí na celé metry, pro
+hranici se použije skutečná vzdálenost <= perimetr. Uvnitř se dokončí bez měřicí
+penalizace; mimo se plná sazba neomezeně kumuluje. Neplatná/nedostupná GPS měřicí
+penalizaci nevytváří. Nevrací se směr/azimut. Každé měření je idempotentní.
+max_penalty_points není strop průběžných radarových bodů. Přeskočení zachovává
+stávající pravidlo nahrazení účinných penalizací stanoviště. Implementační API
+kontrakt a oddělený návrh budoucího participant API: stage-extensions-api.md.

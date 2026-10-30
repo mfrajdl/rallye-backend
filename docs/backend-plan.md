@@ -717,3 +717,18 @@ Uživatel potvrdil úspěšné PostgreSQL ověření i ruční integraci s front
 Dokončeny jsou také vlastní seznam přihlášek a ADMIN diagnostika O aplikaci;
 kontrakty jsou v registrační a administrační dokumentaci. Následují individuální
 účast/start a skutečný runtime; tato etapa nepřidává zařízení, průchod ani výsledky.
+
+
+## Rozšíření stanovišť – CODE varianty, INFORMATION a RADAR
+
+Schválené rozšíření zadáním 30. 10. 2026 implementuje normalizaci diakritiky při
+porovnání a alternativy |; ukládání nového CODE zachovává původní strip + uppercase
+ROOT bez odstranění diakritiky a nepřepisuje existující hodnoty. Explicitní typy
+STANDARD/INFORMATION/RADAR, V28 a kopírování konfigurace včetně ZIP a snapshotů.
+Společný RaceEvaluator a existující simulátor používají Pokračovat a idempotentní
+radarová měření bez stropu měřicích bodů; přeskočení zachovává náhradní penalizaci.
+Kontrakt: [stage-extensions-api.md](stage-extensions-api.md), OpenAPI v doprovodném
+souboru. Skutečný participant runtime nebyl vytvořen; mobilní cesty jsou pouze
+návrhem pro další etapu. PostgreSQL ověření nových scénářů uživatel potvrdil jako BUILD SUCCESS.
+
+RADAR historie: společná projekce ověřených měření je připravena pro simulátor a budoucí reálný runtime. Simulační historie používá trvalý deník a stránkované ADMIN API dle docs/stage-extensions-api.md. Reálný průchod, participant historie a převzetí zařízení zůstávají neimplementované; nelze je považovat za ověřené simulací.

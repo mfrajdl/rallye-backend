@@ -32,13 +32,13 @@ public final class TemplateReadiness {
             else if(stage.expectedDurationMs()<0)invalid(errors,id,"expectedDurationMs");
             if(stage.maxPenaltyPoints()!=null && stage.maxPenaltyPoints()<0)invalid(errors,id,"maxPenaltyPoints");
             for(String field:config.invalidFields())invalid(errors,id,field);
-            if(!config.gps().enabled() && !config.code().enabled())required(errors,id,"checks");
+            if(config.type().equals("STANDARD") && !config.gps().enabled() && !config.code().enabled())required(errors,id,"checks");
             if(config.gps().enabled()){
                 if(config.gps().latitude()==null)required(errors,id,"gps.latitude");
                 if(config.gps().longitude()==null)required(errors,id,"gps.longitude");
                 if(config.gps().radiusMeters()==null)required(errors,id,"gps.radiusMeters");
-                if(config.gps().outsidePenaltyPoints()==null)required(errors,id,"gps.outsidePenaltyPoints");
-                if(config.gps().spoofingPenaltyPoints()==null)required(errors,id,"gps.spoofingPenaltyPoints");
+                if(!config.type().equals("RADAR") && config.gps().outsidePenaltyPoints()==null)required(errors,id,"gps.outsidePenaltyPoints");
+                if(!config.type().equals("RADAR") && config.gps().spoofingPenaltyPoints()==null)required(errors,id,"gps.spoofingPenaltyPoints");
             }
             // AND: a configured GPS never excuses missing parameters of an enabled CODE, or vice versa.
             if(config.code().enabled()){

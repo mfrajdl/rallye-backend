@@ -98,4 +98,19 @@ class SimulationServiceTest {
   commands.put(key,new Command(c.id(),c.runId(),c.sequence(),c.operation(),c.fingerprint(),c.expiresAt(),response.toString(),c.facts(),c.effect()));
   var ended=service.mutate(actor,id,UUID.randomUUID(),"RACE_END",control(old));var replay=service.mutate(actor,id,key,"CODE",input(0,run,"wrong"));assertEquals("RUNNING",replay.race().status());assertEquals(now,replay.race().startedAt());assertEquals(replay.race(),replay.dashboard().race());assertEquals(ended,service.get(actor,id));assertEquals(2,commands.size());
  }
+
+ private void radarFixture(){var e=StageConfiguration.empty();var cfg=new StageConfiguration(new StageConfiguration.Gps(true,50d,14d,100d,null,null),e.code(),e.timePenalty(),e.delayed(),"RADAR",7L);def=new Definition(2,3,List.of(new Stage(stage,stage,1,"Radar",0L,10L,"Text",cfg)));var old=session.get();session.set(new Session(old.id(),old.owner(),old.templateId(),2,"Source",def,1,1,run,0,new RaceEvaluator().start(def,now),now,old.expiresAt()));}
+ @Test void radarHistoryProjectsOnlyMeasurementDataAndSeparateMeasurementPenalty(){
+  radarFixture();UUID a=UUID.randomUUID(),b=UUID.randomUUID();var outside=new Action(a,2,"RADAR",stage,"RADAR_OUTSIDE",7,now,new GpsResult(51d,15d,0d,123d,"RADAR_OUTSIDE"));var inside=new Action(b,4,"RADAR",stage,"RADAR_ACCEPTED",99,now.plusSeconds(1),new GpsResult(50.0001,14.0001,0d,13d,"RADAR_ACCEPTED"));
+  when(store.radarMeasurements(eq(id),anyMap(),eq(stage),eq(0L),eq(1))).thenReturn(List.of(new RadarRow(a,run,2,1,new Facts("RADAR",outside,now,null),now),new RadarRow(b,run,4,2,new Facts("RADAR",inside,now,null),now)));
+  var page=service.radarHistory(actor,id,run,stage,0,1);assertTrue(page.hasMore());assertEquals(2,page.nextAfterSequence());assertEquals("7",page.items().getFirst().penaltyPoints());assertEquals(51d,page.items().getFirst().latitude());assertEquals(123,page.items().getFirst().distanceMeters());assertFalse(page.items().getFirst().completedStage());
+  when(store.radarMeasurements(eq(id),anyMap(),eq(stage),eq(2L),eq(1))).thenReturn(List.of(new RadarRow(b,run,4,2,new Facts("RADAR",inside,now,null),now)));
+  var last=service.radarHistory(actor,id,run,stage,2,1);assertEquals("0",last.items().getFirst().penaltyPoints());assertTrue(last.items().getFirst().completedStage());assertFalse(last.hasMore());assertFalse(json(last).contains("radiusMeters"));verifyNoInteractions(audit,ledger);
+ }
+ @Test void radarHistoryRespectsBranchCutoffAndValidatesAccess(){
+  radarFixture();UUID child=UUID.randomUUID();runs.put(child,new Run(child,run,5L,session.get().state()));when(store.radarMeasurements(eq(id),anyMap(),eq(stage),eq(0L),eq(50))).thenReturn(List.of());
+  assertTrue(service.radarHistory(actor,id,child,stage,0,50).items().isEmpty());verify(store).radarMeasurements(id,Map.of(child,Long.MAX_VALUE,run,5L),stage,0,50);
+  assertEquals(400,assertThrows(AuthFailure.class,()->service.radarHistory(actor,id,run,stage,-1,50)).status());assertEquals(400,assertThrows(AuthFailure.class,()->service.radarHistory(actor,id,run,stage,0,101)).status());assertEquals("SIMULATION_RESTORE_INVALID",assertThrows(AuthFailure.class,()->service.radarHistory(actor,id,UUID.randomUUID(),stage,0,50)).code());assertEquals("SIMULATION_STAGE_NOT_FOUND",assertThrows(AuthFailure.class,()->service.radarHistory(actor,id,run,UUID.randomUUID(),0,50)).code());
+  when(roles.administrator(actor.accountId())).thenReturn(false);assertEquals(403,assertThrows(AuthFailure.class,()->service.radarHistory(actor,id,run,stage,0,50)).status());
+ }
 }

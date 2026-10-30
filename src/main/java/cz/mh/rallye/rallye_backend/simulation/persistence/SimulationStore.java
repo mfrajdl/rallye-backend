@@ -39,6 +39,20 @@ public class SimulationStore {
  private static Command command(ResultSet r,int n)throws SQLException{return new Command(r.getObject("id",UUID.class),r.getObject("run_id",UUID.class),r.getLong("sequence"),r.getString("operation"),r.getString("request_fingerprint"),instant(r,"replay_expires_at"),r.getString("response"),read(r.getString("verified_facts"),Facts.class),read(r.getString("effects"),Effect.class));}
  public Command replay(UUID simulation,UUID actor,UUID key){var rows=jdbc.query("SELECT * FROM simulation_command WHERE simulation_id=? AND actor_id=? AND command_key=?",SimulationStore::command,simulation,actor,key);return rows.isEmpty()?null:rows.getFirst();}
  public List<Command> commands(UUID simulation,UUID run,long through){return jdbc.query("SELECT * FROM simulation_command WHERE simulation_id=? AND run_id=? AND sequence<=? ORDER BY sequence",SimulationStore::command,simulation,run,through);}
+
+ public record RadarRow(UUID id,UUID sourceRunId,long sequence,long measurementNumber,Facts facts,Instant recordedAt){}
+ /** Bounded projection of successful measurement facts; no projection replay or target configuration. */
+ public List<RadarRow> radarMeasurements(UUID simulation,Map<UUID,Long> visibleRuns,UUID stage,long after,int size){return jdbc.query("""
+  WITH visible AS (SELECT key::uuid AS run_id,value::bigint AS cutoff FROM jsonb_each_text(?::jsonb)),
+  measurements AS (
+   SELECT c.id,c.run_id,c.sequence,c.verified_facts,c.recorded_at,
+          row_number() OVER (ORDER BY c.sequence) AS measurement_number
+   FROM simulation_command c JOIN visible v ON v.run_id=c.run_id AND c.sequence<=v.cutoff
+   WHERE c.simulation_id=? AND c.operation='RADAR'
+     AND c.verified_facts #>> '{action,stageId}'=?
+     AND c.verified_facts #>> '{action,outcome}' IN ('RADAR_OUTSIDE','RADAR_ACCEPTED')
+  ) SELECT * FROM measurements WHERE sequence>? ORDER BY sequence LIMIT ?
+  """,(r,n)->new RadarRow(r.getObject("id",UUID.class),r.getObject("run_id",UUID.class),r.getLong("sequence"),r.getLong("measurement_number"),read(r.getString("verified_facts"),Facts.class),instant(r,"recorded_at")),json(visibleRuns),simulation,stage.toString(),after,size+1);}
  public void command(UUID id,UUID simulation,UUID run,UUID actor,UUID key,long sequence,String operation,long version,String fingerprint,Facts facts,Effect effect,String response,Instant at){jdbc.update("INSERT INTO simulation_command(id,simulation_id,run_id,actor_id,command_key,sequence,operation,expected_version,request_fingerprint,verified_facts,effects,response,observed_virtual_at,recorded_at,replay_expires_at) VALUES (?,?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?,?,?)",id,simulation,run,actor,key,sequence,operation,version,fingerprint,json(facts),json(effect),response,ts(facts.clock()),ts(at),ts(at.plusSeconds(86400)));}
  public void file(UUID id,UUID sim,String name,String key,TemplateFileContent.Validated v,Instant at){jdbc.update("INSERT INTO simulation_file(id,simulation_id,file_name,name_key,content_type,byte_size,width,height,markdown_source,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",id,sim,name,key,v.contentType(),v.bytes().length,v.width(),v.height(),v.markdown(),ts(at));}
  public List<Image> files(UUID sim){return jdbc.query("SELECT * FROM simulation_file WHERE simulation_id=? ORDER BY name_key",(r,n)->new Image(r.getObject("id",UUID.class),sim,r.getString("file_name"),r.getString("name_key"),r.getString("content_type"),r.getInt("byte_size"),r.getObject("width",Integer.class),r.getObject("height",Integer.class),instant(r,"created_at"),false,r.getString("markdown_source")),sim);}

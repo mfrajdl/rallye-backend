@@ -91,4 +91,6 @@ class TemplateHttpTest {
         }finally{logger.setLevel(original);logger.detachAppender(appender);appender.stop();}
     }
 
+
+ @Test void extendedConfigurationUsesExplicitTypeAndRadarRate()throws Exception{login(true);UUID stage=UUID.randomUUID();var cfg="{\"version\":7,\"type\":\"RADAR\",\"radarPenaltyPoints\":5,\"gps\":{\"enabled\":true,\"latitude\":50,\"longitude\":14,\"radiusMeters\":100,\"outsidePenaltyPoints\":null,\"spoofingPenaltyPoints\":null},\"code\":{\"enabled\":false,\"newCode\":null,\"wrongAttemptPenaltyPoints\":null},\"timePenalty\":{\"enabled\":false,\"intervalSeconds\":null,\"pointsPerInterval\":null},\"delayed\":{\"enabled\":false,\"minimumDurationMs\":null,\"pointsPerSecond\":null}}";mvc.perform(put("/api/v1/race-templates/"+id+"/stages/"+stage+"/configuration").header("Authorization","Bearer "+secret).contentType("application/json").content(cfg)).andExpect(status().isOk());verify(service).configure(eq(principal),eq(id),eq(stage),eq(7L),argThat(c->c.type().equals("RADAR")&&c.radarPenaltyPoints()==5));}
 }
