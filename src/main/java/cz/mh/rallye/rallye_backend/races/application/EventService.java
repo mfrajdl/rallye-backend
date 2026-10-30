@@ -100,7 +100,7 @@ public class EventService {
  public void delete(Principal actor,UUID id,long version){
   if(version<0)throw invalid();
   files.storage.files.exclusive(()->{
-   var removed=tx.execute(s->{authorize(actor);var row=event(id);if(!row.status().equals("PLANNED"))throw new AuthFailure(409,"RACE_EVENT_NOT_PLANNED");if(row.version()!=version)throw new AuthFailure(409,"RACE_EVENT_VERSION_CONFLICT");events.ensureDeletionSupported();var library=events.files(id);events.delete(id);audit.race(actor.accountId(),AuditService.Event.RACE_EVENT_DELETED,id,row.sourceTemplateId(),row.sourceTemplateVersion());return library;});
+   var removed=tx.execute(s->{authorize(actor);var row=event(id);if(!row.status().equals("PLANNED"))throw new AuthFailure(409,"RACE_EVENT_NOT_PLANNED");if(row.version()!=version)throw new AuthFailure(409,"RACE_EVENT_VERSION_CONFLICT");events.ensureDeletionSupported();if(events.registrations(id))throw new AuthFailure(409,"RACE_EVENT_IN_USE");var library=events.files(id);events.delete(id);audit.race(actor.accountId(),AuditService.Event.RACE_EVENT_DELETED,id,row.sourceTemplateId(),row.sourceTemplateVersion());return library;});
    // Only after a confirmed commit, still under the storage lock. A rollback must preserve every byte.
    for(var file:removed)files.storage.remove(id,file.fileName());return null;
   });

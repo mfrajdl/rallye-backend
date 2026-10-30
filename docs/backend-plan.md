@@ -1,3 +1,23 @@
+## Registrace posádek – první implementační etapa (V26)
+
+Implementováno sedm operací podle schváleného `registration-api-v1`:
+stav a nastavení registrací, vlastní posádky s předvyplněním, vytvoření přihlášky,
+vlastní/ADMIN seznam, detail a verzovaná změna složení. V26 přidává interval,
+AUTO/OPEN/CLOSED a crew_registration s ochranou historie. Součástí jsou přesné
+bezpečnostní výjimky pro běžné účty, transakční audit, 24h idempotence, kontroly
+mazání a návaznost cancellation/anonymizace. Kontrakt se nemění.
+
+[Implementace a hranice](participation-registration-implementation.md).
+Codex: Maven Wrapper verify, JDK 21.0.12.1, **764 testů, BUILD SUCCESS**, žádné
+failures/errors/skipped. Uživatelský běh `.\mvnw.cmd -Pit verify` z 30. 10. 2026
+je potvrzen reporty: 446 integračních testů, z toho 25 RegistrationIT, bez
+failures/errors/skipped. Report dokládá PostgreSQL 17.11, V26 i upgrade V25→V26.
+Společné přihlášené frontend–backend ověření nebylo provedeno.
+Skutečný lifecycle konání, individuální start, zařízení, odhlášení a průchod
+stanovišti nejsou implementované. Následná etapa má samostatně doplnit skutečný
+start/konec konání a potom aktivaci/individuální start, se společnými zámky a
+adaptérem historie. Níže uvedené starší stavy zachycují tehdejší rozsah.
+
 ## ZIP export/import šablon – implementováno a ověřeno
 
 [Formát v1, API a limity](template-transfer.md). Export konzistentní definice a

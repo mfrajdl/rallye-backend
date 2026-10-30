@@ -50,6 +50,7 @@ public class CrewStore {
         jdbc.update("UPDATE crew SET photo_id=?,photo_type=?,photo_size=?,photo_width=?,photo_height=?,updated_at=?,version=version+1 WHERE id=?",
                 photo,type,size,width,height,Timestamp.from(now),id);
     }
+    public boolean registrations(UUID id){return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM crew_registration WHERE crew_id=?)",Boolean.class,id));}
     public void delete(UUID id) { jdbc.update("DELETE FROM crew WHERE id=?",id); }
     public boolean referenced(UUID photo) {
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM crew WHERE photo_id=?)",Boolean.class,photo));

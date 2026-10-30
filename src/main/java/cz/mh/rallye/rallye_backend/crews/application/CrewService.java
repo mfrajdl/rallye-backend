@@ -159,7 +159,7 @@ public class CrewService {
                 Crew crew=accessible(id,actor,authorize(actor));version(crew,expected);
                 var pending=transfers.pending(id);
                 if(pending!=null&&pending.pendingAt(now())) throw new AuthFailure(409,"CREW_TRANSFER_PENDING");
-                // Participation module must add its history restriction before writing participation references.
+                if(crews.registrations(id))throw new AuthFailure(409,"CREW_IN_USE");
                 crews.delete(id);audit.crew(actor.accountId(),Event.CREW_DELETED,id,crew.captainAccountId(),null);
                 return crew.photoId();
             });

@@ -7,6 +7,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CommandAccountsTest {
     UUID actor=UUID.randomUUID(),target=UUID.randomUUID(),owner=UUID.randomUUID();
+    @Test void registrationLedgerContainsOnlyActorAccountAndMemberDigest(){
+        String request="[\""+UUID.randomUUID()+"\",\""+UUID.randomUUID()+"\",\""+"a".repeat(64)+"\",0]";
+        String result="{\"id\":\""+target+"\",\"version\":0}";
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"CREW_REGISTRATION_CREATE",request,result).accounts());
+        for(String invalid:List.of(request.replace("a".repeat(64),"Member name"),request.replace(",0]",",-1]")))assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"CREW_REGISTRATION_CREATE",invalid,result));
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"CREW_REGISTRATION_CREATE",request,result.replace(":0}",":18446744073709551616}")));
+    }
     @Test void adminCancellationStoresOnlyIdsAndKnownOutcome() {
         var request="[\""+target+"\"]";
         assertEquals(Set.of(actor,target),CommandAccounts.inspect(actor,target,"ADMIN_ACCOUNT_CANCEL",request,

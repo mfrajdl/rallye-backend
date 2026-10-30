@@ -13,6 +13,18 @@ import static org.mockito.ArgumentMatchers.*;
 class PreRaceAccountParticipationFactsTest {
     JdbcTemplate jdbc=mock(JdbcTemplate.class);
     PreRaceAccountParticipationFacts facts=new PreRaceAccountParticipationFacts(jdbc);
+    @Test void reviewedV26ReadsRealHistoricalAndRunningFacts(){
+        UUID account=UUID.randomUUID();
+        when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(java.util.stream.IntStream.rangeClosed(1,26).mapToObj(Integer::toString).toList());
+        var expected=new cz.mh.rallye.rallye_backend.identity.application.AccountParticipationFacts.Facts(true,false);
+        when(jdbc.queryForObject(anyString(),org.mockito.ArgumentMatchers.<RowMapper<cz.mh.rallye.rallye_backend.identity.application.AccountParticipationFacts.Facts>>any(),eq(account),eq(account))).thenReturn(expected);
+        assertEquals(expected,facts.forAccount(account));
+    }
+    @Test void unavailableRegistrationFactsFailClosedInReviewedV26(){
+        when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(java.util.stream.IntStream.rangeClosed(1,26).mapToObj(Integer::toString).toList());
+        when(jdbc.queryForObject(anyString(),org.mockito.ArgumentMatchers.<RowMapper<Object>>any(),any(),any())).thenThrow(new DataAccessResourceFailureException("Unavailable"));
+        assertEquals("PARTICIPATION_CHECK_UNAVAILABLE",assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID())).code());
+    }
     @Test void onlyExplicitPreRaceMigrationSequenceAllowsEmptyFacts() {
         when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(List.of("1","2","3","4","5","6"));
         var result=facts.forAccount(UUID.randomUUID());assertFalse(result.historical());assertFalse(result.running());
@@ -68,7 +80,7 @@ class PreRaceAccountParticipationFactsTest {
     @Test void reviewedV21SequenceIsAccepted(){when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(java.util.stream.IntStream.rangeClosed(1,21).mapToObj(Integer::toString).toList());assertFalse(facts.forAccount(UUID.randomUUID()).historical());}
     @Test void reviewedV22SequenceIsAccepted(){when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(java.util.stream.IntStream.rangeClosed(1,22).mapToObj(Integer::toString).toList());assertFalse(facts.forAccount(UUID.randomUUID()).historical());}
     @Test void futureMissingFailedAndRepeatableVersionsAreRejected() {
-        for(var versions:List.of(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26"),List.of("1","2","3","4","5"),List.of("1","2","3","4","5","unsupported"),List.<String>of())) {
+        for(var versions:List.of(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27"),List.of("1","2","3","4","5"),List.of("1","2","3","4","5","unsupported"),List.<String>of())) {
             when(jdbc.query(anyString(),org.mockito.ArgumentMatchers.<RowMapper<String>>any())).thenReturn(versions);
             var error=assertThrows(AuthFailure.class,()->facts.forAccount(UUID.randomUUID()));assertEquals(503,error.status());assertEquals("PARTICIPATION_CHECK_UNAVAILABLE",error.code());
         }

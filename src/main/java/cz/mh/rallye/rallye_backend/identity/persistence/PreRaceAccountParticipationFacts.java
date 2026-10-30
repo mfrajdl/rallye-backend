@@ -28,6 +28,7 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                             && (!"16".equals(rs.getString("version")) || "V16__race_templates.sql".equals(rs.getString("script")))
                             && (!"17".equals(rs.getString("version")) || "V17__stage_configuration_and_readiness.sql".equals(rs.getString("script")))
                             && (!"18".equals(rs.getString("version")) || "V18__template_html_and_images.sql".equals(rs.getString("script")))
+                            && (!"26".equals(rs.getString("version")) || "V26__crew_registrations.sql".equals(rs.getString("script")))
                             && (!"25".equals(rs.getString("version")) || "V25__simulation_race_lifecycle.sql".equals(rs.getString("script")))
                             && (!"24".equals(rs.getString("version")) || "V24__persistent_simulation_management.sql".equals(rs.getString("script")))
                             && (!"23".equals(rs.getString("version")) || "V23__race_simulations.sql".equals(rs.getString("script")))
@@ -36,7 +37,8 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                             && (!"20".equals(rs.getString("version")) || "V20__template_file_library.sql".equals(rs.getString("script")))
                             && (!"19".equals(rs.getString("version")) || "V19__template_markdown_and_named_images.sql".equals(rs.getString("script")))
                             ?rs.getString("version"):"unsupported");
-            if(!versions.equals(java.util.stream.IntStream.rangeClosed(1,25).mapToObj(Integer::toString).toList())
+            if(!versions.equals(java.util.stream.IntStream.rangeClosed(1,26).mapToObj(Integer::toString).toList())
+                    && !versions.equals(java.util.stream.IntStream.rangeClosed(1,25).mapToObj(Integer::toString).toList())
                     && !versions.equals(java.util.stream.IntStream.rangeClosed(1,24).mapToObj(Integer::toString).toList())
                     && !versions.equals(java.util.stream.IntStream.rangeClosed(1,23).mapToObj(Integer::toString).toList())
                     && !versions.equals(java.util.stream.IntStream.rangeClosed(1,22).mapToObj(Integer::toString).toList())
@@ -56,6 +58,16 @@ public class PreRaceAccountParticipationFacts implements AccountParticipationFac
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19"))
                     && !versions.equals(List.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20")))throw unavailable();
+            if(versions.size()==26){
+                // Registration alone is not history. No individual start/lifecycle writer exists yet.
+                // Future real runtime migrations must replace the bounded running predicate as needed.
+                return jdbc.queryForObject("""
+                    SELECT EXISTS(SELECT 1 FROM crew_registration WHERE historical_captain_account_id=? AND individual_started_at IS NOT NULL) AS historical,
+                      EXISTS(SELECT 1 FROM crew_registration r JOIN race_event e ON e.id=r.race_event_id
+                        WHERE r.historical_captain_account_id=? AND r.individual_started_at IS NOT NULL
+                          AND e.status='RUNNING' AND (e.end_at IS NULL OR e.end_at>=CURRENT_TIMESTAMP)) AS running
+                    """,(r,n)->new Facts(r.getBoolean("historical"),r.getBoolean("running")),account,account);
+            }
             return new Facts(false,false);
         } catch(org.springframework.dao.DataAccessException failure) {throw new AuthFailure(503,"PARTICIPATION_CHECK_UNAVAILABLE",failure);}
     }

@@ -51,6 +51,12 @@ public class AuthConfiguration {
                         .requestMatchers("/api/v1/auth/external/GOOGLE/requests", "/api/v1/auth/external/APPLE/requests",
                                 "/api/v1/auth/external/GOOGLE/callback", "/api/v1/auth/external/APPLE/callback",
                                 "/api/v1/auth/external/registrations/current", "/api/v1/auth/external/registrations/completions").permitAll()
+                        // Only the approved participant registration methods, never the ADMIN event API/library.
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,
+                                "/api/v1/race-events/*/registration-status", "/api/v1/race-events/*/registration-crews",
+                                "/api/v1/race-events/*/registrations", "/api/v1/race-events/*/registrations/*").authenticated()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/api/v1/race-events/*/registrations").authenticated()
+                        .requestMatchers(org.springframework.http.HttpMethod.PUT,"/api/v1/race-events/*/registrations/*/members").authenticated()
                         .requestMatchers("/api/v1/admin/**", "/api/v1/race-templates", "/api/v1/race-templates/**", "/api/v1/race-events", "/api/v1/race-events/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors

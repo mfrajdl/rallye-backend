@@ -1,0 +1,2334 @@
+openapi: 3.1.0
+info:
+  title: Rallye – registrace posádek
+  version: registration-api-v1
+  description: 'Kontrakt ke schválení, nikoli implementované endpointy. Úplná pravidla a souběh: participation-registration-api.md.
+    Bez individuálního startu, závodních zařízení a runtime.'
+servers:
+- url: /api/v1
+tags:
+- name: Registrace posádek
+paths:
+  /race-events/{eventId}/registration-status:
+    get:
+      operationId: getRegistrationStatus
+      summary: Stav registrací a bezpečný souhrn konání
+      description: Návrh registration-api-v1, zatím neimplementováno. Aktivní ověřený účet se znalostí eventId z
+        předaného odkazu; bez veřejného seznamu nebo e-mail allowlistu.
+      tags:
+      - Registrace posádek
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Stav registrací a bezpečný souhrn konání
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationStatus'
+              example: &id006
+                event: &id005
+                  id: 11111111-1111-4111-8111-111111111111
+                  name: Podzimní projížďka
+                  description: null
+                  status: PLANNED
+                  scheduledStartAt: '2026-11-01T10:00:00Z'
+                  startedAt: null
+                  endAt: '2026-11-01T16:00:00Z'
+                version: 4
+                serverTime: '2026-10-30T10:00:00Z'
+                registrationFrom: null
+                registrationTo: null
+                override: AUTO
+                effectiveState: OPEN
+                reason: DEFAULT_OPEN
+                canRegister: true
+                canManageSettings: false
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 400
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INVALID_REQUEST
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                code: INVALID_REQUEST
+        '401':
+          description: UNAUTHENTICATED / INVALID_CREDENTIALS
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 401
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - UNAUTHENTICATED
+                    - INVALID_CREDENTIALS
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: UNAUTHENTICATED
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 403
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - ACCESS_DENIED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: ACCESS_DENIED
+        '404':
+          description: RACE_EVENT_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 404
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_NOT_FOUND
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: RACE_EVENT_NOT_FOUND
+        '500':
+          description: INTERNAL_ERROR
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 500
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INTERNAL_ERROR
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+  /race-events/{eventId}/registration-settings:
+    put:
+      operationId: updateRegistrationSettings
+      summary: Nastavení intervalu a ručního override
+      description: Návrh registration-api-v1, zatím neimplementováno. Pouze aktuální ADMIN. Sdílená version konání;
+        změny intervalu i override atomické.
+      tags:
+      - Registrace posádek
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Nastavení intervalu a ručního override
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationStatus'
+              example:
+                event:
+                  id: 11111111-1111-4111-8111-111111111111
+                  name: Podzimní projížďka
+                  description: null
+                  status: PLANNED
+                  scheduledStartAt: '2026-11-01T10:00:00Z'
+                  startedAt: null
+                  endAt: '2026-11-01T16:00:00Z'
+                version: 5
+                serverTime: '2026-10-30T10:00:00Z'
+                registrationFrom: '2026-10-30T08:00:00Z'
+                registrationTo: '2026-11-01T09:00:00Z'
+                override: OPEN
+                effectiveState: OPEN
+                reason: MANUALLY_OPEN
+                canRegister: true
+                canManageSettings: true
+        '400':
+          description: INVALID_REQUEST / REGISTRATION_INTERVAL_INVALID
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 400
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INVALID_REQUEST
+                    - REGISTRATION_INTERVAL_INVALID
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                code: INVALID_REQUEST
+        '401':
+          description: UNAUTHENTICATED / INVALID_CREDENTIALS
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 401
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - UNAUTHENTICATED
+                    - INVALID_CREDENTIALS
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: UNAUTHENTICATED
+        '403':
+          description: ACCESS_DENIED / ADMIN_REQUIRED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 403
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - ACCESS_DENIED
+                    - ADMIN_REQUIRED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: ACCESS_DENIED
+        '404':
+          description: RACE_EVENT_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 404
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_NOT_FOUND
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: RACE_EVENT_NOT_FOUND
+        '500':
+          description: INTERNAL_ERROR
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 500
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INTERNAL_ERROR
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+        '409':
+          description: RACE_EVENT_VERSION_CONFLICT / RACE_EVENT_ENDED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 409
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_VERSION_CONFLICT
+                    - RACE_EVENT_ENDED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: RACE_EVENT_VERSION_CONFLICT
+        '415':
+          description: UNSUPPORTED_MEDIA_TYPE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                status: 415
+                title: Unsupported Media Type
+                code: UNSUPPORTED_MEDIA_TYPE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationSettingsUpdate'
+            example: &id007
+              version: 4
+              registrationFrom: '2026-10-30T08:00:00Z'
+              registrationTo: '2026-11-01T09:00:00Z'
+              override: OPEN
+  /race-events/{eventId}/registration-crews:
+    get:
+      operationId: getRegistrationCrews
+      summary: Vlastní posádky a předvyplnění
+      description: Návrh registration-api-v1, zatím neimplementováno. Pouze vlastní posádky podle současného captain_account_id,
+        i pro ADMIN. Žádné cizí nebo osiřelé posádky.
+      tags:
+      - Registrace posádek
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - &id001
+        $ref: '#/components/parameters/Page'
+      - &id002
+        $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Vlastní posádky a předvyplnění
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationCrewPage'
+              example: &id014
+                items:
+                - &id012
+                  crewId: 22222222-2222-4222-8222-222222222222
+                  crewVersion: 2
+                  name: Výletníci
+                  captainAccountId: 55555555-5555-4555-8555-555555555555
+                  registrationId: null
+                  canRegister: true
+                  blockedReason: null
+                  defaults: &id011
+                    source: LAST_REGISTRATION
+                    sourceRegistrationId: 44444444-4444-4444-8444-444444444444
+                    membersText: 'Jana Nováková
+
+                      Petr Novák
+
+                      Eva Nováková'
+                    childrenUnder15: 1
+                page: 0
+                size: 50
+                hasMore: false
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 400
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INVALID_REQUEST
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                code: INVALID_REQUEST
+        '401':
+          description: UNAUTHENTICATED / INVALID_CREDENTIALS
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 401
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - UNAUTHENTICATED
+                    - INVALID_CREDENTIALS
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: UNAUTHENTICATED
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 403
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - ACCESS_DENIED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: ACCESS_DENIED
+        '404':
+          description: RACE_EVENT_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 404
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_NOT_FOUND
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: RACE_EVENT_NOT_FOUND
+        '500':
+          description: INTERNAL_ERROR
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 500
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INTERNAL_ERROR
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+  /race-events/{eventId}/registrations:
+    post:
+      operationId: createCrewRegistration
+      summary: Přihlášení vlastní posádky
+      description: Návrh registration-api-v1, zatím neimplementováno. Pouze současný kapitán vlastní posádky. Samotná
+        ADMIN role neopravňuje registrovat cizí posádku.
+      tags:
+      - Registrace posádek
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Přihlášení vlastní posádky
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+            Location:
+              description: /api/v1/race-events/{eventId}/registrations/{id}
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationCreated'
+              example: &id009
+                id: 33333333-3333-4333-8333-333333333333
+                version: 0
+        '400':
+          description: INVALID_REQUEST / REGISTRATION_MEMBERS_INVALID / REGISTRATION_MEMBERS_TEXT_TOO_LONG
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 400
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INVALID_REQUEST
+                    - REGISTRATION_MEMBERS_INVALID
+                    - REGISTRATION_MEMBERS_TEXT_TOO_LONG
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                code: INVALID_REQUEST
+        '401':
+          description: UNAUTHENTICATED / INVALID_CREDENTIALS
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 401
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - UNAUTHENTICATED
+                    - INVALID_CREDENTIALS
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: UNAUTHENTICATED
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 403
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - ACCESS_DENIED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: ACCESS_DENIED
+        '404':
+          description: RACE_EVENT_NOT_FOUND / CREW_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 404
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_NOT_FOUND
+                    - CREW_NOT_FOUND
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: RACE_EVENT_NOT_FOUND
+        '500':
+          description: INTERNAL_ERROR
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 500
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INTERNAL_ERROR
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+        '409':
+          description: REGISTRATION_CLOSED / CREW_ALREADY_REGISTERED / IDEMPOTENCY_CONFLICT
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 409
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - REGISTRATION_CLOSED
+                    - CREW_ALREADY_REGISTERED
+                    - IDEMPOTENCY_CONFLICT
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: REGISTRATION_CLOSED
+        '415':
+          description: UNSUPPORTED_MEDIA_TYPE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                status: 415
+                title: Unsupported Media Type
+                code: UNSUPPORTED_MEDIA_TYPE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationCreate'
+            example: &id008
+              crewId: 22222222-2222-4222-8222-222222222222
+              membersText: 'Jana Nováková
+
+                Petr Novák
+
+                Eva Nováková'
+              childrenUnder15: 1
+    get:
+      operationId: listCrewRegistrations
+      summary: Seznam vlastních nebo administrativní přehled přihlášek
+      description: Návrh registration-api-v1, zatím neimplementováno. scope=own podle současného kapitánství, nikoli
+        autora. scope=all pouze ADMIN; jinak 403. Bez scope i ADMIN vidí jen vlastní.
+      tags:
+      - Registrace posádek
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - name: scope
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - own
+          - all
+          default: own
+        description: own podle aktuálního kapitána; all pouze ADMIN. ADMIN bez all vidí jen vlastní posádky.
+      - *id001
+      - *id002
+      responses:
+        '200':
+          description: Seznam vlastních nebo administrativní přehled přihlášek
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationPage'
+              example: &id013
+                items:
+                - &id003
+                  id: 33333333-3333-4333-8333-333333333333
+                  raceEventId: 11111111-1111-4111-8111-111111111111
+                  crewId: 22222222-2222-4222-8222-222222222222
+                  crewNameAtRegistration: Výletníci
+                  status: REGISTERED
+                  version: 0
+                  registeredAt: '2026-10-30T10:00:00Z'
+                  updatedAt: '2026-10-30T10:00:00Z'
+                  membersText: 'Jana Nováková
+
+                    Petr Novák
+
+                    Eva Nováková'
+                  childrenUnder15: 1
+                  memberCount: 3
+                  participants15Plus: 2
+                  individualStartedAt: null
+                  historicalCaptainAccountId: null
+                  compositionLocked: false
+                  canEditMembers: true
+                  editBlockedReason: null
+                page: 0
+                size: 50
+                hasMore: false
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 400
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INVALID_REQUEST
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                code: INVALID_REQUEST
+        '401':
+          description: UNAUTHENTICATED / INVALID_CREDENTIALS
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 401
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - UNAUTHENTICATED
+                    - INVALID_CREDENTIALS
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: UNAUTHENTICATED
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 403
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - ACCESS_DENIED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: ACCESS_DENIED
+        '404':
+          description: RACE_EVENT_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 404
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_NOT_FOUND
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: RACE_EVENT_NOT_FOUND
+        '500':
+          description: INTERNAL_ERROR
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 500
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INTERNAL_ERROR
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+  /race-events/{eventId}/registrations/{registrationId}:
+    get:
+      operationId: getCrewRegistration
+      summary: Detail přihlášky
+      description: Návrh registration-api-v1, zatím neimplementováno. Současný kapitán nebo ADMIN. Přihláška musí
+        patřit eventId; cizímu běžnému uživateli 404 REGISTRATION_NOT_FOUND.
+      tags:
+      - Registrace posádek
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - &id004
+        $ref: '#/components/parameters/RegistrationId'
+      responses:
+        '200':
+          description: Detail přihlášky
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+              example: *id003
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 400
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INVALID_REQUEST
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                code: INVALID_REQUEST
+        '401':
+          description: UNAUTHENTICATED / INVALID_CREDENTIALS
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 401
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - UNAUTHENTICATED
+                    - INVALID_CREDENTIALS
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: UNAUTHENTICATED
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 403
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - ACCESS_DENIED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: ACCESS_DENIED
+        '404':
+          description: RACE_EVENT_NOT_FOUND / REGISTRATION_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 404
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_NOT_FOUND
+                    - REGISTRATION_NOT_FOUND
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: RACE_EVENT_NOT_FOUND
+        '500':
+          description: INTERNAL_ERROR
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 500
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INTERNAL_ERROR
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+  /race-events/{eventId}/registrations/{registrationId}/members:
+    put:
+      operationId: updateCrewRegistrationMembers
+      summary: Úprava složení přihlášené posádky
+      description: Návrh registration-api-v1, zatím neimplementováno. Pouze současný kapitán; ADMIN bez kapitánství
+        cizí složení nemění (404 REGISTRATION_NOT_FOUND). Dovoleno před individuálním startem a koncem konání, i
+        při zavřené registraci a po oficiálním startu.
+      tags:
+      - Registrace posádek
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+        csrfHeader: []
+      parameters:
+      - $ref: '#/components/parameters/EventId'
+      - *id004
+      responses:
+        '200':
+          description: Úprava složení přihlášené posádky
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+              example:
+                id: 33333333-3333-4333-8333-333333333333
+                raceEventId: 11111111-1111-4111-8111-111111111111
+                crewId: 22222222-2222-4222-8222-222222222222
+                crewNameAtRegistration: Výletníci
+                status: REGISTERED
+                version: 1
+                registeredAt: '2026-10-30T10:00:00Z'
+                updatedAt: '2026-10-30T10:05:00Z'
+                membersText: 'Jana Nováková
+
+                  Petr Novák'
+                childrenUnder15: 0
+                memberCount: 2
+                participants15Plus: 2
+                individualStartedAt: null
+                historicalCaptainAccountId: null
+                compositionLocked: false
+                canEditMembers: true
+                editBlockedReason: null
+        '400':
+          description: INVALID_REQUEST / REGISTRATION_MEMBERS_INVALID / REGISTRATION_MEMBERS_TEXT_TOO_LONG
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 400
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INVALID_REQUEST
+                    - REGISTRATION_MEMBERS_INVALID
+                    - REGISTRATION_MEMBERS_TEXT_TOO_LONG
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                code: INVALID_REQUEST
+        '401':
+          description: UNAUTHENTICATED / INVALID_CREDENTIALS
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 401
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - UNAUTHENTICATED
+                    - INVALID_CREDENTIALS
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                code: UNAUTHENTICATED
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 403
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - ACCESS_DENIED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                code: ACCESS_DENIED
+        '404':
+          description: RACE_EVENT_NOT_FOUND / REGISTRATION_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 404
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - RACE_EVENT_NOT_FOUND
+                    - REGISTRATION_NOT_FOUND
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                code: RACE_EVENT_NOT_FOUND
+        '500':
+          description: INTERNAL_ERROR
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 500
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - INTERNAL_ERROR
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Internal Server Error
+                status: 500
+                code: INTERNAL_ERROR
+        '409':
+          description: REGISTRATION_VERSION_CONFLICT / REGISTRATION_COMPOSITION_LOCKED / RACE_EVENT_ENDED
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                required:
+                - status
+                - title
+                - code
+                properties:
+                  type:
+                    type: string
+                    format: uri-reference
+                  instance:
+                    type: string
+                    format: uri-reference
+                  status:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+                    const: 409
+                  title:
+                    type: string
+                  code:
+                    type: string
+                    enum:
+                    - REGISTRATION_VERSION_CONFLICT
+                    - REGISTRATION_COMPOSITION_LOCKED
+                    - RACE_EVENT_ENDED
+                additionalProperties: true
+                description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code,
+                  nikoli title. Žádná tajemství ani obsah členů v chybě.
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                code: REGISTRATION_VERSION_CONFLICT
+        '415':
+          description: UNSUPPORTED_MEDIA_TYPE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                status: 415
+                title: Unsupported Media Type
+                code: UNSUPPORTED_MEDIA_TYPE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationMembersUpdate'
+            example: &id010
+              version: 0
+              membersText: 'Jana Nováková
+
+                Petr Novák'
+              childrenUnder15: 0
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque Rallye session
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: RALLYE_SESSION
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-XSRF-TOKEN
+      description: 'Cookie writes: GET /api/v1/auth/csrf, jeho token a související CSRF cookie. Bearer a session
+        cookie v jednom požadavku nekombinovat.'
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RegistrationId:
+      name: registrationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID, společný namespace actor+key v CommandStore, 24h. Replay stále ověřuje kapitánství; odlišné
+        parametry/operace 409. Porovnání před kontrolou otevřenosti a duplicity.
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 10000
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+  schemas:
+    MembersText:
+      type: string
+      maxLength: 2000
+      description: Prostý text, na vstupu max 2000 Unicode code points před normalizací; následně CRLF/CR -> LF.
+        Jinak zachovat mezery/řádky; aspoň jeden neprázdný řádek podle !String.isBlank(); NUL zakázán.
+    EventSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - description
+      - status
+      - scheduledStartAt
+      - startedAt
+      - endAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+        status:
+          type: string
+          enum:
+          - PLANNED
+          - RUNNING
+          - ENDED
+        scheduledStartAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        startedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        endAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+      description: Bez správných CODE, stanovišť, knihovny a seznamu přihlášek. RUNNING/ENDED až v pozdější etapě
+        skutečného lifecycle.
+      examples:
+      - *id005
+    RegistrationStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - event
+      - version
+      - serverTime
+      - registrationFrom
+      - registrationTo
+      - override
+      - effectiveState
+      - reason
+      - canRegister
+      - canManageSettings
+      properties:
+        event:
+          $ref: '#/components/schemas/EventSummary'
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        serverTime:
+          type: string
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        registrationFrom:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        registrationTo:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        override:
+          type: string
+          enum:
+          - AUTO
+          - OPEN
+          - CLOSED
+        effectiveState:
+          type: string
+          enum:
+          - OPEN
+          - CLOSED
+        reason:
+          type: string
+          enum:
+          - EVENT_ENDED
+          - MANUALLY_OPEN
+          - MANUALLY_CLOSED
+          - OFFICIAL_START_REACHED
+          - BEFORE_INTERVAL
+          - AFTER_INTERVAL
+          - WITHIN_INTERVAL
+          - DEFAULT_OPEN
+        canRegister:
+          type: boolean
+        canManageSettings:
+          type: boolean
+      description: 'version je společná verze race_event. Efektivní stav určuje server; canRegister znamená otevřenost
+        pro novou přihlášku, nikoli oprávnění ke konkrétní posádce. Priorita: konec -> OPEN -> CLOSED -> skutečný
+        oficiální start -> interval -> výchozí otevření. Změna intervalu override sama neruší.'
+      examples:
+      - *id006
+    RegistrationSettingsUpdate:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - registrationFrom
+      - registrationTo
+      - override
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        registrationFrom:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        registrationTo:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        override:
+          type: string
+          enum:
+          - AUTO
+          - OPEN
+          - CLOSED
+      description: Interval obě null nebo oba časy a from < to. Všechna pole povinná, celý stav se atomicky nahrazuje.
+        Pro zrušení ručního rozhodnutí poslat AUTO; změna intervalu sama override neruší.
+      examples:
+      - *id007
+    RegistrationCreate:
+      type: object
+      additionalProperties: false
+      required:
+      - crewId
+      - membersText
+      - childrenUnder15
+      properties:
+        crewId:
+          type: string
+          format: uuid
+        membersText:
+          $ref: '#/components/schemas/MembersText'
+        childrenUnder15:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+      description: Aktuální kapitán pouze vlastní posádky. childrenUnder15 <= počet neprázdných řádků, bez pevného
+        limitu členů. Žádné historické hodnoty od klienta.
+      examples:
+      - *id008
+    RegistrationCreated:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+      description: Původní id a version=0 pro přesný 24h replay; aktuální detail načíst přes Location.
+      examples:
+      - *id009
+    RegistrationMembersUpdate:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - membersText
+      - childrenUnder15
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        membersText:
+          $ref: '#/components/schemas/MembersText'
+        childrenUnder15:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+      description: Verze přihlášky, nikoli konání/posádky. Úprava pouze aktuálním kapitánem před individuálním startem
+        a koncem konání.
+      examples:
+      - *id010
+    Registration:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - raceEventId
+      - crewId
+      - crewNameAtRegistration
+      - status
+      - version
+      - registeredAt
+      - updatedAt
+      - membersText
+      - childrenUnder15
+      - memberCount
+      - participants15Plus
+      - individualStartedAt
+      - historicalCaptainAccountId
+      - compositionLocked
+      - canEditMembers
+      - editBlockedReason
+      properties:
+        id:
+          type: string
+          format: uuid
+        raceEventId:
+          type: string
+          format: uuid
+        crewId:
+          type: string
+          format: uuid
+        crewNameAtRegistration:
+          type: string
+          maxLength: 100
+        status:
+          type: string
+          enum:
+          - REGISTERED
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        registeredAt:
+          type: string
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        updatedAt:
+          type: string
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        membersText:
+          $ref: '#/components/schemas/MembersText'
+        childrenUnder15:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+        memberCount:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+        participants15Plus:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+        individualStartedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: UTC Instant; výstup Z, přesnost ms. Vstupní offset se převede do UTC, submilisekundy zkrátí.
+        historicalCaptainAccountId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        compositionLocked:
+          type: boolean
+        canEditMembers:
+          type: boolean
+        editBlockedReason:
+          type:
+          - string
+          - 'null'
+          enum:
+          - NOT_CAPTAIN
+          - INDIVIDUAL_START_REACHED
+          - EVENT_ENDED
+          - null
+      description: REGISTERED je stav přihlášky, nikoli průběhu. Historický kapitán je před individuálním startem
+        null. canEditMembers vyžaduje aktuální kapitánství i odemčené složení; ADMIN sám nestačí. memberCount odpovídá
+        neprázdným řádkům; děti <= memberCount; participants15Plus je jejich rozdíl. Příznaky/počty ověřuje server.
+      examples:
+      - *id003
+    RegistrationDefaults:
+      type: object
+      additionalProperties: false
+      required:
+      - source
+      - sourceRegistrationId
+      - membersText
+      - childrenUnder15
+      properties:
+        source:
+          type: string
+          enum:
+          - LAST_REGISTRATION
+          - CAPTAIN_PROFILE
+        sourceRegistrationId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        membersText:
+          $ref: '#/components/schemas/MembersText'
+        childrenUnder15:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+      description: Jen návrh formuláře. Poslední registrace stejné posádky podle registered_at DESC,id DESC, včetně
+        nedokončené. Bez historie displayName kapitána a 0 dětí. source=CAPTAIN_PROFILE má sourceRegistrationId=null;
+        LAST_REGISTRATION vyžaduje UUID zdroje. Návrh načítá aktuální kapitán bez zpřístupnění cizích posádek.
+      examples:
+      - *id011
+    RegistrationCrew:
+      type: object
+      additionalProperties: false
+      required:
+      - crewId
+      - crewVersion
+      - name
+      - captainAccountId
+      - registrationId
+      - canRegister
+      - blockedReason
+      - defaults
+      properties:
+        crewId:
+          type: string
+          format: uuid
+        crewVersion:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        name:
+          type: string
+          maxLength: 100
+        captainAccountId:
+          type: string
+          format: uuid
+        registrationId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        canRegister:
+          type: boolean
+        blockedReason:
+          type:
+          - string
+          - 'null'
+          enum:
+          - ALREADY_REGISTERED
+          - REGISTRATION_CLOSED
+          - null
+        defaults:
+          $ref: '#/components/schemas/RegistrationDefaults'
+      description: Pouze vlastní posádky, i pro ADMIN. Již registrovaná zůstane s blokací; priorita ALREADY_REGISTERED
+        před REGISTRATION_CLOSED. crewVersion informativní, POST ji nepřijímá.
+      examples:
+      - *id012
+    RegistrationPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - hasMore
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Registration'
+          maxItems: 100
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        hasMore:
+          type: boolean
+      description: ''
+      examples:
+      - *id013
+    RegistrationCrewPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - hasMore
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegistrationCrew'
+          maxItems: 100
+        page:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        hasMore:
+          type: boolean
+      description: ''
+      examples:
+      - *id014
+    Problem:
+      type: object
+      required:
+      - status
+      - title
+      - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        instance:
+          type: string
+          format: uri-reference
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        title:
+          type: string
+        code:
+          type: string
+      additionalProperties: true
+      description: Stávající ProblemDetail; type/instance mohou chybět. Rozhodovat podle status/code, nikoli title.
+        Žádná tajemství ani obsah členů v chybě.
+x-contract-id: registration-api-v1
+x-implementation-status: NOT_IMPLEMENTED
+x-existing-endpoint-impacts:
+- method: DELETE
+  path: /crews/{crewId}
+  newConflict: CREW_IN_USE
+  httpStatus: 409
+- method: DELETE
+  path: /race-events/{eventId}
+  newConflict: RACE_EVENT_IN_USE
+  httpStatus: 409
+- method: POST
+  path: /auth/account-cancellations
+  description: D10 kontrakt beze změny. Samotná registrace cancellation neblokuje; zachovat přihlášku i osiřelou
+    posádku. Historický kapitán vzniká až individuálním startem.

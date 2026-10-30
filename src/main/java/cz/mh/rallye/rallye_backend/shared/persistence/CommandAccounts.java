@@ -17,6 +17,12 @@ final class CommandAccounts {
             }
             JsonNode req=JSON.readTree(request),res=JSON.readTree(result);
             if(!req.isArray() || !res.isObject()) throw invalid();
+            if(operation.equals("CREW_REGISTRATION_CREATE")){
+                size(req,4);requiredId(req.get(0));requiredId(req.get(1));
+                if(!req.get(2).isString()||!req.get(2).asString().matches("[0-9a-f]{64}")||!req.get(3).isIntegralNumber()||!req.get(3).canConvertToInt()||req.get(3).intValue()<0)throw invalid();
+                if(!new HashSet<>(res.propertyNames()).equals(Set.of("id","version"))||!target.equals(requiredId(res.get("id")))||!res.get("version").isIntegralNumber()||!res.get("version").canConvertToLong()||res.get("version").longValue()!=0)throw invalid();
+                return new Content(ids,req,res); // Only the actor is an account. No open member names in the ledger.
+            }
             if(operation.equals("TEMPLATE_IMPORT")){
                 size(req,1);if(!req.get(0).isString()||!req.get(0).asString().matches("[0-9a-f]{64}"))throw invalid();
                 if(!new HashSet<>(res.propertyNames()).equals(Set.of("id","templateId","version"))||!target.equals(requiredId(res.get("id")))||!target.equals(requiredId(res.get("templateId")))||!res.get("version").isIntegralNumber())throw invalid();

@@ -1,5 +1,35 @@
 # Testování bez lokálního Dockeru
 
+## Registrace posádek – registration-api-v1 (V26)
+
+Aktuální běžné `.\mvnw.cmd verify` na JDK 21.0.12.1: **BUILD SUCCESS, 764 testů,
+0 failures/errors/skipped**. Obsahuje 31 nových testů RegistrationRulesTest,
+RegistrationServiceTest a RegistrationHttpTest plus regrese participation facts
+a formátu CommandStore. Následný uživatelský PostgreSQL běh je doložen níže.
+
+Nových **25 RegistrationIT** používá TestDatabaseInitializer, roli/databázi
+rallye_test a izolované schéma. Pokrývají V25→V26, údaje, SQL omezení, intervaly,
+kapitánství, idempotenci, pořadí/stránkování, souběhy, rollback a zachování
+přihlášek při fyzickém zrušení/anonymizaci. Žádný skutečný individuální start
+nevytváří nové produkční API; příprava startovního snapshotu je pouze DB fixture.
+
+Příkazy pro případné opakování v testovací PowerShell relaci:
+
+```powershell
+# Cílené ověření nové registrační části
+.\mvnw.cmd -Pit "-Dit.test=RegistrationIT" verify
+# Kompletní regrese všech modulů proti rallye_test
+.\mvnw.cmd -Pit verify
+```
+
+Uživatelský běh z 30. 10. 2026 je ověřen existujícími Surefire/Failsafe reporty:
+764 běžných a 446 PostgreSQL integračních testů, žádné failures/errors/skipped.
+RegistrationIT skutečně provedl všech 25 scénářů (106,025 s), včetně migrace V26
+a upgradu V25→V26 na PostgreSQL 17.11 v rallye_test. Codex PostgreSQL testy
+nespouštěl ani je při přípravě commitu neopakoval. Společné přihlášené ověření
+skutečného frontendu a backendu nebylo provedeno. Podrobnosti:
+[participation-registration-implementation.md](participation-registration-implementation.md).
+
 > Aktuální pravidla: [specifikace 0.8.0](Zavody_specifikace_v0.8.0.md), D09 nahrazuje D04/D05 a D10 nahrazuje D03. Účet má jedinou neměnnou LOCAL/GOOGLE/APPLE identitu; link/unlink a dodatečný LOCAL jsou zakázané. LOCAL vlastní zrušení vyžaduje znovu heslo, externí zrušení platnou relaci a samostatné výslovné potvrzení, nikoli čerstvou reautentizaci. Níže uvedené dokončené etapy a výsledky zachycují tehdejší implementaci; DB omezení je nyní připravené v 3c.3a s uživatelem potvrzeným PostgreSQL ověřením BUILD SUCCESS; externí potvrzení je implementované a automaticky ověřené v 3c.3b; LOCAL ruční ověření je dokončené, skutečné GOOGLE/APPLE zrušení čeká na HTTPS. Dopady a nový plán: [external-auth-3c.md](external-auth-3c.md).
 
 
