@@ -42,6 +42,7 @@ public class AuthConfiguration {
                             || "mobile".equals(request.getHeader("X-Rallye-Client"));
                 }))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(request -> cz.mh.rallye.rallye_backend.participation.api.ParticipantController.isRead(request)).permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET,"/api/v1/auth/external/mobile/launch").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST,"/api/v1/auth/external/mobile/exchanges").permitAll()
                         .requestMatchers("/api/hello", "/api/v1/auth/csrf", "/api/v1/auth/register",
@@ -54,8 +55,8 @@ public class AuthConfiguration {
                         // Only the approved participant registration methods, never the ADMIN event API/library.
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
                                 "/api/v1/me/registrations", "/api/v1/me/registrations/summary", "/api/v1/race-events/*/registration-status", "/api/v1/race-events/*/registration-crews",
-                                "/api/v1/race-events/*/registrations", "/api/v1/race-events/*/registrations/*").authenticated()
-                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/api/v1/race-events/*/registrations").authenticated()
+                                "/api/v1/race-events/*/registrations", "/api/v1/race-events/*/registrations/*", "/api/v1/race-events/*/registrations/*/start-status").authenticated()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/api/v1/race-events/*/registrations", "/api/v1/race-events/*/registrations/*/code-redemptions").authenticated()
                         .requestMatchers(org.springframework.http.HttpMethod.PUT,"/api/v1/race-events/*/registrations/*/members").authenticated()
                         .requestMatchers("/api/v1/admin/**", "/api/v1/race-templates", "/api/v1/race-templates/**", "/api/v1/race-events", "/api/v1/race-events/**").hasRole("ADMIN")
                         .anyRequest().authenticated())

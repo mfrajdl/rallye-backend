@@ -230,7 +230,7 @@ Pro vytváření záznamů a změny vlastnictví etapy 3b používat Idempotency
 
 Navržená tabulka idempotence: interní účet, typ operace, zdroj a klíč s unikátním omezením; hash kanonického významového payloadu včetně cílového zdroje a uložený HTTP status/bezpečné response DTO. Identita klíče musí zabránit opakovanému použití při přechodu na další stanoviště. Po autorizaci nejprve hledat dřívější výsledek, teprve pak pro nový požadavek rozhodovat o uzávěrce a stavu. Shodný klíč/payload vrací původní výsledek i po `end_at`, rozdílný obsah je konflikt 409. Výsledek, změna stavu, penalizace i audit se uloží v jedné transakci. Neočekávané technické selhání transakci rollbackuje; nezůstane trvalý rozpracovaný klíč bez výsledku. Při závodu o unikátní klíč nepokračovat v již neplatné transakci: po rollbacku načíst potvrzený výsledek v nové transakci.
 
-Pro krátké změny průchodu navrženo řádkové zamykání účasti a konzistentní pořadí zámků (konání, účast, průchod); `@Version` pro úpravy konfigurace. Přihláška vzniká přes odkaz bez startovacího kódu, s unikátní dvojicí konání+posádka. Původní startovací kód se atomicky spotřebuje až po oficiálním zahájení a jednou nastaví individual_started_at; předčasné zadání ho zachová. Náhradní kód tento čas nesmí přepsat. Individuální start slouží pro skutečnou dobu absolvování a časové odhady, nikdy neposune end_at. Náhradní kód při vydání neodpojí původní zařízení, až jeho úspěšné použití v jediné transakci odvolá staré závodní oprávnění, aktivuje nové a právě jednou započte podepsanou bodovou úpravu. Navržené unikátní omezení score_adjustment na použitý náhradní kód a uložení idempotentního výsledku zabrání duplicitě při souběhu/opakování HTTP. Nepoužitý kód ani jeho zneplatnění skóre nemění. Nejvýše jeden platný nepoužitý náhradní kód, bez vlastní expirace. Převod kapitána nemění race_device_authorization ani individual_started_at. Přijetí žádosti je atomické, s nejvýše jednou aktivní žádostí na posádku. Uzamčení členů a start musejí sdílet synchronizační bod; kontrola času pouze v klientovi nebo před transakcí nestačí. Totéž pro pozdní zařazení, uzávěrku a zrušení stanoviště. Stanovit limity čekání zámků a bezpečné opakování po deadlocku pouze pro celou operaci s idempotencí.
+Pro krátké změny průchodu navrženo řádkové zamykání účasti a konzistentní pořadí zámků (konání, účast, průchod); `@Version` pro úpravy konfigurace. Přihláška vzniká přes odkaz bez startovacího kódu, s unikátní dvojicí konání+posádka. Původní startovací kód se atomicky spotřebuje až po oficiálním zahájení a jednou nastaví individual_started_at; předčasné zadání ho zachová. Náhradní kód tento čas nesmí přepsat. Individuální start slouží pro skutečnou dobu absolvování a časové odhady, nikdy neposune end_at. Náhradní kód při vydání neodpojí původní zařízení, až jeho úspěšné použití v jediné transakci odvolá staré závodní oprávnění, aktivuje nové a právě jednou započte podepsanou bodovou úpravu. Navržené unikátní omezení score_adjustment na použitý náhradní kód a uložení idempotentního výsledku zabrání duplicitě při souběhu/opakování HTTP. Nepoužitý kód ani jeho zneplatnění skóre nemění. Dva původní kódy vznikají atomicky; kterýkoli zahájí průběh, druhý jej převezme. Další náhradní kódy neruší dosud AVAILABLE kódy a nemají vlastní expiraci. Převod kapitána nemění race_device_authorization ani individual_started_at. Přijetí žádosti je atomické, s nejvýše jednou aktivní žádostí na posádku. Uzamčení členů a start musejí sdílet synchronizační bod; kontrola času pouze v klientovi nebo před transakcí nestačí. Totéž pro pozdní zařazení, uzávěrku a zrušení stanoviště. Stanovit limity čekání zámků a bezpečné opakování po deadlocku pouze pro celou operaci s idempotencí.
 
 `Instant` v UTC, databázové `timestamptz(3)`, doby v celých milisekundách, body v kontrolovaném celočíselném rozsahu (návrh `bigint`/`long`). Měřit jedním injektovaným `Clock` a zaokrouhlením okamžiku na milisekundy. DELAYED počítá nejprve nezáporný rozdíl v ms, poté počet započatých sekund, poté násobí body. Ověřit přetečení. Statistiky nepoužívat pro body.
 
@@ -732,3 +732,42 @@ souboru. Skutečný participant runtime nebyl vytvořen; mobilní cesty jsou pou
 návrhem pro další etapu. PostgreSQL ověření nových scénářů uživatel potvrdil jako BUILD SUCCESS.
 
 RADAR historie: společná projekce ověřených měření je připravena pro simulátor a budoucí reálný runtime. Simulační historie používá trvalý deník a stránkované ADMIN API dle docs/stage-extensions-api.md. Reálný průchod, participant historie a převzetí zařízení zůstávají neimplementované; nelze je považovat za ověřené simulací.
+
+Start posádky a závodní zařízení: závazný [crew-start-api-v1](crew-start-design.md).
+První ADMIN vydání atomicky vytvoří dva různé ORIGINAL kódy. Kterýkoli zahájí
+první skutečný průběh; druhý zůstane platný pro takeover. Další ADMIN REPLACEMENT
+kódy neruší jiné AVAILABLE; volitelná podepsaná int64 korekce se uplatní pouze při
+použití. Přegenerování/ORIGINAL_REGENERATE a jeho endpoint se ruší. Druh účinku
+START/TAKEOVER určí existence skutečného current run, nikoli samotný kind kódu.
+Q1 aktuální kapitán, Q3 nezávislost na logoutu a nouzové ADMIN odvolání zůstávají.
+V29: původní dvojice s pořadím 1/2, dodatečné pořadí >=3, trvalý pair receipt,
+jednorázovost a generační zařízení. Kódy SecureRandom A–Z/0–9 přímo VARCHAR(6),
+zařízení samostatný 256bit token se SHA-256. Bez šifrování/klíčů/doručovacího okna.
+LoginThrottle je stávající paměťový účet/IP limiter, restart resetuje, instance nesdílí.
+Etapa1/4 (V29) prošla uživatelem potvrzeným cíleným PostgreSQL ověřením.
+Etapa2/4 implementuje ADMIN POST start-codes/replacement-codes a GET seznam/detail
+kódů, StartCodeService, transakční audit a replay přes V29 doklad i CommandStore.
+CommandAccounts zná nové formáty pro bezpečný úklid. Bez nové migrace a bez změny V29.
+PostgreSQL ověření etap1/4 a2/4 potvrdil uživatel v zadání etapy3/4.
+Etapa3/4 implementuje start-status, redemption prvním/druhým ORIGINAL a REPLACEMENT,
+atomický start přes RaceEvaluator.start, generační takeover, korekce a nouzový revoke.
+RaceDeviceAccess je interní transakční kontrola tokenu/run/aktivace/generace.
+Účetní logout ani převod kapitána zařízení neodvolává. Limiter používá stávající
+LoginThrottle se zdrojovým preflight a účtem bez dvojího započtení. Audit a oba
+doklady se potvrzují se změnou. Bez nové migrace nebo změny V29. Verify bez DB
+prošlo s875 testy; cílené PostgreSQL ověření etapy3/4 uživatel potvrdil jako BUILD SUCCESS.
+Herní runtime stále není implementovaný. Q4 o časování přerušení zůstává otevřená pro úplný časovaný runtime.
+Bezpečné další kroky a migrační předpoklady viz §8 a §3 kontraktu.
+
+
+Etapa4/4 startu: implementováno read-only GET race-participations/{registrationId}/current-run
++ files/{fileName} podle §10 crew-start-api-v1. Samostatná Race hlavička, stávající
+RaceDeviceAccess pod zámky, nezávislost na account logoutu/kapitánství, bezpečný
+whitelist všech uložených typů a dosažitelné soubory bez budoucích instrukcí.
+Soubory používají EventFiles a stávající renderer, lokální odkazy směřují do
+chráněné participant cesty. Bez nové migrace, bez změny V29 a bez herních zápisů.
+Verify bez DB: BUILD SUCCESS, 894 testů. Uživatel následně potvrdil cílené
+CrewStartIT (65 scénářů, z toho 12 nových participant) jako BUILD SUCCESS,
+včetně opravy transakce při nastavování spy v souběhových testech. Nejde
+o nový běh celé PostgreSQL sady ani o běh Codexu. Úplný runtime,
+participant radarové pokusy a časové pravidlo přerušení Q4 zůstávají další prací.

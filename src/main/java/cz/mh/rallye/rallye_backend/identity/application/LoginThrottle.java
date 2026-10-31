@@ -21,6 +21,9 @@ public final class LoginThrottle {
         if (!email.isBlank()) take(operation + ":email:" + tokens.hash(email), 10, now);
         take(operation + ":source:" + tokens.hash(source), 50, now);
     }
+    /** Split admission for race HTTP source checks before parsing and account checks after authentication. */
+    public synchronized void checkSource(String operation,String source){Instant now=clock.instant();windows.entrySet().removeIf(e->!e.getValue().until().isAfter(now));take(operation+":source:"+tokens.hash(source),50,now);}
+    public synchronized void checkAccount(String operation,String account){Instant now=clock.instant();windows.entrySet().removeIf(e->!e.getValue().until().isAfter(now));if(!account.isBlank())take(operation+":email:"+tokens.hash(account),10,now);}
     private void take(String key, int maximum, Instant now) {
         Window window = windows.get(key);
         if (window == null) {

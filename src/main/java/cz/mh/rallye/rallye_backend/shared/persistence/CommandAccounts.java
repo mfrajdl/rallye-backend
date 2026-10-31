@@ -33,6 +33,15 @@ final class CommandAccounts {
                 requiredId(h.get("id"));if(!h.get("versionBefore").isIntegralNumber()||h.get("versionBefore").longValue()!=req.get(1).longValue()||!h.get("versionAfter").isIntegralNumber()||h.get("versionAfter").longValue()!=res.get("version").longValue()||h.get("versionAfter").longValue()!=Math.addExact(h.get("versionBefore").longValue(),1))throw invalid();
                 return new Content(ids,req,res);
             }
+            if(Set.of("RACE_CODE_REDEEM","RACE_DEVICE_REVOKE").contains(operation)){
+                size(req,3);requiredId(req.get(0));if(!target.equals(requiredId(req.get(1)))||!req.get(2).isString()||!req.get(2).asString().matches("[0-9a-f]{64}"))throw invalid();if(!new HashSet<>(res.propertyNames()).equals(Set.of("commandId")))throw invalid();requiredId(res.get("commandId"));return new Content(ids,req,res);
+            }
+            if(Set.of("RACE_ORIGINAL_ISSUE","RACE_REPLACEMENT_ISSUE").contains(operation)){
+                size(req,5);requiredId(req.get(0));if(!target.equals(requiredId(req.get(1)))||!req.get(2).isIntegralNumber()||!req.get(2).canConvertToLong()||req.get(2).longValue()<0||!req.get(3).isString())throw invalid();
+                long points=Long.parseLong(req.get(3).asString());if(!Long.toString(points).equals(req.get(3).asString())||operation.equals("RACE_ORIGINAL_ISSUE")&&points!=0)throw invalid();
+                if(!req.get(4).isNull()&&(!req.get(4).isString()||!req.get(4).asString().matches("[0-9a-f]{64}")))throw invalid();
+                if(!new HashSet<>(res.propertyNames()).equals(Set.of("commandId")))throw invalid();requiredId(res.get("commandId"));return new Content(ids,req,res);
+            }
             if(operation.equals("CREW_REGISTRATION_CREATE")){
                 size(req,4);requiredId(req.get(0));requiredId(req.get(1));
                 if(!req.get(2).isString()||!req.get(2).asString().matches("[0-9a-f]{64}")||!req.get(3).isIntegralNumber()||!req.get(3).canConvertToInt()||req.get(3).intValue()<0)throw invalid();

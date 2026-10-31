@@ -19,6 +19,9 @@ public class AuthSessionFilter extends OncePerRequestFilter {
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         response.setHeader("Cache-Control", "no-store");
+        // This narrowly scoped read API authorizes Race credentials under DB locks via RaceDeviceAccess.
+        // Ignore account cookies here: neither a cookie nor a Bearer session can substitute for a device.
+        if(cz.mh.rallye.rallye_backend.participation.api.ParticipantController.isRead(request)){chain.doFilter(request,response);return;}
         try {
             String cookie = AuthCookies.read(request);
             String header = request.getHeader("Authorization");

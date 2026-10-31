@@ -58,6 +58,25 @@ public final class InstructionsMarkdown {
  private static void validate(String source,int max){if(source!=null&&(source.indexOf('\0')>=0||source.getBytes(StandardCharsets.UTF_8).length>max))throw new AuthFailure(400,"INVALID_INSTRUCTIONS_MARKDOWN");}
  public static String render(UUID template,String source,Map<String,String> names){return render(template,source,names,false);}
  public static String renderEvent(UUID event,String source,Map<String,String> names){return render(event,source,names,true);}
+ /** Reuse the event parser/sanitizer; only the authenticated delivery namespace differs. */
+ public static String renderParticipant(UUID event,UUID registration,String source,Map<String,String> names){
+  String html=renderEvent(event,source,names);if(html==null)return null;
+  var doc=Jsoup.parseBodyFragment(html);doc.outputSettings().prettyPrint(false);
+  for(var node:doc.select("a[href],img[src]")){String attribute=node.tagName().equals("a")?"href":"src";String value=node.attr(attribute);String prefix="/api/v1/race-events/"+event+"/files/";if(value.startsWith(prefix))node.attr(attribute,"/api/v1/race-participations/"+registration+"/files/"+value.substring(prefix.length()));}
+  return doc.body().html();
+ }
+ /** Keep relative Markdown intact and rewrite explicit event links, including reference definitions. */
+ public static String participantSource(UUID event,UUID registration,String source){
+  if(source==null)return null;var parsed=analyzeEvent(event,source);var candidates=new LinkedHashSet<Node>(parsed.references().keySet());
+  parsed.node().accept(new AbstractVisitor(){@Override public void visit(LinkReferenceDefinition node){candidates.add(node);}});
+  record Edit(int start,int end,String text){}var edits=new ArrayList<Edit>();var changed=new HashSet<Node>();
+  for(var node:candidates){String destination=node instanceof Image i?i.getDestination():node instanceof Link l?l.getDestination():((LinkReferenceDefinition)node).getDestination();String prefix="/api/v1/race-events/"+event+"/";
+   if(!destination.startsWith(prefix))continue;var ref=link(event,destination,true);String next="/api/v1/race-participations/"+registration+"/files/"+java.net.URLEncoder.encode(ref.fileName(),StandardCharsets.UTF_8).replace("+","%20")+ref.fragment();
+   if(node instanceof Image i)i.setDestination(next);else if(node instanceof Link l)l.setDestination(next);else ((LinkReferenceDefinition)node).setDestination(next);changed.add(node);
+  }
+  for(var node:changed){boolean nested=false;for(Node p=node.getParent();p!=null;p=p.getParent())if(changed.contains(p))nested=true;if(nested)continue;var spans=node.getSourceSpans();if(spans.isEmpty())throw new AuthFailure(503,"RACE_STATE_UNAVAILABLE");edits.add(new Edit(parsed.sourceOffset()+spans.getFirst().getInputIndex(),parsed.sourceOffset()+spans.getLast().getInputIndex()+spans.getLast().getLength(),MarkdownRenderer.builder().extensions(EXT).build().render(node)));}
+  edits.sort(Comparator.comparingInt(Edit::start).reversed());var result=new StringBuilder(source);for(var edit:edits)result.replace(edit.start(),edit.end(),edit.text());return result.toString();
+ }
  public static String renderSimulation(UUID id,String source,Map<String,String> names){return render(id,source,names,false,true);}
  private static String render(UUID template,String source,Map<String,String> names,boolean event){return render(template,source,names,event,false);}
  private static String render(UUID template,String source,Map<String,String> names,boolean event,boolean simulation){

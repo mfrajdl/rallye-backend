@@ -1200,3 +1200,116 @@ Uživatel následně potvrdil cílené `.\mvnw.cmd -Pit "-Dit.test=SimulationIT"
 jako **BUILD SUCCESS**. Toto je uživatelem provedené ověření, nikoli běh Codexu;
 kompletní PostgreSQL sada nebyla po rozšíření historie nově spuštěna Codexem.
 Reálný průchod posádky a převzetí zařízení zůstávají mimo implementovaný rozsah.
+
+
+### Start posádky – infrastrukturní etapa 1/4
+
+Maven `verify` bez DB: BUILD SUCCESS, 831 testů. Nové `CrewStartIT` jsou připravené
+pro PostgreSQL, nikoli provedené Codexem. Cíleně spusťte v existujícím prostředí
+rallye_test přes TestDatabaseInitializer:
+
+```powershell
+.\mvnw.cmd -Pit "-Dit.test=CrewStartIT,RegistrationIT,EventsIT,SimulationIT,TemplatesIT,AccountCancellationServiceIT" verify
+```
+
+Kompletní ověření zůstává `.\mvnw.cmd -Pit verify`. CrewStartIT používá vlastní
+náhodné schéma, ověřuje databázi i roli rallye_test a uklízí pouze toto schéma.
+Migrační scénář skutečně provádí V1–V28 a následně V29. V29 odmítá dřívější
+individuální start bez skutečného průběhu; takový případ vyžaduje prověření, nikoli
+Flyway repair/clean nebo automatické mazání dat. Tyto testy ještě neověřují nové
+REST API ani kompletní aplikační start, protože nejsou součástí etapy 1/4.
+
+
+Změna pravidel V29 (dva původní kódy): první vydání je atomická dvojice,
+další AVAILABLE kódy se navzájem neruší. CrewStartIT ověřuje rollback neúplné
+nebo nekonzistentní dvojice, obě alternativy startu, takeover druhým ORIGINAL
+ve stejném okamžiku, trvalý pair receipt a korekce záporné/nulové/kladné.
+Předchozí PostgreSQL výsledky staré V29 neověřují tuto variantu. Použijte výše
+uvedený cílený příkaz; při checksum mismatch nic automaticky neopravujte přes
+repair/clean. Je nutné nejprve domluvit obnovu vyhrazeného testovacího schématu.
+
+
+### Start posádky – ADMIN vydávání kódů (etapa 2/4)
+
+Etapa1/4 má uživatelem potvrzený cílený PostgreSQL BUILD SUCCESS. Pro etapu2/4
+Codex provedl Maven verify bez DB: 851 testů, BUILD SUCCESS, včetně kompilace IT.
+Přibylo 11 scénářů CrewStartIT (celkem33), 11 StartCodeServiceTest,
+8 StartCodeHttpTest a test bezpečného formátu CommandAccounts.
+Uživatel následně potvrdil PostgreSQL ověření etapy2/4 jako BUILD SUCCESS.
+
+```powershell
+.\mvnw.cmd -Pit "-Dit.test=CrewStartIT,RegistrationIT,AdministrationIT,AccountCancellationServiceIT" verify
+```
+
+Scénáře ověřují vydání dvojice, čtení/paging/rodiče, skrytí USED hodnot,
+více REPLACEMENT, korekce pouze u kódu bez změny bodů/zařízení, trvalý replay,
+konflikt namespace a souběhy. Audit failure se vkládá po skutečném INSERT auditu:
+rollback musí vrátit kódy, oba doklady, audit a verzi. Start/run/device fixture
+jsou pouze příprava – produkční redemption a závodní autorizace ještě neexistují.
+Privacy hlavičky a ADMIN/CSRF se ověřují rychlými HTTP testy. V29 se v etapě2/4 nemění.
+
+Manuálně s existující ADMIN relací: GET csrf pro cookie zápisy, GET registrace pro
+aktuální version, POST start-codes s Idempotency-Key a {registrationVersion},
+GET seznam/detail obou kódů. Replay se stejným klíčem vrátí stejná ID a historickou
+registrationVersion; před dalším zápisem znovu GET registrace. Použití kódů kapitánem
+nelze zatím ručně provést – endpoint je mimo tuto etapu. Není třeba měnit Postman
+kolekci ani vytvářet nové databázové fixture mimo uvedené integrační testy.
+
+
+### Start a převzetí zařízení (etapa 3/4)
+
+Předchozí etapy1/4 a2/4 jsou uživatelem potvrzené jako PostgreSQL BUILD SUCCESS.
+Nová etapa prošla Maven verify bez DB: 875 testů. Nové testy:
+13 CrewStartServiceTest, 9 CrewStartHttpTest, test dílčích kvót a formátu ledgeru.
+CrewStartIT má 20 nových scénářů (celkem53), zkompilovaných, nikoli spuštěných Codexem.
+
+```powershell
+.\mvnw.cmd -Pit "-Dit.test=CrewStartIT,RegistrationIT,CrewTransfersIT,AdministrationIT,AccountCancellationServiceIT" verify
+```
+
+Ověření zahrnuje oba ORIGINAL jako první, převzetí bez restartu, korekce -/0/+,
+replay a odvolání, logout a nové přihlášení, aktuální kapitánství, end_at,
+souběžné starty/takeover/revoke. SQLSTATE23514 se záměrně vyvolává po skutečném
+INSERT auditu a musí vrátit zpět celý start. Další scénáře selhání auditu ověřují
+rollback takeover i revokace. Latch test drží interní oprávnění zařízení a jeho
+transakční efekt proti odvolání; nejedná se o implementaci herního runtime.
+
+V29 se v etapě3/4 nemění. Source limiter má 50/IP/15min před Security/MVC,
+account limiter10/15min ve službě; v testech se nezvyšují limity. HTTP testy
+ověřují source ochranu malformed/anonymous požadavků, Cookie CSRF a ADMIN revoke.
+Úspěšný redemption vrací receipt bez tokenu. Pro retry klient musí zachovat svůj
+původní 32bajtový deviceSecret a stejný klíč/tělo. Po převzetí není starý token
+platný a replay původního redemption jej neobnoví. Start-status neposkytuje kódy.
+
+Manuální hranice: nové POST code-redemptions a devices/{deviceId}/revocations
+jsou dostupné. Participant current-run a soubory ani herní akce nejsou zatím
+implementované; nepovažujte úspěšný start za plně použitelný mobilní závod.
+Q4 o přerušení časových penalizací se touto etapou nerozhoduje.
+
+
+### Start posádky – etapa 4/4: participant čtení
+
+Běžné Maven verify bez PostgreSQL: BUILD SUCCESS, 894 testů (19 nových),
+včetně kompilace IT; git diff --check bez chyb.
+Nové ParticipantReadServiceTest a ParticipantHttpTest ověřují whitelist DTO,
+Race credential oddělenou od account Cookie/Bearer, odmítnutí cizího/revokovaného
+zařízení, přesné body, snapshot, dosažitelnost souborů/cykly a privacy hlavičky.
+CrewStartIT přidává 12 PostgreSQL scénářů (celkem 65), včetně skutečného startu,
+read-only API, reloadu, logoutu/kapitánství, souborů, END/RESUME, dokončeného run
+jako fixture a souběhů čtení vs. takeover/revoke. Lokální soubory testu mají vlastní
+dočasný kořen. V29 ani jiné migrace se nemění. Herní endpointy se tímto netestují.
+
+Codex PostgreSQL nespouští. Pro ruční cílené ověření uživatelem:
+
+```powershell
+.\mvnw.cmd -Pit "-Dit.test=CrewStartIT,RegistrationIT,EventLifecycleIT,EventsIT,AccountCancellationServiceIT" verify
+```
+
+Samotné nové scénáře i regrese startu: `.\mvnw.cmd -Pit "-Dit.test=CrewStartIT" verify`.
+Cílené PostgreSQL ověření předchozí etapy3/4 uživatel potvrdil jako BUILD SUCCESS;
+následně potvrdil také cílené CrewStartIT jako BUILD SUCCESS (65 scénářů).
+Oba souběhové testy byly opraveny pouze v testovací přípravě: nastavení Mockito
+spy přes Spring proxy MANDATORY nyní probíhá v TransactionTemplate. Paralelní
+volání skutečných služeb si otevírají vlastní transakce; kontrola aktivní transakce
+a zámků zůstává zachována. Produkční kód ani migrace se při opravě neměnily.
+Není tím deklarován nový běh celé PostgreSQL sady; Codex ji nespouštěl.

@@ -7,6 +7,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CommandAccountsTest {
     UUID actor=UUID.randomUUID(),target=UUID.randomUUID(),owner=UUID.randomUUID();
+    @Test void raceControlLedgerStoresFingerprintAndCommandReferenceOnly(){String request="[\""+UUID.randomUUID()+"\",\""+target+"\",\""+"a".repeat(64)+"\"]",result="{\"commandId\":\""+UUID.randomUUID()+"\"}";for(String operation:List.of("RACE_CODE_REDEEM","RACE_DEVICE_REVOKE")){assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,operation,request,result).accounts());assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,operation,request.replace("a".repeat(64),"ABC123"),result));}}
+    @Test void startCodeLedgerContainsReferencesOnlyAndRemainsKnownToCleanup(){
+        String request="[\""+UUID.randomUUID()+"\",\""+target+"\",1,\"-5\",\""+"a".repeat(64)+"\"]";
+        String result="{\"commandId\":\""+UUID.randomUUID()+"\"}";
+        assertEquals(Set.of(actor),CommandAccounts.inspect(actor,target,"RACE_REPLACEMENT_ISSUE",request,result).accounts());
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"RACE_ORIGINAL_ISSUE",request,result));
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"RACE_REPLACEMENT_ISSUE",request,result.replace("}",",\"code\":\"ABC123\"}")));
+        assertThrows(IllegalStateException.class,()->CommandAccounts.inspect(actor,target,"RACE_REPLACEMENT_ISSUE",request.replace("a".repeat(64),"open reason"),result));
+    }
     @Test void registrationLedgerContainsOnlyActorAccountAndMemberDigest(){
         String request="[\""+UUID.randomUUID()+"\",\""+UUID.randomUUID()+"\",\""+"a".repeat(64)+"\",0]";
         String result="{\"id\":\""+target+"\",\"version\":0}";
